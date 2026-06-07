@@ -1,0 +1,10 @@
+{
+  "name": "@jobposted/db",
+  "version": "0.1.0",
+  "private": true,
+  "description": "JobPosted Supabase migrations (schema `jobposted`).",
+  "scripts": {
+    "print": "cat migrations/0001_schema.sql migrations/0002_rls.sql migrations/0003_storage.sql migrations/0004_indexes.sql",
+    "apply:local": "supabase db execute --file <(pnpm -s print)"
+  }
+}

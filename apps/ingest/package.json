@@ -1,0 +1,21 @@
+{
+  "name": "@jobposted/ingest",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "fetch": "tsx src/cli.ts",
+    "run": "tsx src/run.ts",
+    "typecheck": "tsc --noEmit",
+    "clean": "rm -rf dist .turbo *.tsbuildinfo"
+  },
+  "dependencies": {
+    "@jobposted/shared": "workspace:*",
+    "@supabase/supabase-js": "^2.100.1"
+  },
+  "devDependencies": {
+    "@types/node": "^20",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.3"
+  }
+}

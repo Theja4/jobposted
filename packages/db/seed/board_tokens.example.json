@@ -1,0 +1,5 @@
+{
+  "_comment": "Seed list of public ATS boards to ingest. Greenhouse uses a board token (the company slug in boards.greenhouse.io/<token>); Lever uses the company slug in jobs.lever.co/<company>. Both feeds are public and need no API key. Grow this list from companies you care about and from titles you ingest via aggregators (design doc §9.2/§9.3). Copy to board_tokens.json (gitignored) before running ingest at scale.",
+  "greenhouse": ["stripe", "airbnb", "figma", "databricks", "discord"],
+  "lever": ["netflix", "spotify", "plaid", "ramp"]
+}

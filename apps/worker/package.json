@@ -1,0 +1,6 @@
+{
+  "name": "@jobposted/worker",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Playwright + Claude-vision server-side apply engine. Phase 3 — not yet implemented."
+}
