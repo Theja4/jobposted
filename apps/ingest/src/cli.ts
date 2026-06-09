@@ -11,6 +11,7 @@ import { argv } from "node:process";
 import { applyUrlDirectness, dedupeJobs, normalizeJob, type Job, type RawJob } from "@jobposted/shared";
 import { fetchGreenhouseBoard } from "./sources/greenhouse.js";
 import { fetchLeverCompany } from "./sources/lever.js";
+import { fetchAshbyBoard } from "./sources/ashby.js";
 
 interface Args {
   source?: string;
@@ -79,8 +80,12 @@ async function main() {
       withQuestions: args.questions,
       questionsLimit: args.limit,
     });
+  } else if (args.source === "ashby") {
+    if (!args.board) return fail("--board <org> is required for --source ashby");
+    console.info(`Fetching Ashby board "${args.board}"…`);
+    raw = await fetchAshbyBoard(args.board);
   } else {
-    return fail("Usage: --source <lever|greenhouse> --company <slug> | --board <token>");
+    return fail("Usage: --source <lever|greenhouse|ashby> --company <slug> | --board <token>");
   }
 
   const normalized = raw.map(normalizeJob);

@@ -1,0 +1,12 @@
+# Railway service config for the apply worker.
+# In Railway: New Service → Deploy from repo → set Root Directory to the monorepo root,
+# then this file builds via the Dockerfile. Set env vars from .env.example in the dashboard.
+
+[build]
+builder = "dockerfile"
+dockerfilePath = "apps/worker/Dockerfile"
+
+[deploy]
+restartPolicyType = "always"
+restartPolicyMaxRetries = 10
+numReplicas = 1

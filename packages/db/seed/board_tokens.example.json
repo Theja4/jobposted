@@ -1,5 +1,17 @@
 {
-  "_comment": "Seed list of public ATS boards to ingest. Greenhouse uses a board token (the company slug in boards.greenhouse.io/<token>); Lever uses the company slug in jobs.lever.co/<company>. Both feeds are public and need no API key. Grow this list from companies you care about and from titles you ingest via aggregators (design doc §9.2/§9.3). Copy to board_tokens.json (gitignored) before running ingest at scale.",
-  "greenhouse": ["stripe", "airbnb", "figma", "databricks", "discord"],
-  "lever": ["netflix", "spotify", "plaid", "ramp"]
+  "_comment": "Public ATS boards to ingest — no API key needed for greenhouse/lever/ashby. greenhouse = board token (boards.greenhouse.io/<token>); lever = company slug (jobs.lever.co/<company>); ashby = org slug (jobs.ashbyhq.com/<org>). The AI/startup companies below are the career-ops-style high-signal list, mapped to each company's actual ATS (verified slugs; unknown/moved ones 404 and are skipped gracefully). wellfound/remotefront are bot-protected and only run via an Apify actor (set APIFY_TOKEN + the actor envs) — they are search queries, not slugs.",
+  "greenhouse": ["stripe", "airbnb", "figma", "databricks", "discord", "anthropic"],
+  "lever": ["spotify", "mistral", "ramp"],
+  "ashby": [
+    "openai",
+    "elevenlabs",
+    "cohere",
+    "perplexity",
+    "ramp",
+    "vanta",
+    "linear",
+    "character"
+  ],
+  "wellfound": ["AI engineer remote", "machine learning engineer"],
+  "remotefront": ["software engineer remote"]
 }

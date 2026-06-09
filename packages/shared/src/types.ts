@@ -159,6 +159,27 @@ export interface Job {
 
 // ── Profile (matches jobposted.profiles) ─────────────────────────────────────
 
+/** The matched-feed preferences captured in onboarding (design doc §10.2 step 5). */
+export interface JobPreferences {
+  titles: string[]; // target job titles
+  locations: string[]; // desired locations (free text)
+  remoteOnly: boolean;
+  minSalary: number | null;
+  currency: string; // e.g. "USD"
+  skills: string[]; // strengthens keyword match scoring
+  excludeCompanies: string[]; // blocklist (design doc §23.5)
+}
+
+export const EMPTY_PREFERENCES: JobPreferences = {
+  titles: [],
+  locations: [],
+  remoteOnly: false,
+  minSalary: null,
+  currency: "USD",
+  skills: [],
+  excludeCompanies: [],
+};
+
 export interface Profile {
   id: string; // = auth.users.id
   fullName: string | null;
@@ -175,6 +196,8 @@ export interface Profile {
   salaryExpectationMax: number | null;
   salaryCurrency: string | null;
   noticePeriodDays: number | null;
+  preferences: JobPreferences | null;
+  onboardedAt: string | null;
   createdAt?: string;
 }
 

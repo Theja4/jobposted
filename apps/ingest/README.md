@@ -7,12 +7,20 @@ and upsert into `jobposted.jobs`. **Lever and Greenhouse feeds are public — no
 src/
   sources/greenhouse.ts   Greenhouse Job Board API (§9.2)
   sources/lever.ts        Lever Postings API (§9.3)
+  sources/ashby.ts        Ashby public posting API (§9.1) — many AI cos (OpenAI, ElevenLabs…)
+  sources/wellfound.ts    Wellfound via Apify anti-detect actor (§9.1; Cloudflare-protected)
+  sources/remotefront.ts  RemoteFront via Apify actor (§9.1; bot-protected)
+  apify.ts                Apify actor runner (no-op without APIFY_TOKEN)
   embed.ts                1536-dim embeddings (optional; no-ops without a key)
   upsert.ts               service-role upsert into jobposted.jobs (no-ops without env)
   run.ts                  scheduler: fetch → normalize → dedupe → embed → upsert
   cli.ts                  live verification CLI (no secrets needed)
   config.ts / util.ts     board config + HTTP backoff / concurrency helpers
 ```
+
+Greenhouse, Lever, and **Ashby** are clean public APIs (no key). **Wellfound and RemoteFront
+block datacenter IPs** (verified 403), so they only run through an Apify anti-detect actor when
+`APIFY_TOKEN` + the actor env are set — otherwise they no-op with a clear log.
 
 Normalization (`htmlToMarkdown`, location/salary/remote) and cross-source dedup
 (`dedupeJobs`, prefer most-direct apply_url) live in [`@jobposted/shared`](../../packages/shared)
@@ -21,9 +29,9 @@ so the web app and worker reuse the exact same logic.
 ## Verify it live (no secrets)
 
 ```bash
-pnpm --filter @jobposted/ingest fetch -- --source lever --company netflix
+pnpm --filter @jobposted/ingest fetch -- --source lever --company mistral
 pnpm --filter @jobposted/ingest fetch -- --source greenhouse --board stripe --questions
-pnpm --filter @jobposted/ingest fetch -- --source greenhouse --board figma --limit 3 --json
+pnpm --filter @jobposted/ingest fetch -- --source ashby --board openai --limit 5
 ```
 
 Prints how many raw jobs were fetched, how many remained after dedupe, and a sample of the

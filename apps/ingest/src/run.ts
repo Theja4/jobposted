@@ -10,6 +10,9 @@ import { argv } from "node:process";
 import { dedupeJobs, normalizeJob, type Job, type RawJob } from "@jobposted/shared";
 import { fetchGreenhouseBoard } from "./sources/greenhouse.js";
 import { fetchLeverCompany } from "./sources/lever.js";
+import { fetchAshbyBoard } from "./sources/ashby.js";
+import { fetchWellfound } from "./sources/wellfound.js";
+import { fetchRemoteFront } from "./sources/remotefront.js";
 import { embedJobs } from "./embed.js";
 import { upsertJobs } from "./upsert.js";
 import { countBoards, loadBoardConfig, type BoardConfig } from "./config.js";
@@ -52,6 +55,28 @@ export async function runIngest(
       console.error(`[lever] ${slug} failed:`, (err as Error).message);
     }
   });
+
+  await mapLimit(config.ashby, 3, async (org) => {
+    try {
+      const jobs = await fetchAshbyBoard(org);
+      raw.push(...jobs);
+      console.info(`[ashby] ${org}: ${jobs.length} jobs`);
+    } catch (err) {
+      console.error(`[ashby] ${org} failed:`, (err as Error).message);
+    }
+  });
+
+  // Bot-protected boards via Apify (no-op without APIFY_TOKEN + actor; design doc §9.1).
+  if (config.wellfound?.length) {
+    const jobs = await fetchWellfound(config.wellfound);
+    raw.push(...jobs);
+    if (jobs.length) console.info(`[wellfound] ${jobs.length} jobs`);
+  }
+  if (config.remotefront?.length) {
+    const jobs = await fetchRemoteFront(config.remotefront);
+    raw.push(...jobs);
+    if (jobs.length) console.info(`[remotefront] ${jobs.length} jobs`);
+  }
 
   const normalized: Job[] = raw.map(normalizeJob);
   const deduped = dedupeJobs(normalized);

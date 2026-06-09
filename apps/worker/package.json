@@ -2,5 +2,25 @@
   "name": "@jobposted/worker",
   "version": "0.1.0",
   "private": true,
-  "description": "Playwright + Claude-vision server-side apply engine. Phase 3 — not yet implemented."
+  "type": "module",
+  "description": "Playwright + vision apply engine (design doc §11). Runs on Railway.",
+  "scripts": {
+    "start": "tsx src/index.ts",
+    "dev": "tsx watch src/index.ts",
+    "fixtures": "tsx src/runFixture.ts",
+    "typecheck": "tsc --noEmit",
+    "clean": "rm -rf dist .turbo *.tsbuildinfo"
+  },
+  "dependencies": {
+    "@jobposted/field-match": "workspace:*",
+    "@jobposted/shared": "workspace:*",
+    "@supabase/supabase-js": "^2.100.1",
+    "@sentry/node": "^8.47.0",
+    "playwright": "^1.60.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.3"
+  }
 }
