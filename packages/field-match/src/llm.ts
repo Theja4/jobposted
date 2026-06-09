@@ -102,12 +102,15 @@ export const defaultCustomResolver: CustomResolver = async (unresolved, input) =
  * Vision fallback (design doc §11.1): resolve a single hard/unlabeled field from a screenshot
  * with Claude. Used only when the cheap pass can't resolve it. No key → null.
  */
+/** Trips after the first auth/credit/quota failure so we don't hammer a dead key all run. */
+let visionDisabled = false;
+
 export async function visionResolveField(
   field: PageField,
   input: FieldMatchInput,
 ): Promise<string | null> {
   const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey || !input.screenshotBase64) return null;
+  if (!apiKey || !input.screenshotBase64 || visionDisabled) return null;
 
   const client = new Anthropic({ apiKey });
   try {
@@ -137,7 +140,13 @@ export async function visionResolveField(
     const value = text && "text" in text ? text.text.trim() : "";
     return value && value !== "UNKNOWN" ? value : null;
   } catch (err) {
-    console.error("[field-match] Claude vision failed:", (err as Error).message);
+    const status = (err as { status?: number }).status;
+    if (status === 400 || status === 401 || status === 403 || status === 429) {
+      visionDisabled = true; // credit/auth/quota — stop retrying for the rest of this run
+      console.error(`[field-match] Claude vision disabled for this run (HTTP ${status}).`);
+    } else {
+      console.error("[field-match] Claude vision failed:", (err as Error).message);
+    }
     return null;
   }
 }

@@ -1,0 +1,12 @@
+# Railway config for the apply worker (monorepo).
+# In Railway, the service's Root Directory must be the REPO ROOT so the Docker build context
+# includes packages/ + apps/worker (the Dockerfile COPYs them). This file is read from the root.
+
+[build]
+builder = "dockerfile"
+dockerfilePath = "apps/worker/Dockerfile"
+
+[deploy]
+restartPolicyType = "always"
+restartPolicyMaxRetries = 10
+numReplicas = 1
