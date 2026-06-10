@@ -1,6 +1,7 @@
 # Apply worker (design doc §11). Build context = monorepo root.
 #   docker build -f apps/worker/Dockerfile -t jobposted-worker .
-FROM node:20-bookworm-slim
+# Node 22+ is required by pnpm 11 (it uses node:sqlite, unavailable on Node 20).
+FROM node:22-bookworm-slim
 
 ENV PNPM_HOME=/pnpm
 ENV PATH=$PNPM_HOME:$PATH
