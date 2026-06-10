@@ -1,5 +1,5 @@
 -- Phase 4: billing (design doc §12). Additive; safe to re-run. Provider-agnostic
--- (Polar now, Razorpay later use the same columns).
+-- (Creem now, Razorpay later use the same columns).
 
 alter table jobposted.subscriptions
   add column if not exists external_subscription_id text,

@@ -114,7 +114,7 @@ create table if not exists jobposted.applications (
 -- ── subscriptions (design doc §8, §12 — paid only, daily-limit model) ────────
 create table if not exists jobposted.subscriptions (
   user_id uuid primary key references auth.users(id) on delete cascade,
-  provider text,                  -- polar | razorpay
+  provider text,                  -- creem | razorpay
   plan text,                      -- starter_20 | pro_50
   daily_limit int,                -- 20 for Starter ($19), 50 for Pro ($49)
   status text,                    -- trialing | active | past_due | canceled

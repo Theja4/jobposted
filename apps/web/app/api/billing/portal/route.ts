@@ -1,10 +1,10 @@
 import { NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-import { createPolarPortalSession } from "@/lib/payments/polar";
+import { createCreemPortalSession } from "@/lib/payments/creem";
 
 export const runtime = "nodejs";
 
-/** Open the Polar customer portal so the user can manage / cancel their subscription. */
+/** Open the Creem customer portal so the user can manage / cancel their subscription. */
 export async function POST() {
   const supabase = await createSupabaseServerClient();
   const {
@@ -23,7 +23,7 @@ export async function POST() {
     return NextResponse.json({ ok: false, error: "No active subscription." }, { status: 404 });
   }
 
-  const result = await createPolarPortalSession(customerId);
+  const result = await createCreemPortalSession(customerId);
   if (result.error || !result.url) {
     return NextResponse.json({ ok: false, error: result.error ?? "Portal failed" }, { status: 502 });
   }

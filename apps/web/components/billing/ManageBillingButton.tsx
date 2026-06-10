@@ -4,7 +4,7 @@ import { useState } from "react";
 import { Loader2, ExternalLink } from "lucide-react";
 import { buttonClasses } from "@/components/ui/button";
 
-/** Opens the Polar customer portal to manage / cancel the subscription. */
+/** Opens the Creem customer portal to manage / cancel the subscription. */
 export function ManageBillingButton() {
   const [loading, setLoading] = useState(false);
 

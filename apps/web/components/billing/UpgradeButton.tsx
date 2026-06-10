@@ -5,7 +5,7 @@ import { Loader2 } from "lucide-react";
 import type { Plan } from "@jobposted/shared";
 import { buttonClasses } from "@/components/ui/button";
 
-/** Starts a Polar checkout for a plan and redirects to the hosted page. */
+/** Starts a Creem checkout for a plan and redirects to the hosted page. */
 export function UpgradeButton({
   plan,
   label,

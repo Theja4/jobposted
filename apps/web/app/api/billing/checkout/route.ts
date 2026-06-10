@@ -2,14 +2,14 @@ import { NextResponse } from "next/server";
 import type { Plan } from "@jobposted/shared";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { isBillingConfigured, planBilling } from "@/lib/payments/plans";
-import { createPolarCheckout } from "@/lib/payments/polar";
+import { createCreemCheckout } from "@/lib/payments/creem";
 import { getSiteUrl } from "@/lib/site";
 
 export const runtime = "nodejs";
 
 const VALID_PLANS: Plan[] = ["starter_20", "pro_50"];
 
-/** Start a Polar checkout for the signed-in user (design doc §12). */
+/** Start a Creem checkout for the signed-in user (design doc §12). */
 export async function POST(request: Request) {
   let plan: unknown;
   try {
@@ -35,13 +35,13 @@ export async function POST(request: Request) {
   }
 
   const billing = planBilling(plan as Plan);
-  if (!billing.polarProductId) {
+  if (!billing.creemProductId) {
     return NextResponse.json({ ok: false, error: "Plan not available." }, { status: 503 });
   }
 
   const successUrl = `${getSiteUrl()}/dashboard/billing?status=success`;
-  const result = await createPolarCheckout({
-    productId: billing.polarProductId,
+  const result = await createCreemCheckout({
+    productId: billing.creemProductId,
     userId: user.id,
     email: user.email,
     successUrl,
