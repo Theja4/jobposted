@@ -3,8 +3,13 @@ import Anthropic from "@anthropic-ai/sdk";
 import type { Profile } from "@jobposted/shared";
 import type { CustomResolver, FieldMatchInput, PageField, ResolvedField } from "./types";
 
-const OPENROUTER_BASE = "https://openrouter.ai/api/v1";
-const DEEPSEEK_MODEL = process.env.DEEPSEEK_MODEL || "deepseek/deepseek-chat";
+// Match Rezoomed's OpenRouter setup (lib/claude.ts): deepseek-v4-flash + attribution headers.
+const OPENROUTER_BASE = process.env.OPENROUTER_BASE_URL || "https://openrouter.ai/api/v1";
+const DEEPSEEK_MODEL = process.env.DEEPSEEK_MODEL || "deepseek/deepseek-v4-flash";
+const OPENROUTER_HEADERS = {
+  "HTTP-Referer": process.env.OPENROUTER_REFERER || "https://jobposted.app",
+  "X-Title": "JobPosted",
+};
 const CLAUDE_VISION_MODEL = process.env.CLAUDE_VISION_MODEL || "claude-sonnet-4-5";
 
 /** Compact, truthful profile context for answering ATS questions. */
@@ -49,7 +54,7 @@ export const defaultCustomResolver: CustomResolver = async (unresolved, input) =
   const apiKey = process.env.OPENROUTER_API_KEY;
   if (!apiKey || unresolved.length === 0) return { fields: [], openEnded: [] };
 
-  const client = new OpenAI({ apiKey, baseURL: OPENROUTER_BASE });
+  const client = new OpenAI({ apiKey, baseURL: OPENROUTER_BASE, defaultHeaders: OPENROUTER_HEADERS });
   const system =
     "You fill job-application form fields from a candidate profile. Answer ONLY from the " +
     "provided profile and job context. Never invent facts. For select/radio fields choose " +

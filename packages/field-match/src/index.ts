@@ -55,8 +55,9 @@ export async function matchFields(input: FieldMatchInput, deps: MatchDeps = {}):
     }
     for (const oe of openEnded) openEndedAnswers.push(oe);
 
-    // 3. Vision fallback for the hard remainder (only if a screenshot is available).
-    if (input.screenshotBase64) {
+    // 3. Vision fallback for the hard remainder — only when Anthropic is configured. Skipped
+    //    entirely in DeepSeek-only mode (no ANTHROPIC_API_KEY), like Rezoomed.
+    if (input.screenshotBase64 && process.env.ANTHROPIC_API_KEY) {
       for (const field of unresolved) {
         if (resolvedSelectors.has(field.selector)) continue;
         const value = await visionResolveField(field, input);
