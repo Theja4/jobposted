@@ -2,8 +2,10 @@ import Link from "next/link";
 import { Search } from "lucide-react";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { getFeed, prefsOf, rowToProfile, PROFILE_COLUMNS } from "@/lib/feed";
+import { getEntitlement } from "@/lib/billing/entitlement";
 import { JobCard } from "@/components/dashboard/JobCard";
 import { PasteUrlBox } from "@/components/dashboard/PasteUrlBox";
+import { UsageBanner } from "@/components/dashboard/UsageBanner";
 
 export const metadata = { title: "Job feed" };
 
@@ -25,6 +27,7 @@ export default async function FeedPage() {
   const queued = new Set((apps ?? []).map((a: { job_id: string }) => a.job_id));
 
   const feed = await getFeed({ prefs, profile, queuedJobIds: queued });
+  const entitlement = await getEntitlement(user!.id);
   const firstName = profile?.fullName?.split(" ")[0] ?? "there";
 
   return (
@@ -37,6 +40,8 @@ export default async function FeedPage() {
             : "No matches yet — try widening your titles or locations."}
         </p>
       </header>
+
+      <UsageBanner entitlement={entitlement} />
 
       <div className="mb-6">
         <PasteUrlBox />

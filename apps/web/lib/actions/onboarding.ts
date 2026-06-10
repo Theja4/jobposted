@@ -3,6 +3,8 @@
 import { revalidatePath } from "next/cache";
 import type { JobPreferences, WorkAuthorization } from "@jobposted/shared";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { sendEmail } from "@/lib/email/resend";
+import { welcomeEmail } from "@/lib/email/templates";
 
 export interface ProfilePayload {
   fullName: string;
@@ -71,6 +73,12 @@ export async function completeOnboarding(
         { user_id: user.id, consent_given_at: new Date().toISOString(), consent_version: "v1" },
         { onConflict: "user_id" },
       );
+  }
+
+  // Welcome email (design doc §10.5). No-ops without RESEND_API_KEY; never blocks onboarding.
+  if (user.email) {
+    const { subject, html } = welcomeEmail(payload.fullName?.split(" ")[0]);
+    await sendEmail({ to: user.email, subject, html });
   }
 
   revalidatePath("/dashboard");

@@ -1,3 +1,4 @@
+import { TRIAL_APPLICATION_LIMIT } from "@jobposted/shared";
 import { db } from "./supabase";
 
 export interface ClaimedApplication {
@@ -87,10 +88,13 @@ export async function countSubmittedToday(userId: string): Promise<number> {
 export async function dailyLimitFor(userId: string): Promise<number> {
   const { data } = await db()
     .from("subscriptions")
-    .select("daily_limit")
+    .select("daily_limit, status")
     .eq("user_id", userId)
     .maybeSingle();
-  return data?.daily_limit ?? 100; // no subscription → fall back to the direct-ATS safety ceiling
+  // Active subscribers get their plan's daily cap; trial / no-sub users are held to the
+  // 5-application free-trial cap (design doc §12).
+  if (data?.status === "active" && data.daily_limit) return data.daily_limit;
+  return TRIAL_APPLICATION_LIMIT;
 }
 
 type Status =

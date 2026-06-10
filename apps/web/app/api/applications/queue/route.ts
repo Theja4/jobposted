@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { getEntitlement } from "@/lib/billing/entitlement";
 
 export const runtime = "nodejs";
 
@@ -20,6 +21,20 @@ export async function POST(request: Request) {
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
+
+  // Trial / plan gate (design doc §12). Trial users get 5 free applications, then must upgrade.
+  const entitlement = await getEntitlement(user.id);
+  if (!entitlement.canQueue) {
+    return NextResponse.json(
+      {
+        ok: false,
+        error: "trial_exhausted",
+        message: `You've used all ${entitlement.trialLimit} free applications. Upgrade to keep applying.`,
+        upgradeUrl: "/dashboard/billing",
+      },
+      { status: 402 },
+    );
+  }
 
   const { data: job } = await supabase.from("jobs").select("ats_type").eq("id", jobId).maybeSingle();
   if (!job) return NextResponse.json({ ok: false, error: "Job not found" }, { status: 404 });

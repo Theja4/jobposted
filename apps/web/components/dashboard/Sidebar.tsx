@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { LayoutGrid, ListChecks, Settings, LogOut } from "lucide-react";
+import { LayoutGrid, ListChecks, CreditCard, Settings, LogOut } from "lucide-react";
 import { Logo } from "@/components/landing/Logo";
 import { signOut } from "@/lib/actions/auth";
 import { cn } from "@/lib/cn";
@@ -10,6 +10,7 @@ import { cn } from "@/lib/cn";
 const NAV = [
   { href: "/dashboard", label: "Job feed", icon: LayoutGrid, exact: true },
   { href: "/dashboard/queue", label: "Review queue", icon: ListChecks, exact: false },
+  { href: "/dashboard/billing", label: "Billing", icon: CreditCard, exact: false },
   { href: "/dashboard/settings", label: "Settings", icon: Settings, exact: false },
 ] as const;
 

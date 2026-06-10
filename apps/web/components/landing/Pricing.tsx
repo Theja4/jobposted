@@ -107,7 +107,7 @@ function PlanCard({
         </ul>
 
         <CTAButton
-          href="#waitlist"
+          href="/login?next=%2Fdashboard%2Fbilling"
           variant={featured ? "primary" : "secondary"}
           size="lg"
           className="mt-7 w-full"

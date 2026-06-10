@@ -75,6 +75,16 @@ export async function runSubmit(app: ClaimedApplication, job: JobRow): Promise<v
         failure_reason: null,
       });
       log.info("submitted", { id: app.id });
+      // Fire-and-forget submission-confirmation email via the web app (gated on env).
+      const webUrl = process.env.WEB_URL;
+      const emailToken = process.env.EMAIL_SERVICE_TOKEN;
+      if (webUrl && emailToken) {
+        void fetch(`${webUrl}/api/email/submission`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "x-service-token": emailToken },
+          body: JSON.stringify({ applicationId: app.id }),
+        }).catch(() => {});
+      }
     } else {
       await setStatus(app.id, "failed", { failure_reason: "submission not confirmed" });
     }
