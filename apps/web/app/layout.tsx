@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Plus_Jakarta_Sans } from "next/font/google";
 import "./globals.css";
 import { PostHogProvider } from "@/components/providers/PostHogProvider";
+import { SmoothScroll } from "@/components/providers/SmoothScroll";
 import { SITE_DESCRIPTION, SITE_NAME, SITE_TAGLINE, getSiteUrl } from "@/lib/site";
 
 const jakarta = Plus_Jakarta_Sans({
@@ -64,6 +65,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en" className={jakarta.variable}>
       <body>
+        <SmoothScroll />
         <PostHogProvider>{children}</PostHogProvider>
         <script
           type="application/ld+json"

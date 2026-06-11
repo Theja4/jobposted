@@ -20,7 +20,7 @@ const COMPANIES = [
 
 export function SocialProof() {
   return (
-    <section className="-mt-px bg-[#f7fbff] pt-2 pb-12">
+    <section className="relative z-10 bg-white pt-12 pb-12">
       <div className="mx-auto w-full max-w-6xl px-5">
         <Reveal>
           <p className="text-center text-sm font-semibold text-muted/80">

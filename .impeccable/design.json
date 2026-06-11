@@ -1,0 +1,98 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-06-10T19:55:24Z",
+  "title": "Design System: JobPosted",
+  "extensions": {
+    "colorMeta": {
+      "brand-600": {
+        "role": "primary",
+        "displayName": "Confirmed Green",
+        "canonical": "#039855",
+        "tonalRamp": ["#ecfdf3", "#d1fadf", "#a6f4c5", "#6ce9a6", "#32d583", "#12b76a", "#039855", "#027a48", "#05603a", "#054f31"]
+      },
+      "ink": {
+        "role": "neutral",
+        "displayName": "Ink",
+        "canonical": "#0c1410",
+        "tonalRamp": ["#586b60", "#0c1410"]
+      },
+      "zinc-100": {
+        "role": "neutral",
+        "displayName": "Zinc Field System",
+        "canonical": "#f4f4f5",
+        "tonalRamp": ["#fafafa", "#f4f4f5", "#e4e4e7", "#d4d4d8", "#a1a1aa", "#71717a"]
+      },
+      "amber-700": {
+        "role": "warning",
+        "displayName": "Operational Amber",
+        "canonical": "#b45309",
+        "tonalRamp": ["#fffbeb", "#b45309"]
+      },
+      "red-600": {
+        "role": "error",
+        "displayName": "Failure Red",
+        "canonical": "#dc2626",
+        "tonalRamp": ["#dc2626"]
+      }
+    },
+    "typographyMeta": {
+      "display": {
+        "displayName": "Display",
+        "purpose": "Landing hero headlines only; keep tracking at or above -0.04em."
+      },
+      "headline": {
+        "displayName": "Headline",
+        "purpose": "Page titles, section headings, and dashboard headers."
+      },
+      "title": {
+        "displayName": "Title",
+        "purpose": "Card titles, labels with emphasis, pricing plan names, and component headings."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "Explanatory copy, queue descriptions, dashboard prose, and FAQ answers."
+      },
+      "label": {
+        "displayName": "Label",
+        "purpose": "Buttons, badges, nav links, helper labels, and status text."
+      }
+    },
+    "elevation": {
+      "button-rest": {
+        "value": "shadow-sm shadow-brand-600/20",
+        "purpose": "Primary buttons only."
+      },
+      "card-hover": {
+        "value": "hover:shadow-md hover:shadow-brand-900/5",
+        "purpose": "Clickable repeated cards and pricing panels."
+      },
+      "product-preview": {
+        "value": "shadow-xl shadow-brand-900/10",
+        "purpose": "Landing page product-loop preview."
+      }
+    },
+    "motion": {
+      "defaultDuration": "150-250ms",
+      "allowed": ["state feedback", "loading feedback", "lightweight reveal"],
+      "reducedMotion": "Global prefers-reduced-motion rule neutralizes CSS transitions and animations."
+    },
+    "breakpoints": {
+      "sm": "640px",
+      "md": "768px",
+      "lg": "1024px"
+    },
+    "rules": {
+      "northStar": "The Confirmed Queue",
+      "do": [
+        "Keep the confirmation step visible whenever an application could be submitted.",
+        "Use brand green for primary action, selected state, positive progress, and confirmation.",
+        "Use clear status text with color and icons."
+      ],
+      "dont": [
+        "Do not make JobPosted look like a mass auto-apply spam tool or hidden autonomous agent.",
+        "Do not imply LinkedIn, Workday, or login-gated platforms run from JobPosted servers.",
+        "Do not use dark neon AI-console styling, purple/blue gradient SaaS gloss, glassmorphism, or gradient text."
+      ]
+    }
+  }
+}
