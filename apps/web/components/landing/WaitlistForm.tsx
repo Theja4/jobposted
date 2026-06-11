@@ -9,7 +9,13 @@ import { cn } from "@/lib/cn";
 
 type Status = "idle" | "submitting" | "success" | "error";
 
-export function WaitlistForm({ className }: { className?: string }) {
+export function WaitlistForm({
+  className,
+  ctaLabel = "Get early access",
+}: {
+  className?: string;
+  ctaLabel?: string;
+}) {
   const [email, setEmail] = useState("");
   const [status, setStatus] = useState<Status>("idle");
   const [message, setMessage] = useState<string>("");
@@ -91,7 +97,7 @@ export function WaitlistForm({ className }: { className?: string }) {
                 </>
               ) : (
                 <>
-                  Get early access <ArrowRight className="size-4" />
+                  {ctaLabel} <ArrowRight className="size-4" />
                 </>
               )}
             </button>

@@ -7,13 +7,13 @@ type Props = {
   className?: string;
   /** Stagger offset in seconds for sequenced reveals. */
   delay?: number;
+  amount?: number;
 };
 
 /**
- * Fade + slight rise on scroll-into-view. Transform/opacity only, 220ms, once (design doc
- * §23.9). Honors prefers-reduced-motion by rendering statically.
+ * Slight rise on scroll-into-view. Content remains visible before the animation fires.
  */
-export function Reveal({ children, className, delay = 0 }: Props) {
+export function Reveal({ children, className, delay = 0, amount = 0.22 }: Props) {
   const reduce = useReducedMotion();
 
   if (reduce) {
@@ -23,10 +23,10 @@ export function Reveal({ children, className, delay = 0 }: Props) {
   return (
     <motion.div
       className={className}
-      initial={{ opacity: 0, y: 16 }}
-      whileInView={{ opacity: 1, y: 0 }}
-      viewport={{ once: true, amount: 0.3 }}
-      transition={{ duration: 0.22, ease: "easeOut", delay }}
+      initial={{ opacity: 0.82, y: 28, scale: 0.985, filter: "blur(3px)" }}
+      whileInView={{ opacity: 1, y: 0, scale: 1, filter: "blur(0px)" }}
+      viewport={{ once: true, amount }}
+      transition={{ duration: 0.56, ease: [0.22, 1, 0.36, 1], delay }}
     >
       {children}
     </motion.div>

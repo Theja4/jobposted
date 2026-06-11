@@ -1,4 +1,4 @@
-import { Ban, MousePointerClick, Laptop } from "lucide-react";
+import { Ban, Laptop, LockKeyhole, type LucideIcon, MousePointerClick } from "lucide-react";
 import { Reveal } from "@/components/ui/Reveal";
 
 const PILLARS = [
@@ -21,36 +21,60 @@ const PILLARS = [
 
 export function Trust() {
   return (
-    <section className="bg-ink px-5 py-20 text-white sm:py-24">
-      <div className="mx-auto w-full max-w-6xl">
-        <Reveal className="max-w-2xl">
-          <p className="text-sm font-semibold tracking-wide text-brand-300 uppercase">
-            Why you won&apos;t get banned
-          </p>
-          <h2 className="mt-3 text-3xl font-bold tracking-tight text-balance sm:text-4xl">
-            Built so a bot never gets you in trouble.
+    <section id="trust" className="bg-navy px-5 py-20 text-white sm:py-24">
+      <div className="mx-auto grid w-full max-w-6xl gap-10 lg:grid-cols-[0.95fr_1.05fr] lg:items-center">
+        <Reveal>
+          <p className="text-sm font-bold text-brand-200">Control layer</p>
+          <h2 className="mt-3 text-4xl font-extrabold tracking-[-0.03em] text-balance sm:text-5xl">
+            Built so automation never outruns your judgment.
           </h2>
           <p className="mt-4 text-lg text-pretty text-white/70">
             Auto-apply tools have a reputation for spraying garbage and getting accounts
             restricted. We designed JobPosted to be the opposite — and it&apos;s the one thing
             every competitor leaves out.
           </p>
+
+          <div className="mt-8 grid gap-3 sm:grid-cols-2">
+            <ControlRow icon={MousePointerClick} label="You confirm every final submission" />
+            <ControlRow icon={LockKeyhole} label="No LinkedIn or Workday password storage" />
+            <ControlRow icon={Laptop} label="Logged-in platforms run in your browser" />
+            <ControlRow icon={Ban} label="No generic batch blasting" />
+          </div>
         </Reveal>
 
-        <div className="mt-12 grid gap-6 md:grid-cols-3">
+        <div className="grid gap-4">
           {PILLARS.map((p, i) => (
             <Reveal key={p.title} delay={i * 0.07}>
-              <div className="h-full rounded-2xl border border-white/10 bg-white/[0.04] p-6">
-                <div className="flex size-11 items-center justify-center rounded-xl bg-brand-500/15 text-brand-300">
-                  <p.icon className="size-5.5" strokeWidth={2} />
+              <div className="group rounded-2xl bg-white/[0.06] p-5 ring-1 ring-inset ring-white/10 transition duration-200 hover:-translate-y-1 hover:bg-white/[0.09]">
+                <div className="flex items-start gap-4">
+                  <span className="grid size-11 shrink-0 place-items-center rounded-xl bg-brand-500/20 text-brand-200 transition-transform duration-200 group-hover:scale-105">
+                    <p.icon className="size-5.5" strokeWidth={2} />
+                  </span>
+                  <div>
+                    <h3 className="text-lg font-semibold">{p.title}</h3>
+                    <p className="mt-2 text-sm leading-6 text-pretty text-white/65">{p.body}</p>
+                  </div>
                 </div>
-                <h3 className="mt-4 text-lg font-semibold">{p.title}</h3>
-                <p className="mt-2 text-sm text-pretty text-white/65">{p.body}</p>
               </div>
             </Reveal>
           ))}
         </div>
       </div>
     </section>
+  );
+}
+
+function ControlRow({
+  icon: Icon,
+  label,
+}: {
+  icon: LucideIcon;
+  label: string;
+}) {
+  return (
+    <div className="flex items-center gap-2.5 rounded-xl bg-white/[0.06] px-3 py-2.5 text-sm font-bold text-white/85 ring-1 ring-inset ring-white/10 transition duration-200 hover:bg-white/[0.1]">
+      <Icon className="size-4 shrink-0 text-brand-200" strokeWidth={2.3} />
+      <span>{label}</span>
+    </div>
   );
 }

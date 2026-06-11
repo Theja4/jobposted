@@ -2,7 +2,7 @@ import { ImageResponse } from "next/og";
 import { SITE_NAME } from "@/lib/site";
 
 export const runtime = "edge";
-export const alt = `${SITE_NAME} — apply to the right jobs while you sleep`;
+export const alt = `${SITE_NAME} — queue tailored applications you approve`;
 export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
 
@@ -17,7 +17,7 @@ export default function OpengraphImage() {
           flexDirection: "column",
           justifyContent: "space-between",
           padding: 80,
-          background: "linear-gradient(135deg, #ffffff 0%, #ecfdf3 100%)",
+          background: "linear-gradient(135deg, #ffffff 0%, #eff6ff 62%, #dbeafe 100%)",
           fontFamily: "sans-serif",
         }}
       >
@@ -27,7 +27,7 @@ export default function OpengraphImage() {
               width: 56,
               height: 56,
               borderRadius: 16,
-              background: "#039855",
+              background: "#1f64e0",
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
@@ -51,9 +51,9 @@ export default function OpengraphImage() {
               maxWidth: 980,
             }}
           >
-            Apply to the right jobs <span style={{ color: "#039855" }}>while you sleep.</span>
+            Apply to roles worth your time. <span style={{ color: "#1f64e0" }}>You confirm.</span>
           </div>
-          <div style={{ fontSize: 30, color: "#586b60", maxWidth: 900 }}>
+          <div style={{ fontSize: 30, color: "#526173", maxWidth: 900 }}>
             Tailored to every role · you confirm every submission · never sprayed.
           </div>
         </div>

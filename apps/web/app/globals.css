@@ -1,20 +1,26 @@
 @import "tailwindcss";
 
-/* Brand identity — a refined green scale, in the same family as Rezoomed (design doc §7.2). */
+/* Brand identity — a restrained blue system for a calm, trustworthy product surface. */
 @theme {
-  --color-brand-50: #ecfdf3;
-  --color-brand-100: #d1fadf;
-  --color-brand-200: #a6f4c5;
-  --color-brand-300: #6ce9a6;
-  --color-brand-400: #32d583;
-  --color-brand-500: #12b76a;
-  --color-brand-600: #039855; /* primary action */
-  --color-brand-700: #027a48;
-  --color-brand-800: #05603a;
-  --color-brand-900: #054f31;
+  --color-brand-50: #eff6ff;
+  --color-brand-100: #dbeafe;
+  --color-brand-200: #bfdbfe;
+  --color-brand-300: #93c5fd;
+  --color-brand-400: #60a5fa;
+  --color-brand-500: #2f7df4;
+  --color-brand-600: #1f64e0; /* primary action */
+  --color-brand-700: #174fb8;
+  --color-brand-800: #143f91;
+  --color-brand-900: #102f66;
 
-  --color-ink: #0c1410;
-  --color-muted: #586b60;
+  --color-ink: #0b1220;
+  --color-muted: #526173;
+  --color-navy: #071a33;
+  --color-panel: #f7fbff;
+  --color-aqua: #16c7d4;
+  --color-mint: #26c485;
+  --color-coral: #ff6b5f;
+  --color-sun: #f8b84e;
 
   --font-sans: var(--font-jakarta), ui-sans-serif, system-ui, -apple-system, "Segoe UI",
     sans-serif;
@@ -45,6 +51,169 @@
   :focus-visible {
     outline: 2px solid var(--color-brand-600);
     outline-offset: 2px;
+  }
+}
+
+@layer utilities {
+  .landing-stage {
+    background-image:
+      linear-gradient(115deg, rgba(31, 100, 224, 0.12), transparent 34%),
+      linear-gradient(180deg, #ffffff 0%, #f7fbff 48%, #eaf4ff 100%);
+  }
+
+  .blueprint-grid {
+    background-image:
+      linear-gradient(rgba(31, 100, 224, 0.075) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(31, 100, 224, 0.075) 1px, transparent 1px);
+    background-size: 48px 48px;
+    mask-image: linear-gradient(180deg, black 0%, rgba(0, 0, 0, 0.76) 54%, transparent 100%);
+  }
+
+  .media-stripes {
+    background-image:
+      linear-gradient(135deg, rgba(31, 100, 224, 0.12) 0 1px, transparent 1px 18px),
+      linear-gradient(135deg, rgba(22, 199, 212, 0.14) 0 1px, transparent 1px 24px);
+    background-size: 18px 18px, 24px 24px;
+  }
+
+  .panel-drift {
+    animation: panel-drift 8s ease-in-out infinite;
+  }
+
+  .queue-pulse {
+    animation: queue-pulse 2.6s ease-in-out infinite;
+  }
+
+  .soft-float {
+    animation: soft-float 7s ease-in-out infinite;
+  }
+
+  .soft-float-slow {
+    animation: soft-float 10s ease-in-out infinite;
+  }
+
+  .scan-line {
+    animation: scan-line 4.8s cubic-bezier(0.22, 1, 0.36, 1) infinite;
+  }
+
+  .score-sweep {
+    animation: score-sweep 5s ease-in-out infinite;
+  }
+
+  .ticker-track {
+    animation: ticker-track 24s linear infinite;
+  }
+
+  .line-draw {
+    stroke-dasharray: 460;
+    stroke-dashoffset: 460;
+    animation: line-draw 4.6s ease-out infinite;
+  }
+
+  .motion-delay-1 {
+    animation-delay: 0.35s;
+  }
+
+  .motion-delay-2 {
+    animation-delay: 0.7s;
+  }
+}
+
+@keyframes panel-drift {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0);
+  }
+
+  50% {
+    transform: translate3d(0, -8px, 0);
+  }
+}
+
+@keyframes soft-float {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) rotate(0deg);
+  }
+
+  50% {
+    transform: translate3d(0, -10px, 0) rotate(0.6deg);
+  }
+}
+
+@keyframes scan-line {
+  0% {
+    transform: translateY(-120%);
+    opacity: 0;
+  }
+
+  16% {
+    opacity: 0.9;
+  }
+
+  58% {
+    opacity: 0.9;
+  }
+
+  100% {
+    transform: translateY(620%);
+    opacity: 0;
+  }
+}
+
+@keyframes score-sweep {
+  0%,
+  18% {
+    width: 18%;
+  }
+
+  58%,
+  100% {
+    width: 92%;
+  }
+}
+
+@keyframes ticker-track {
+  from {
+    transform: translateX(0);
+  }
+
+  to {
+    transform: translateX(-50%);
+  }
+}
+
+@keyframes queue-pulse {
+  0%,
+  100% {
+    opacity: 0.72;
+    transform: scale(1);
+  }
+
+  50% {
+    opacity: 1;
+    transform: scale(1.04);
+  }
+}
+
+@keyframes line-draw {
+  0% {
+    stroke-dashoffset: 460;
+    opacity: 0;
+  }
+
+  16% {
+    opacity: 1;
+  }
+
+  68% {
+    stroke-dashoffset: 0;
+    opacity: 1;
+  }
+
+  100% {
+    stroke-dashoffset: 0;
+    opacity: 0;
   }
 }
 
