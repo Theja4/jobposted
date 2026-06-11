@@ -11,7 +11,8 @@ type Props = {
 };
 
 /**
- * Slight rise on scroll-into-view. Content remains visible before the animation fires.
+ * Slight rise on scroll-into-view. Avoid filter-based reveals: browser back/forward
+ * restoration can leave sections stuck with a blur filter before in-view state settles.
  */
 export function Reveal({ children, className, delay = 0, amount = 0.22 }: Props) {
   const reduce = useReducedMotion();
@@ -23,8 +24,8 @@ export function Reveal({ children, className, delay = 0, amount = 0.22 }: Props)
   return (
     <motion.div
       className={className}
-      initial={{ opacity: 0.82, y: 28, scale: 0.985, filter: "blur(3px)" }}
-      whileInView={{ opacity: 1, y: 0, scale: 1, filter: "blur(0px)" }}
+      initial={{ opacity: 0.9, y: 24, scale: 0.992 }}
+      whileInView={{ opacity: 1, y: 0, scale: 1 }}
       viewport={{ once: true, amount }}
       transition={{ duration: 0.56, ease: [0.22, 1, 0.36, 1], delay }}
     >

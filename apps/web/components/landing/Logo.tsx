@@ -1,30 +1,33 @@
+import Image from "next/image";
 import { cn } from "@/lib/cn";
 import { SITE_NAME } from "@/lib/site";
 
-/** Brand wordmark: a confirmed-queue mark + "JobPosted". */
+const BRAND_SPLIT_INDEX = SITE_NAME.indexOf("Posted");
+
+/** Brand wordmark: J + paper-plane mark with "JobPosted". */
 export function Logo({ className }: { className?: string }) {
+  const prefix = BRAND_SPLIT_INDEX > -1 ? SITE_NAME.slice(0, BRAND_SPLIT_INDEX) : SITE_NAME;
+  const suffix = BRAND_SPLIT_INDEX > -1 ? SITE_NAME.slice(BRAND_SPLIT_INDEX) : "";
+
   return (
-    <span className={cn("inline-flex items-center gap-2.5 font-bold tracking-tight", className)}>
-      <svg
-        width="28"
-        height="28"
-        viewBox="0 0 28 28"
-        fill="none"
+    <span
+      className={cn(
+        "inline-flex items-center gap-2.5 font-extrabold tracking-[-0.02em]",
+        className,
+      )}
+    >
+      <Image
+        src="/brand/jobposted-mark.png"
+        alt=""
+        width={640}
+        height={602}
         aria-hidden="true"
-        className="shrink-0"
-      >
-        <rect width="28" height="28" rx="8" className="fill-brand-600" />
-        <path d="M8 9.5h8.5" stroke="white" strokeWidth="2" strokeLinecap="round" />
-        <path d="M8 14h5.5" stroke="white" strokeWidth="2" strokeLinecap="round" opacity="0.72" />
-        <path
-          d="M16.2 17.1l2.1 2.1 4-4.45"
-          stroke="white"
-          strokeWidth="2.15"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-      </svg>
-      <span className="text-ink">{SITE_NAME}</span>
+        className="h-[2.25em] w-[2.4em] shrink-0 object-contain"
+      />
+      <span className="leading-none text-ink">
+        {prefix}
+        {suffix && <span className="text-brand-700">{suffix}</span>}
+      </span>
     </span>
   );
 }

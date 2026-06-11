@@ -56,7 +56,7 @@ const PRICING_CARDS = [
 ] as const;
 
 export function Pricing() {
-  const [billing, setBilling] = useState<Billing>("annual");
+  const [billing, setBilling] = useState<Billing>("monthly");
 
   return (
     <section
