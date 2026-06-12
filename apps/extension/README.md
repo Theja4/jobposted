@@ -1,50 +1,125 @@
-# @jobposted/extension — Phase 5 (not yet implemented)
+# JobPosted Chrome Extension
 
-A **Manifest V3** Chrome extension for **logged-in platforms** (LinkedIn, login-gated
-Workday) where the application must originate from the user's own browser, session, and IP —
-running these from a datacenter IP gets the user restricted (design doc §13.1, §11.7).
+Manifest V3 extension for login-gated job applications. The extension fills ATS forms inside the user's authenticated Chrome session, attaches the JobPosted/Rezoomed resume, stops at final Submit by default, and syncs the fill record back to the JobPosted dashboard.
 
-> Deferred on purpose. Do **not** build this until the Greenhouse/Lever server-side apply path
-> is converting (design doc §22). It is built with GPT-5.5 for the popup UI and Opus 4.8 for
-> the MV3 data-not-code architecture and the LinkedIn content script (Prompt 7).
+## Stack
 
-## Reuse the proven Rezoomed pattern
+- WXT, Manifest V3, TypeScript
+- React 19 for popup, options, and the in-page shadow-DOM overlay
+- Tailwind CSS v4 via `@tailwindcss/vite`
+- `@jobposted/shared` for profile, application sync, settings, and message types
+- Supabase session reuse through the JobPosted web app bridge
 
-Rezoomed already ships a Chrome-approved MV3 extension built with **WXT** — clone its shape:
-`resumeplanet/linkedin-profile-optimizer-extension/wxt.config.ts`. Key things to copy:
+## Environment
 
-- **WXT + TypeScript + React popup**, `manifestVersion: 3`.
-- **Minimal permissions.** Start with `storage` + explicit `host_permissions` for named ATS
-  domains (`*://*.greenhouse.io/*`, `*://*.lever.co/*`, `*://*.myworkdayjobs.com/*`,
-  `*://*.linkedin.com/*`). **Never `<all_urls>`** — it triggers the "read and change all your
-  data on all websites" warning and deep manual review (design doc §13.3).
-- **`externally_connectable`** to your web origin so the site can wake the service worker for
-  silent token refresh.
-- Drop localhost host-permissions from production builds for the smallest reviewer footprint.
+Create `apps/extension/.env.local` for local development:
 
-## The MV3 constraint that decides everything (design doc §13.2)
-
-**No remotely-hosted code execution.** The reviewer must determine full functionality from the
-package. So the field-mapping logic lives **in the package**, and the backend returns **data**
-(the field map and values) — never code. This is the same `FieldMap` contract the server
-worker uses (`@jobposted/shared` → `FieldMap`). Architect around this from the first commit.
-
-## Planned shape (design doc §13.2, §13.4)
-
-```
-src/
-  background.ts     service worker: fetch profile, fetch field map (DATA), report status
-  content/          per-ATS content scripts that fill the DOM from the field map (CSS-only motion)
-  popup/            React popup mirroring the web review queue (queue, start/pause, status)
-manifest.json       one written justification per permission
+```bash
+WXT_JOBPOSTED_WEB_ORIGIN=http://localhost:3000
+WXT_SUPABASE_URL=...
+WXT_SUPABASE_ANON_KEY=...
+WXT_INCLUDE_LOCALHOST=1
 ```
 
-- A first-run onboarding page (pin the icon, run the first application).
-- A live fill overlay (a light CSS highlight pulse per field) — doubles as the trust signal (§23.9).
-- **Never auto-submit by default**; auto-submit is an explicit opt-in toggle (§13.4).
+Production defaults to `https://www.jobposted.ai`. The service-role key and AI/model keys are never bundled into the extension.
 
-## Store submission (design doc §13.5)
+The web app routes use:
 
-$5 one-time developer fee · MV3 only · single-purpose statement ("autofill and submit job
-applications") · privacy policy + terms URLs required · launch **Unlisted** for beta · expect
-at least one rejection. Plan ~2 weeks of review for an automation extension.
+```bash
+NEXT_PUBLIC_SUPABASE_URL=...
+NEXT_PUBLIC_SUPABASE_ANON_KEY=...
+SUPABASE_SERVICE_ROLE_KEY=...
+AI_GATEWAY_API_KEY=...        # optional, for ambiguous field mapping
+AI_GATEWAY_BASE_URL=https://ai-gateway.vercel.sh/v1
+AI_GATEWAY_MODEL=openai/gpt-5-mini
+```
+
+## Run
+
+```bash
+pnpm install
+pnpm -F @jobposted/extension dev
+```
+
+## Build And Load Unpacked
+
+```bash
+pnpm -F @jobposted/extension build
+```
+
+Load this folder in Chrome:
+
+```text
+apps/extension/.output/chrome-mv3
+```
+
+Chrome steps:
+
+1. Open `chrome://extensions`
+2. Enable Developer mode
+3. Click Load unpacked
+4. Select `apps/extension/.output/chrome-mv3`
+
+## Auth Flow
+
+The popup opens `/extension/bridge` on the JobPosted web app. If the user is already signed in, the bridge page posts the Supabase session to the JobPosted-origin content script, which forwards it to the background service worker. The background stores the session in `chrome.storage.local` and owns all API calls.
+
+The extension never collects or stores Workday, LinkedIn, or employer passwords.
+
+## Autofill Architecture
+
+- `entrypoints/background.ts`: session storage, refresh, settings, API proxy, application sync.
+- `entrypoints/content.tsx`: supported-host content script, session bridge listener, shadow overlay, fill runner.
+- `src/autofill/*`: platform-agnostic field discovery, canonical matching, React-safe value setting, file upload attachment.
+- `src/adapters/*`: thin ATS adapters that provide match rules, stable selector hints, step detection, Next/Submit controls, and maintenance notes.
+
+## Adding An Adapter
+
+1. Add a file in `src/adapters/<platform>.ts`.
+2. Implement `PlatformAdapter`:
+   - `match(url, dom)`
+   - `detectStep(dom)`
+   - `mapFields(dom)` with stable selectors mapped to canonical keys
+   - `findAdvance(dom)`
+   - `findSubmit(dom)`
+   - `notes`
+3. Export it from `src/adapters/index.ts` before `makeGenericAdapter()`.
+4. Add a small DOM fixture under `src/fixtures/`.
+5. Add/extend `src/autofill/field-resolution.test.ts`.
+6. Add the host to `ATS_HOSTS` in `wxt.config.ts` only if it is a named supported domain.
+
+Do not add `<all_urls>`. Unknown forms are handled by the generic fallback only when the host is already in the permission list and the user enables fallback in options.
+
+## Field Mapping And LLM Cache
+
+Resolution order:
+
+1. Adapter selector hints.
+2. Label, ARIA, placeholder, surrounding text, fieldset legend, and options.
+3. Normalized canonical rules (`identity.firstName`, `workAuth.requiresSponsorship`, `documents.resume`, etc.).
+4. Reusable answers from `jobposted.profile_answers`.
+5. Background-brokered `/api/extension/field-map`, which checks `jobposted.extension_field_mappings` before optionally calling Vercel AI Gateway.
+
+The backend returns data only:
+
+```ts
+{
+  canonicalKey: "answers.notice_period",
+  value: "Two weeks",
+  confidence: 0.82,
+  source: "llm"
+}
+```
+
+No remote code or model keys are bundled in the extension.
+
+## Tests
+
+```bash
+pnpm -F @jobposted/extension test
+pnpm -F @jobposted/extension typecheck
+pnpm -F @jobposted/shared typecheck
+pnpm -F @jobposted/web typecheck
+```
+
+Fixtures currently cover Workday, Greenhouse, Lever, Ashby, and generic fallback field resolution.

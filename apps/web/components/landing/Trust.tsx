@@ -1,13 +1,12 @@
 "use client";
 
 import { motion, useReducedMotion } from "framer-motion";
-import { ArrowRight, Ban, Laptop, LockKeyhole, MousePointer2, type LucideIcon } from "lucide-react";
+import { Ban, PauseCircle, Sparkles, type LucideIcon } from "lucide-react";
 import { Reveal } from "@/components/ui/Reveal";
 
 const FACTS = [
-  { icon: Ban, label: "No spray — tailored only" },
-  { icon: LockKeyhole, label: "No passwords stored" },
-  { icon: Laptop, label: "LinkedIn stays in your browser" },
+  { icon: Ban, label: "Never spray and pray, always tailored" },
+  { icon: PauseCircle, label: "Pause or skip any role, anytime" },
 ] as const;
 
 /** One shared loop so every element of the pipeline stays in sync. */
@@ -31,10 +30,10 @@ export function Trust() {
         <div className="relative z-10 mx-auto w-full max-w-5xl">
           <Reveal className="mx-auto max-w-2xl text-center">
             <p className="text-sm font-extrabold tracking-[0.2em] text-brand-200 uppercase">
-              Control layer
+              Stay in control
             </p>
             <h2 className="mt-4 text-4xl font-extrabold tracking-[-0.035em] text-balance sm:text-5xl">
-              Automation never outruns your judgment.
+              It runs on its own. You still call the shots.
             </h2>
           </Reveal>
 
@@ -43,7 +42,7 @@ export function Trust() {
           </Reveal>
 
           <Reveal delay={0.12}>
-            <div className="mt-10 flex flex-wrap items-center justify-center gap-3">
+            <div className="mx-auto mt-10 flex max-w-2xl flex-wrap items-center justify-center gap-4">
               {FACTS.map((fact) => (
                 <FactChip key={fact.label} icon={fact.icon} label={fact.label} />
               ))}
@@ -56,8 +55,9 @@ export function Trust() {
 }
 
 /**
- * The story as motion: an application leaves the queue, is HELD at the confirm
- * gate, your cursor presses confirm, and only then does it fly out as sent.
+ * The story as motion: a matched role leaves the queue, passes through the
+ * tailoring pass (its resume is rewritten), and flies out as sent — all on its
+ * own. You stay in control with a once-a-day acknowledgement, not per-send clicks.
  */
 function ConfirmPipeline({ reduce }: { reduce: boolean }) {
   return (
@@ -84,11 +84,11 @@ function ConfirmPipeline({ reduce }: { reduce: boolean }) {
               reduce
                 ? undefined
                 : {
-                    x: [0, 18, 228, 228, 228, 520],
-                    opacity: [0, 1, 1, 1, 1, 0],
+                    x: [0, 18, 228, 228, 520],
+                    opacity: [0, 1, 1, 1, 0],
                   }
             }
-            transition={reduce ? undefined : { ...LOOP, times: [0, 0.08, 0.3, 0.62, 0.68, 0.92] }}
+            transition={reduce ? undefined : { ...LOOP, times: [0, 0.08, 0.34, 0.6, 0.92] }}
             style={reduce ? { transform: "translateX(228px)" } : undefined}
             className="absolute top-1/2 left-2 z-10 w-44 -translate-y-1/2 rounded-2xl bg-white p-3.5 text-ink shadow-[0_24px_50px_rgba(2,10,28,0.5)]"
           >
@@ -103,10 +103,10 @@ function ConfirmPipeline({ reduce }: { reduce: boolean }) {
               <span className="block h-1.5 w-10/12 rounded-full bg-brand-100" />
               <span className="block h-1.5 w-7/12 rounded-full bg-aqua/40" />
             </div>
-            {/* approval check pops after the click */}
+            {/* tailored check pops as it passes the tailoring node */}
             <motion.span
-              animate={reduce ? undefined : { scale: [0, 0, 0, 0, 1, 1], opacity: [0, 0, 0, 0, 1, 1] }}
-              transition={reduce ? undefined : { ...LOOP, times: [0, 0.3, 0.55, 0.6, 0.66, 1] }}
+              animate={reduce ? undefined : { scale: [0, 0, 0, 1, 1], opacity: [0, 0, 0, 1, 1] }}
+              transition={reduce ? undefined : { ...LOOP, times: [0, 0.34, 0.46, 0.54, 1] }}
               className="absolute -top-2 -right-2 grid size-7 place-items-center rounded-full bg-mint text-white shadow-[0_8px_18px_rgba(38,196,133,0.5)]"
             >
               <svg viewBox="0 0 16 16" className="size-3.5" fill="none" aria-hidden>
@@ -121,45 +121,26 @@ function ConfirmPipeline({ reduce }: { reduce: boolean }) {
             </motion.span>
           </motion.div>
 
-          {/* held badge above the gate */}
+          {/* tailoring badge above the node */}
           <motion.span
             animate={reduce ? undefined : { opacity: [0, 0, 1, 1, 0, 0], y: [6, 6, 0, 0, -4, -4] }}
-            transition={reduce ? undefined : { ...LOOP, times: [0, 0.3, 0.38, 0.56, 0.64, 1] }}
+            transition={reduce ? undefined : { ...LOOP, times: [0, 0.3, 0.38, 0.54, 0.6, 1] }}
             className="absolute top-7 left-[300px] rotate-[5deg] rounded-full bg-sun px-3 py-1 text-[11px] font-black text-[#3d2c05] shadow-[0_10px_24px_rgba(248,184,78,0.4)]"
             style={reduce ? { opacity: 1 } : undefined}
           >
-            held for your review
+            tailoring your resume
           </motion.span>
 
-          {/* the confirm gate */}
+          {/* the tailoring node */}
           <motion.div
-            animate={reduce ? undefined : { scale: [1, 1, 1, 0.93, 1, 1] }}
-            transition={reduce ? undefined : { ...LOOP, times: [0, 0.45, 0.52, 0.57, 0.62, 1] }}
-            className="liquid-glass-dark absolute top-1/2 left-[300px] z-20 flex w-56 -translate-y-1/2 items-center justify-between gap-3 rounded-full py-3 pr-3 pl-6"
+            animate={reduce ? undefined : { scale: [1, 1, 1.05, 1, 1] }}
+            transition={reduce ? undefined : { ...LOOP, times: [0, 0.34, 0.46, 0.56, 1] }}
+            className="absolute top-1/2 left-[300px] z-20 flex w-52 -translate-y-1/2 items-center justify-between gap-3 rounded-full bg-white/90 py-3 pr-3 pl-6 text-ink shadow-[0_18px_40px_rgba(2,10,28,0.32)] ring-1 ring-white/70 ring-inset backdrop-blur-xl"
           >
-            <span className="text-base font-extrabold whitespace-nowrap">Confirm &amp; send</span>
-            <span className="grid size-10 shrink-0 place-items-center rounded-full bg-white text-brand-700">
-              <ArrowRight className="size-5" />
+            <span className="text-base font-extrabold whitespace-nowrap">Tailoring</span>
+            <span className="grid size-10 shrink-0 place-items-center rounded-full bg-brand-600 text-white shadow-[0_8px_18px_rgba(31,100,224,0.24)]">
+              <Sparkles className="size-5" />
             </span>
-          </motion.div>
-
-          {/* your cursor */}
-          <motion.div
-            animate={
-              reduce
-                ? undefined
-                : {
-                    x: [70, 70, 0, 0, 0, 36],
-                    y: [60, 60, 0, 0, 0, 24],
-                    scale: [1, 1, 1, 0.82, 1, 1],
-                    opacity: [0, 0, 1, 1, 1, 0],
-                  }
-            }
-            transition={reduce ? undefined : { ...LOOP, times: [0, 0.34, 0.48, 0.57, 0.66, 0.9] }}
-            className="absolute top-[150px] left-[472px] z-30"
-            style={reduce ? { opacity: 1 } : undefined}
-          >
-            <MousePointer2 className="size-7 rotate-[-8deg] fill-white text-navy drop-shadow-[0_6px_14px_rgba(2,10,28,0.6)]" />
           </motion.div>
 
           {/* sent plane */}
@@ -169,7 +150,7 @@ function ConfirmPipeline({ reduce }: { reduce: boolean }) {
                 ? undefined
                 : { x: [0, 0, 0, 90, 150], y: [10, 10, 10, -34, -60], opacity: [0, 0, 0, 1, 0] }
             }
-            transition={reduce ? undefined : { ...LOOP, times: [0, 0.62, 0.7, 0.84, 0.96] }}
+            transition={reduce ? undefined : { ...LOOP, times: [0, 0.58, 0.66, 0.84, 0.96] }}
             className="absolute top-[88px] left-[540px]"
           >
             <svg width="44" height="36" viewBox="0 0 92 74" fill="none" aria-hidden>
@@ -187,7 +168,7 @@ function ConfirmPipeline({ reduce }: { reduce: boolean }) {
           {/* sent chip */}
           <motion.span
             animate={reduce ? undefined : { opacity: [0, 0, 0, 1, 1, 0], scale: [0.8, 0.8, 0.8, 1, 1, 0.9] }}
-            transition={reduce ? undefined : { ...LOOP, times: [0, 0.6, 0.74, 0.8, 0.92, 1] }}
+            transition={reduce ? undefined : { ...LOOP, times: [0, 0.58, 0.72, 0.8, 0.92, 1] }}
             className="absolute top-1/2 right-0 -translate-y-1/2 rounded-full bg-mint/90 px-3.5 py-1.5 text-xs font-black text-white shadow-[0_10px_24px_rgba(38,196,133,0.4)]"
             style={reduce ? { opacity: 1 } : undefined}
           >
@@ -196,9 +177,9 @@ function ConfirmPipeline({ reduce }: { reduce: boolean }) {
 
           {/* stage labels */}
           <div className="absolute inset-x-2 bottom-0 flex justify-between text-xs font-bold tracking-[0.14em] text-white/45 uppercase">
-            <span>Queue prepares</span>
-            <span className="-translate-x-3">You confirm</span>
-            <span>Then it sends</span>
+            <span>Matched</span>
+            <span className="-translate-x-3">Tailored</span>
+            <span>Sent for you</span>
           </div>
         </div>
       </div>
@@ -218,7 +199,7 @@ function GhostLines() {
 
 function FactChip({ icon: Icon, label }: { icon: LucideIcon; label: string }) {
   return (
-    <span className="liquid-glass-dark inline-flex items-center gap-2.5 rounded-full px-4 py-2.5 text-sm font-bold text-white/90">
+    <span className="liquid-glass-dark inline-flex items-center gap-2.5 rounded-full px-4 py-2.5 text-sm font-bold text-white/90 sm:px-5">
       <Icon className="size-4 text-brand-200" strokeWidth={2.4} />
       {label}
     </span>

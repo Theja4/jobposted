@@ -2,5 +2,32 @@
   "name": "@jobposted/extension",
   "version": "0.1.0",
   "private": true,
-  "description": "Manifest V3 Chrome extension for logged-in platforms. Phase 5 — not yet implemented."
+  "type": "module",
+  "description": "Manifest V3 Chrome extension for JobPosted autofill on login-gated ATS platforms.",
+  "scripts": {
+    "dev": "wxt",
+    "build": "wxt build",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "postinstall": "wxt prepare"
+  },
+  "dependencies": {
+    "@jobposted/shared": "workspace:*",
+    "@supabase/supabase-js": "^2.100.1",
+    "lucide-react": "^1.7.0",
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.3.0",
+    "@types/chrome": "^0.1.35",
+    "@types/react": "^19.2.7",
+    "@types/react-dom": "^19.2.3",
+    "@wxt-dev/module-react": "^1.2.2",
+    "linkedom": "^0.18.12",
+    "tailwindcss": "^4.3.0",
+    "typescript": "^5.9.3",
+    "vitest": "^2.1.9",
+    "wxt": "^0.20.26"
+  }
 }

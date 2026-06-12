@@ -140,7 +140,7 @@ function MatchedRolesPanel() {
           <div>
             <p className="text-sm font-bold text-brand-700">Matched roles</p>
             <h3 className="mt-1 text-2xl font-extrabold tracking-[-0.03em] text-ink">
-              Best-fit jobs first
+              Best fit jobs first
             </h3>
           </div>
           <span className="grid size-10 place-items-center rounded-full bg-white text-brand-700 ring-1 ring-inset ring-brand-100">

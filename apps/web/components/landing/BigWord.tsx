@@ -34,20 +34,20 @@ export function BigWord() {
         style={reduce ? undefined : { x }}
         className="flex items-center gap-[0.22em] px-5 text-[clamp(3.2rem,10.5vw,9rem)] leading-none font-extrabold tracking-[-0.05em] whitespace-nowrap text-ink"
       >
-        <span>You press</span>
-        <span className="relative inline-flex h-[1.18em] w-[2.6em] items-center overflow-hidden rounded-[0.32em] bg-[linear-gradient(150deg,#ffd98a_0%,#f8b84e_100%)] shadow-[inset_0_2px_2px_rgba(255,255,255,0.7),inset_0_-2px_4px_rgba(154,98,8,0.25),0_18px_46px_rgba(248,184,78,0.4)]">
+        <span>Applied</span>
+        <span className="relative inline-flex h-[1.18em] w-[2.9em] items-center overflow-hidden rounded-[0.32em] bg-[linear-gradient(150deg,#ffd98a_0%,#f8b84e_100%)] shadow-[inset_0_2px_2px_rgba(255,255,255,0.7),inset_0_-2px_4px_rgba(154,98,8,0.25),0_18px_46px_rgba(248,184,78,0.4)]">
           <motion.span
             style={reduce ? undefined : { x: wordX }}
             className="px-[0.18em] text-[#3d2c05]"
           >
-            send
+            daily
           </motion.span>
         </span>
         <span>.</span>
       </motion.div>
 
       <p className="mt-10 px-5 text-center text-base font-semibold text-muted sm:text-lg">
-        The queue prepares everything. The send button stays yours.
+        No send button to press. JobPosted applies for you, you just check in once a day.
       </p>
     </section>
   );

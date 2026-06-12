@@ -1,0 +1,254 @@
+import type { AtsType, FormQuestionType } from "./types";
+
+export interface MasterProfileIdentity {
+  firstName: string;
+  lastName: string;
+  preferredName?: string | null;
+  email: string;
+  phone: string;
+}
+
+export interface MasterProfileLocation {
+  street?: string | null;
+  city?: string | null;
+  state?: string | null;
+  postalCode?: string | null;
+  country?: string | null;
+}
+
+export interface MasterProfileLinks {
+  portfolio?: string | null;
+  linkedin?: string | null;
+  github?: string | null;
+  website: string[];
+}
+
+export interface MasterProfileWorkAuth {
+  authorizedToWork: boolean | null;
+  requiresSponsorship: boolean | null;
+  country?: string | null;
+}
+
+export interface MasterProfileDemographics {
+  gender?: string | null;
+  race?: string[];
+  veteranStatus?: string | null;
+  disabilityStatus?: string | null;
+  hispanicLatino?: boolean | null;
+}
+
+export interface MasterProfileExperience {
+  title: string;
+  company: string;
+  location?: string | null;
+  startDate?: string | null;
+  endDate?: string | null;
+  current?: boolean | null;
+  bullets: string[];
+}
+
+export interface MasterProfileEducation {
+  school: string;
+  degree?: string | null;
+  field?: string | null;
+  startDate?: string | null;
+  endDate?: string | null;
+  gpa?: string | null;
+}
+
+export interface ReusableAnswer {
+  key: string;
+  prompt: string;
+  value: string;
+}
+
+export interface MasterProfileDocuments {
+  resumeUrl?: string | null;
+  coverLetterUrl?: string | null;
+}
+
+export interface MasterProfile {
+  identity: MasterProfileIdentity;
+  location: MasterProfileLocation;
+  links: MasterProfileLinks;
+  workAuth: MasterProfileWorkAuth;
+  demographics?: MasterProfileDemographics;
+  experience: MasterProfileExperience[];
+  education: MasterProfileEducation[];
+  skills: string[];
+  answers: ReusableAnswer[];
+  documents: MasterProfileDocuments;
+  completeness?: number;
+  source?: "jobposted" | "rezoomed" | "fallback";
+}
+
+export type ExtensionPlatform =
+  | AtsType
+  | "greenhouse_embedded"
+  | "workday_tenant"
+  | "generic";
+
+export type CanonicalFieldKey =
+  | "identity.fullName"
+  | "identity.firstName"
+  | "identity.lastName"
+  | "identity.preferredName"
+  | "identity.email"
+  | "identity.phone"
+  | "location.street"
+  | "location.city"
+  | "location.state"
+  | "location.postalCode"
+  | "location.country"
+  | "links.portfolio"
+  | "links.linkedin"
+  | "links.github"
+  | "links.website"
+  | "workAuth.authorizedToWork"
+  | "workAuth.requiresSponsorship"
+  | "workAuth.country"
+  | "demographics.gender"
+  | "demographics.race"
+  | "demographics.veteranStatus"
+  | "demographics.disabilityStatus"
+  | "demographics.hispanicLatino"
+  | "documents.resume"
+  | "documents.coverLetter"
+  | "experience"
+  | "education"
+  | "skills"
+  | `answers.${string}`
+  | "unknown";
+
+export type ExtensionFieldControl =
+  | FormQuestionType
+  | "date"
+  | "combobox"
+  | "typeahead"
+  | "chips"
+  | "hidden";
+
+export interface ExtensionFieldContext {
+  signature: string;
+  platform: ExtensionPlatform;
+  url: string;
+  label: string;
+  context?: string;
+  type: ExtensionFieldControl;
+  required?: boolean;
+  options?: string[];
+}
+
+export interface ExtensionFieldMapping {
+  canonicalKey: CanonicalFieldKey;
+  value?: string | string[] | boolean | null;
+  confidence: number;
+  source: "adapter" | "heuristic" | "answer" | "llm" | "cache" | "user" | "skip";
+  reason?: string;
+}
+
+export interface ExtensionFieldFillRecord {
+  signature: string;
+  label: string;
+  canonicalKey: CanonicalFieldKey;
+  status: "filled" | "skipped" | "needs_user" | "failed";
+  confidence: number;
+  valuePreview?: string;
+  source: ExtensionFieldMapping["source"];
+  error?: string;
+}
+
+export interface ExtensionResumeResponse {
+  ok: true;
+  jobId?: string | null;
+  documentId?: string | null;
+  resumeUrl: string | null;
+  coverLetterUrl?: string | null;
+  genericResumeUsed: boolean;
+  expiresAt?: string | null;
+}
+
+export interface ExtensionApplicationUpsert {
+  source: "extension";
+  platform: ExtensionPlatform;
+  company: string;
+  role: string;
+  jobUrl: string;
+  jobId?: string | null;
+  status: "filled" | "submitted";
+  appliedAt: string;
+  resumeUsed?: string | null;
+  genericResumeUsed?: boolean;
+  fieldsFilled: ExtensionFieldFillRecord[];
+  screenshotUrl?: string | null;
+}
+
+export interface ExtensionApplicationResponse {
+  ok: true;
+  applicationId: string | null;
+  jobId: string | null;
+}
+
+export interface ExtensionSettings {
+  submissionPolicy: "review" | "auto";
+  autoAdvance: boolean;
+  overwriteFilledFields: boolean;
+  enableGenericFallback: boolean;
+  enabledPlatforms: Partial<Record<ExtensionPlatform, boolean>>;
+  demographicsEnabled: boolean;
+  humanPace: "careful" | "balanced" | "fast";
+}
+
+export const DEFAULT_EXTENSION_SETTINGS: ExtensionSettings = {
+  submissionPolicy: "review",
+  autoAdvance: true,
+  overwriteFilledFields: false,
+  enableGenericFallback: false,
+  enabledPlatforms: {},
+  demographicsEnabled: false,
+  humanPace: "balanced",
+};
+
+export interface ExtensionAuthSession {
+  accessToken: string;
+  refreshToken?: string | null;
+  expiresAt?: number | null;
+  user?: {
+    id: string;
+    email?: string | null;
+  } | null;
+}
+
+export type ExtensionMessage =
+  | { type: "AUTH_START" }
+  | { type: "AUTH_STATUS" }
+  | { type: "AUTH_SIGN_OUT" }
+  | { type: "AUTH_SESSION_DELIVERY"; requestId?: string; session: ExtensionAuthSession }
+  | { type: "PROFILE_GET"; forceRefresh?: boolean }
+  | { type: "RESUME_GET"; jobId?: string | null }
+  | { type: "FIELD_MAP"; field: ExtensionFieldContext; profile: MasterProfile }
+  | { type: "APPLICATION_SYNC"; payload: ExtensionApplicationUpsert }
+  | { type: "ANSWER_SAVE"; answer: ReusableAnswer }
+  | { type: "SETTINGS_GET" }
+  | { type: "SETTINGS_SET"; settings: Partial<ExtensionSettings> }
+  | { type: "OVERLAY_STATUS"; tabUrl?: string };
+
+export type ExtensionMessageResponse =
+  | { ok: true; type: "AUTH_STATUS"; authenticated: boolean; email?: string | null }
+  | { ok: true; type: "AUTH_START"; requestId: string }
+  | { ok: true; type: "AUTH_SIGN_OUT" }
+  | { ok: true; type: "PROFILE_GET"; profile: MasterProfile }
+  | { ok: true; type: "RESUME_GET"; resume: ExtensionResumeResponse }
+  | { ok: true; type: "FIELD_MAP"; mapping: ExtensionFieldMapping }
+  | { ok: true; type: "APPLICATION_SYNC"; result: ExtensionApplicationResponse }
+  | { ok: true; type: "ANSWER_SAVE" }
+  | { ok: true; type: "SETTINGS_GET"; settings: ExtensionSettings }
+  | { ok: true; type: "SETTINGS_SET"; settings: ExtensionSettings }
+  | { ok: true; type: "OVERLAY_STATUS"; supported: boolean; platform: ExtensionPlatform }
+  | { ok: false; error: string; status?: number };
+
+export function isExtensionMessage(value: unknown): value is ExtensionMessage {
+  if (!value || typeof value !== "object") return false;
+  const type = (value as { type?: unknown }).type;
+  return typeof type === "string" && type.length > 0;
+}

@@ -3,10 +3,10 @@
 export const SITE_NAME = "JobPosted";
 
 export const SITE_TAGLINE =
-  "Queue tailored applications for roles worth your time.";
+  "Tailored job applications, sent for you automatically.";
 
 export const SITE_DESCRIPTION =
-  "JobPosted finds jobs that match you, tailors your resume to each role with Rezoomed, fills the application, and waits for your confirmation before anything is submitted.";
+  "JobPosted finds jobs that match you, tailors your resume to each role with Rezoomed, and submits the application automatically. Log in daily to acknowledge what was sent and keep tomorrow's applications running.";
 
 /** Normalized origin (no trailing slash). Falls back to localhost for local dev. */
 export function getSiteUrl(): string {

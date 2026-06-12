@@ -41,7 +41,7 @@ export function WaitlistForm({
       const data = (await res.json()) as { ok: boolean; message?: string };
       if (res.ok && data.ok) {
         setStatus("success");
-        setMessage(data.message || "You're on the list — we'll be in touch.");
+        setMessage(data.message || "You're on the list, we'll be in touch.");
         track("waitlist_signup", { email_domain: email.split("@")[1] ?? null });
       } else {
         setStatus("error");

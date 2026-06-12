@@ -1,11 +1,11 @@
-import { ArrowRight, FileText, MousePointerClick, Search } from "lucide-react";
+import { ArrowRight, FileText, Search, Send } from "lucide-react";
 import { Reveal } from "@/components/ui/Reveal";
 import { cn } from "@/lib/cn";
 
 const STEPS = [
   {
     number: "01",
-    caption: "Find roles actually worth your next click",
+    caption: "We surface the roles actually worth applying to",
     label: "Matched roles",
     icon: Search,
     gradient: "from-[#1d7fe8] via-[#1f64e0] to-[#143f91]",
@@ -14,7 +14,7 @@ const STEPS = [
   },
   {
     number: "02",
-    caption: "Tailor, fill, and queue every application",
+    caption: "Each one gets a resume tailored to the role and the form filled in",
     label: "Resume tailoring",
     icon: FileText,
     gradient: "from-[#27b3d8] via-[#1b86dd] to-[#1f64e0]",
@@ -23,11 +23,11 @@ const STEPS = [
   },
   {
     number: "03",
-    caption: "Review the final state and confirm the send",
-    label: "Your confirmation",
-    icon: MousePointerClick,
+    caption: "Applications go out on their own. You acknowledge the batch once a day",
+    label: "Sent for you",
+    icon: Send,
     gradient: "from-[#143f91] via-[#102f66] to-[#071a33]",
-    chip: { text: "you press send", className: "bg-white/90 text-brand-800" },
+    chip: { text: "you acknowledge", className: "bg-white/90 text-brand-800" },
     offset: "lg:mt-32",
   },
 ] as const;
@@ -41,7 +41,7 @@ export function Steps() {
             How it works
           </p>
           <h2 className="mt-4 text-4xl font-extrabold tracking-[-0.035em] text-balance text-ink sm:text-5xl lg:text-6xl">
-            Three calm steps from match to sent.
+            From match to sent, you skip everything in between.
           </h2>
         </Reveal>
 

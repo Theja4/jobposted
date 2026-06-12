@@ -43,12 +43,12 @@ const PRICING_CARDS = [
       monthly: "per month",
       annual: "per year",
     },
-    tagline: "For wider search coverage with priority routing and browser-session support.",
+    tagline: "For wider search coverage with priority routing and browser session support.",
     icon: Zap,
     featured: true,
     features: [
       `Up to ${PLANS.pro_50.dailyLimit} applications a day`,
-      "Priority queue for high-match roles",
+      "Priority queue for high match roles",
       "LinkedIn and Workday via your session",
       "Resume performance analytics",
     ],
@@ -87,11 +87,11 @@ export function Pricing() {
             Pricing that keeps you in control
           </div>
           <h2 className="mt-5 text-4xl font-extrabold tracking-[-0.032em] text-balance text-ink sm:text-6xl">
-            Pick the pace. <span className="text-brand-700">Confirm every send.</span>
+            Pick your pace. <span className="text-brand-700">Pause anytime.</span>
           </h2>
           <p className="mx-auto mt-4 max-w-2xl text-pretty text-base leading-7 text-muted sm:text-lg">
-            Start with real prepared applications, then choose the queue size that matches your
-            search. Switch between monthly flexibility and annual value with no hidden submit.
+            Start with real applications sent on your behalf, then choose the daily volume that
+            matches your search. Monthly or annual, and you can pause whenever you want.
           </p>
           <div className="relative mx-auto mt-7 grid w-fit grid-cols-2 rounded-full bg-white/60 p-1 text-sm font-bold text-ink ring-1 ring-inset ring-white/80 backdrop-blur-xl">
             <motion.span
@@ -167,7 +167,7 @@ function PlanCard({
 }) {
   const Icon = plan.icon;
   const featured = Boolean(plan.featured);
-  const cta = `Join ${billing} ${plan.name}`;
+  const cta = plan.featured ? `Start with ${plan.name}` : "Get started";
 
   return (
     <Reveal delay={index * 0.07} amount={0.18}>
@@ -290,7 +290,7 @@ function PlanCard({
           </ul>
 
           <CTAButton
-            href="#waitlist"
+            href="/get-started"
             variant={featured ? "secondary" : "primary"}
             size="lg"
             className={cn(

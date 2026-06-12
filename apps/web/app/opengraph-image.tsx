@@ -2,7 +2,7 @@ import { ImageResponse } from "next/og";
 import { SITE_NAME } from "@/lib/site";
 
 export const runtime = "edge";
-export const alt = `${SITE_NAME} — queue tailored applications you approve`;
+export const alt = `${SITE_NAME}, queue tailored applications you approve`;
 export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
 
@@ -54,7 +54,7 @@ export default function OpengraphImage() {
             Apply to roles worth your time. <span style={{ color: "#1f64e0" }}>You confirm.</span>
           </div>
           <div style={{ fontSize: 30, color: "#526173", maxWidth: 900 }}>
-            Tailored to every role · you confirm every submission · never sprayed.
+            Tailored to every role, you confirm every submission, never sprayed.
           </div>
         </div>
       </div>

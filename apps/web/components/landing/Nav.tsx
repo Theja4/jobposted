@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { Logo } from "./Logo";
+import { NavAuthButtons } from "@/components/auth/NavAuthButtons";
 
 const LINKS = [
   { href: "#how-it-works", label: "How it works" },
@@ -27,13 +28,8 @@ export function Nav() {
             </a>
           ))}
         </div>
-        <div className="flex items-center gap-2">
-          <a
-            href="#waitlist"
-            className="inline-flex h-11 items-center justify-center rounded-full bg-ink px-6 text-sm font-bold text-white shadow-[0_10px_24px_rgba(7,26,51,0.24)] transition duration-200 hover:-translate-y-0.5 hover:bg-brand-700 hover:shadow-[0_14px_30px_rgba(31,100,224,0.3)]"
-          >
-            Get early access
-          </a>
+        <div className="flex items-center gap-1.5">
+          <NavAuthButtons />
         </div>
       </nav>
     </header>

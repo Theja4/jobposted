@@ -1,21 +1,22 @@
+import type { CSSProperties } from "react";
 import { Reveal } from "@/components/ui/Reveal";
 
 /** Companies whose live roles JobPosted ingests (real — Greenhouse/Lever/Ashby boards). */
 const COMPANIES = [
-  "Stripe",
-  "OpenAI",
-  "Airbnb",
-  "Figma",
-  "Databricks",
-  "Ramp",
-  "Notion",
-  "Linear",
-  "Vanta",
-  "Cohere",
-  "ElevenLabs",
-  "Perplexity",
-  "Discord",
-  "Anthropic",
+  { name: "Stripe", color: "#635BFF" },
+  { name: "OpenAI", color: "#0F7F64" },
+  { name: "Airbnb", color: "#FF385C" },
+  { name: "Figma", color: "#A259FF" },
+  { name: "Databricks", color: "#FF3621" },
+  { name: "Ramp", color: "#00875F" },
+  { name: "Notion", color: "#111111" },
+  { name: "Linear", color: "#5E6AD2" },
+  { name: "Vanta", color: "#3B5BFF" },
+  { name: "Cohere", color: "#39594D" },
+  { name: "ElevenLabs", color: "#111827" },
+  { name: "Perplexity", color: "#16899A" },
+  { name: "Discord", color: "#5865F2" },
+  { name: "Anthropic", color: "#C15F3C" },
 ];
 
 export function SocialProof() {
@@ -34,10 +35,11 @@ export function SocialProof() {
               <div key={group} className="flex items-center gap-16" aria-hidden={group === 1}>
                 {COMPANIES.map((company) => (
                   <span
-                    key={company}
-                    className="text-2xl font-extrabold tracking-[-0.035em] whitespace-nowrap text-slate-300/80 transition-colors duration-200 hover:text-brand-600"
+                    key={company.name}
+                    style={{ "--company-color": company.color } as CSSProperties}
+                    className="text-2xl font-extrabold tracking-[-0.035em] whitespace-nowrap text-slate-300/80 transition-colors duration-200 hover:text-[var(--company-color)]"
                   >
-                    {company}
+                    {company.name}
                   </span>
                 ))}
               </div>

@@ -1,5 +1,6 @@
+import Link from "next/link";
+import { ArrowRight } from "lucide-react";
 import { Reveal } from "@/components/ui/Reveal";
-import { WaitlistForm } from "./WaitlistForm";
 
 export function FinalCta() {
   return (
@@ -18,18 +19,21 @@ export function FinalCta() {
           <div className="relative z-10 grid items-center gap-12 lg:grid-cols-[1.05fr_0.95fr]">
             <div>
               <h2 className="max-w-xl text-4xl font-extrabold tracking-[-0.035em] text-balance sm:text-5xl">
-                Reach more interviews. Keep every send in your hands.
+                More interviews. None of the busywork.
               </h2>
               <p className="mt-5 max-w-md text-base leading-7 text-pretty text-white/80 sm:text-lg">
-                Join the early list and get your first five tailored applications free —
-                queued, filled, and waiting for your confirm.
+                Create your account, set your preferences, and JobPosted starts sending tailored
+                applications for you. Then log in once a day to see what went out.
               </p>
-              <div className="mt-8 max-w-md">
-                <WaitlistForm tone="glass" id="waitlist-cta" ctaLabel="Get early access" />
+              <div className="mt-8 flex">
+                <Link
+                  href={{ pathname: "/get-started" }}
+                  className="group inline-flex h-13 items-center justify-center gap-2 rounded-full bg-white px-8 text-base font-bold text-brand-800 shadow-[0_14px_30px_rgba(7,26,51,0.25)] transition-[transform,background-color,box-shadow] duration-150 ease-out hover:-translate-y-0.5 hover:bg-sky-50 active:translate-y-0"
+                >
+                  Get started
+                  <ArrowRight className="size-4 transition-transform duration-200 group-hover:translate-x-0.5" />
+                </Link>
               </div>
-              <p className="mt-4 text-sm font-semibold text-white/70">
-                5 free applications · No card required · Cancel anytime
-              </p>
             </div>
 
             <CtaIllustration />
@@ -62,7 +66,7 @@ function CtaIllustration() {
           <span className="block h-2 w-10/12 rounded-full bg-brand-200" />
         </div>
         <div className="mt-5 flex items-center justify-between rounded-full bg-ink px-4 py-2.5 text-white">
-          <span className="text-xs font-extrabold">Confirm &amp; send</span>
+          <span className="text-xs font-extrabold">Sent for you</span>
           <span className="grid size-6 place-items-center rounded-full bg-white text-[11px] font-black text-brand-700">
             ✓
           </span>
@@ -71,9 +75,9 @@ function CtaIllustration() {
 
       <div className="liquid-glass-dark soft-float absolute -right-2 bottom-6 w-44 rounded-2xl p-3.5">
         <p className="text-[10px] font-black tracking-[0.12em] text-white/70 uppercase">
-          Held for review
+          Today&apos;s batch
         </p>
-        <p className="mt-1 text-sm font-extrabold text-white">Nothing sent yet</p>
+        <p className="mt-1 text-sm font-extrabold text-white">16 applications sent</p>
       </div>
     </div>
   );

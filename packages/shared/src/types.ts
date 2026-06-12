@@ -18,6 +18,16 @@ export type AtsType =
   | "workable"
   | "workday"
   | "linkedin"
+  | "icims"
+  | "taleo"
+  | "oracle"
+  | "successfactors"
+  | "jobvite"
+  | "bamboohr"
+  | "dover"
+  | "indeed"
+  | "rippling"
+  | "paylocity"
   | "other";
 
 /** Where a job row was ingested from. A single role can appear across several sources. */
@@ -27,6 +37,10 @@ export type JobSource =
   | "ashby"
   | "smartrecruiters"
   | "workable"
+  | "workday"
+  | "linkedin"
+  | "icims"
+  | "extension"
   | "adzuna"
   | "jsearch"
   | "apify"
@@ -52,6 +66,7 @@ export type WorkAuthorization =
 export type ApplicationStatus =
   | "queued"
   | "tailoring"
+  | "filled"
   | "ready_for_review"
   | "submitting"
   | "submitted"

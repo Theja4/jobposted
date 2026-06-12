@@ -4,7 +4,9 @@ packages:
 onlyBuiltDependencies:
   - esbuild
   - sharp
+  - spawn-sync
 allowBuilds:
   core-js: false
   esbuild: true
   sharp: true
+  spawn-sync: true

@@ -21,16 +21,16 @@ const FIT_PILLS = [
   { label: "Meaningful equity", top: "76%", left: "46%", rotate: 7 },
 ] as const;
 
-const RANGES = ["3 days", "1 week", "1 month", "3 months", "6 months", "1 year"] as const;
+const RANGES = ["1 week", "1 month"] as const;
 type Range = (typeof RANGES)[number];
 
-const RANGE_DATA: Record<Range, { fit: number; ready: number; m1: string; m2: string }> = {
-  "3 days": { fit: 92, ready: 6, m1: "+9%", m2: "+18%" },
-  "1 week": { fit: 96, ready: 18, m1: "+26%", m2: "+61%" },
-  "1 month": { fit: 94, ready: 64, m1: "+31%", m2: "+58%" },
-  "3 months": { fit: 95, ready: 170, m1: "+38%", m2: "+72%" },
-  "6 months": { fit: 97, ready: 310, m1: "+44%", m2: "+80%" },
-  "1 year": { fit: 96, ready: 580, m1: "+52%", m2: "+88%" },
+/**
+ * Applications JobPosted sent automatically over each window. Volume tracks a
+ * real cadence of ~15–20 sends a day (≈17 avg), all on autopilot.
+ */
+const RANGE_DATA: Record<Range, { sent: number; fit: number; lowDay: number; highDay: number }> = {
+  "1 week": { sent: 119, fit: 95, lowDay: 16, highDay: 20 },
+  "1 month": { sent: 512, fit: 94, lowDay: 15, highDay: 19 },
 };
 
 export function Metrics() {
@@ -208,23 +208,48 @@ function TimeToReadyChart({ reduce }: { reduce: boolean }) {
         4 min 12s
       </motion.span>
       <span className="absolute bottom-1 left-1 text-xs font-bold text-muted">
-        from match to ready-for-review
+        from match to sent
       </span>
     </div>
   );
 }
 
-/** Right card: range selector, count-up stat tiles, and the drawing line chart. */
+/** Per-range shape of the sends-per-day curve. Each entry is the on-curve point
+ *  for an SVG path (460×220 viewBox), plus the daily count shown at that point. */
+const CURVES: Record<Range, { d: string; area: string; markers: { x: number; y: number; perDay: number }[] }> = {
+  "1 week": {
+    d: "M8 176 C 70 150, 105 96, 160 120 S 250 70 305 92 S 400 44 452 36",
+    area: "M8 176 C 70 150, 105 96, 160 120 S 250 70 305 92 S 400 44 452 36 L452 212 L8 212 Z",
+    markers: [
+      { x: 160, y: 120, perDay: 16 },
+      { x: 305, y: 92, perDay: 18 },
+      { x: 452, y: 36, perDay: 20 },
+    ],
+  },
+  "1 month": {
+    d: "M8 184 C 80 178, 120 140, 170 150 S 250 120 300 96 S 390 38 452 30",
+    area: "M8 184 C 80 178, 120 140, 170 150 S 250 120 300 96 S 390 38 452 30 L452 212 L8 212 Z",
+    markers: [
+      { x: 170, y: 150, perDay: 15 },
+      { x: 300, y: 96, perDay: 17 },
+      { x: 452, y: 30, perDay: 19 },
+    ],
+  },
+};
+
+/** Right card: range selector, benefit tiles, and an animated sends-per-day
+ *  curve showing the steady 15–20/day cadence JobPosted sends on autopilot. */
 function QueuePerformanceCard() {
   const reduce = useReducedMotion();
   const [range, setRange] = useState<Range>("1 week");
   const data = RANGE_DATA[range];
+  const curve = CURVES[range];
 
   return (
     <article className="liquid-glass flex h-full flex-col rounded-[2rem] p-6 sm:p-7">
       <div className="flex flex-wrap items-center justify-between gap-4">
         <h3 className="text-2xl font-extrabold tracking-[-0.03em] text-ink">
-          Queue performance
+          What JobPosted handled
         </h3>
         <div className="glass-chip flex flex-wrap gap-1 rounded-full p-1">
           {RANGES.map((option) => (
@@ -234,7 +259,7 @@ function QueuePerformanceCard() {
               onClick={() => setRange(option)}
               aria-pressed={range === option}
               className={cn(
-                "rounded-full px-3 py-1.5 text-xs font-bold whitespace-nowrap transition-colors duration-150",
+                "rounded-full px-4 py-1.5 text-xs font-bold whitespace-nowrap transition-colors duration-150",
                 range === option
                   ? "bg-ink text-white shadow-[0_6px_14px_rgba(7,26,51,0.22)]"
                   : "text-muted hover:text-ink",
@@ -249,23 +274,40 @@ function QueuePerformanceCard() {
       <div className="mt-6 grid flex-1 gap-4 sm:grid-cols-[11.5rem_1fr]">
         <div className="grid grid-cols-2 gap-4 sm:grid-cols-1">
           <div className="rounded-3xl bg-[linear-gradient(150deg,#ffd98a,#f8b84e)] p-4 text-[#3d2c05] shadow-[0_16px_36px_rgba(248,184,78,0.35)]">
-            <p className="text-[11px] font-black tracking-[0.08em] uppercase">Avg role fit</p>
+            <p className="text-[11px] font-black tracking-[0.08em] uppercase">Sent this {range}</p>
             <p className="mt-2 text-4xl font-extrabold tracking-[-0.04em]">
-              <CountUp key={`fit-${range}`} to={data.fit} from={Math.max(0, data.fit - 30)} />%
+              <CountUp key={`sent-${range}`} to={data.sent} />
+            </p>
+            <p className="mt-1 text-xs font-bold text-[#3d2c05]/70">
+              avg {data.lowDay} to {data.highDay} a day, all sent automatically
             </p>
           </div>
           <div className="rounded-3xl bg-[linear-gradient(150deg,#2f7df4,#1f50c0)] p-4 text-white shadow-[0_16px_36px_rgba(31,100,224,0.35)]">
             <p className="text-[11px] font-black tracking-[0.08em] text-white/80 uppercase">
-              Ready to review
+              Avg match quality
             </p>
             <p className="mt-2 text-4xl font-extrabold tracking-[-0.04em]">
-              +<CountUp key={`ready-${range}`} to={data.ready} />
+              <CountUp key={`fit-${range}`} to={data.fit} from={Math.max(0, data.fit - 30)} />%
+            </p>
+            <p className="mt-1 text-xs font-bold text-white/70">
+              only roles worth applying to
             </p>
           </div>
         </div>
 
         <div className="relative min-h-[15rem] rounded-3xl bg-white/75 p-4 ring-1 ring-white ring-inset">
           <svg viewBox="0 0 460 220" className="h-full w-full" preserveAspectRatio="none">
+            <defs>
+              <linearGradient id="sendsFill" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor="#1f64e0" stopOpacity="0.28" />
+                <stop offset="100%" stopColor="#1f64e0" stopOpacity="0" />
+              </linearGradient>
+              <linearGradient id="sendsStroke" x1="0" y1="0" x2="1" y2="0">
+                <stop offset="0%" stopColor="#16c7d4" />
+                <stop offset="100%" stopColor="#1f64e0" />
+              </linearGradient>
+            </defs>
+
             {[40, 105, 170].map((y) => (
               <line
                 key={y}
@@ -277,71 +319,66 @@ function QueuePerformanceCard() {
                 strokeDasharray="3 6"
               />
             ))}
-            <line
-              x1="150"
-              y1="148"
-              x2="150"
-              y2="220"
-              stroke="rgba(31,100,224,0.35)"
-              strokeDasharray="3 6"
-            />
-            <line
-              x1="350"
-              y1="58"
-              x2="350"
-              y2="220"
-              stroke="rgba(31,100,224,0.35)"
-              strokeDasharray="3 6"
+
+            <motion.path
+              key={`area-${range}`}
+              d={curve.area}
+              fill="url(#sendsFill)"
+              initial={{ opacity: reduce ? 1 : 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ delay: reduce ? 0 : 0.9, duration: 0.6 }}
             />
             <motion.path
               key={`path-${range}`}
-              d="M6 190 C 60 170, 110 120, 150 148 S 250 168 300 110 S 400 52 454 36"
+              d={curve.d}
               fill="none"
-              stroke="#1f64e0"
+              stroke="url(#sendsStroke)"
               strokeWidth="4"
               strokeLinecap="round"
               initial={{ pathLength: reduce ? 1 : 0 }}
               animate={{ pathLength: 1 }}
               transition={{ duration: 1.4, ease: [0.22, 1, 0.36, 1] }}
             />
-            {[
-              { cx: 150, cy: 148, delay: 0.55 },
-              { cx: 350, cy: 58, delay: 1.05 },
-            ].map((marker) => (
+
+            {curve.markers.map((marker, index) => (
               <motion.circle
-                key={`${marker.cx}-${range}`}
-                cx={marker.cx}
-                cy={marker.cy}
+                key={`${marker.x}-${range}`}
+                cx={marker.x}
+                cy={marker.y}
                 r="6.5"
                 fill="#1f64e0"
                 stroke="white"
                 strokeWidth="2.5"
                 initial={{ scale: reduce ? 1 : 0 }}
                 animate={{ scale: 1 }}
-                transition={{ delay: marker.delay, type: "spring", stiffness: 320, damping: 15 }}
+                transition={{
+                  delay: reduce ? 0 : 0.5 + index * 0.35,
+                  type: "spring",
+                  stiffness: 320,
+                  damping: 15,
+                }}
               />
             ))}
           </svg>
-          <motion.span
-            key={`m1-${range}`}
-            initial={reduce ? false : { opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.7, duration: 0.3 }}
-            className="absolute top-[52%] left-[22%] rounded-full bg-ink px-2.5 py-1 text-xs font-black text-white"
-          >
-            {data.m1}
-          </motion.span>
-          <motion.span
-            key={`m2-${range}`}
-            initial={reduce ? false : { opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 1.2, duration: 0.3 }}
-            className="absolute top-[14%] left-[64%] rounded-full bg-ink px-2.5 py-1 text-xs font-black text-white"
-          >
-            {data.m2}
-          </motion.span>
+
+          {curve.markers.map((marker, index) => (
+            <motion.span
+              key={`label-${marker.x}-${range}`}
+              initial={reduce ? false : { opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: reduce ? 0 : 0.65 + index * 0.35, duration: 0.3 }}
+              style={{
+                left: `${(marker.x / 460) * 100}%`,
+                top: `${(marker.y / 220) * 100}%`,
+              }}
+              className="absolute -translate-x-1/2 -translate-y-[150%] rounded-full bg-ink px-2.5 py-1 text-xs font-black whitespace-nowrap text-white"
+            >
+              {marker.perDay}/day
+            </motion.span>
+          ))}
+
           <span className="absolute bottom-2 left-4 text-xs font-bold text-muted">
-            interview-ready applications
+            applications prepared &amp; sent per day
           </span>
         </div>
       </div>

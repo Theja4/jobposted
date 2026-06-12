@@ -29,7 +29,7 @@ export function StatRows() {
                 </p>
               </div>
               <p className="text-sm leading-6 text-pretty text-muted">
-                Live roles ingested nightly from Greenhouse, Lever, and Ashby boards —
+                Live roles ingested nightly from Greenhouse, Lever, and Ashby boards,
                 deduped and matched against your profile before you wake up.
               </p>
             </div>
@@ -58,15 +58,15 @@ export function StatRows() {
               <ConfirmTile />
               <div className="relative w-fit">
                 <span className="absolute -top-3 -right-24 hidden rotate-[6deg] rounded-full bg-ink px-3 py-1 text-xs font-black whitespace-nowrap text-white shadow-[0_8px_20px_rgba(7,26,51,0.3)] sm:inline-block">
-                  your call, always
+                  time wasted
                 </span>
                 <p className="text-7xl font-extrabold tracking-[-0.05em] text-brand-600 sm:text-8xl lg:text-9xl">
                   <CountUp to={0} from={5} duration={1.6} />
                 </p>
               </div>
               <p className="text-sm leading-6 text-pretty text-muted">
-                Applications submitted without your confirmation. The queue holds every
-                filled form until you review it and press send.
+                Forms you fill out by hand. JobPosted tailors each resume, completes the
+                application, and submits it. You just acknowledge what went out, once a day.
               </p>
             </div>
           </Reveal>

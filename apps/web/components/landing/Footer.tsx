@@ -1,4 +1,5 @@
-import { ArrowUpRight, Mail, MessageCircle, Send, Sparkles } from "lucide-react";
+import { Mail, MessageCircle, Send, Sparkles } from "lucide-react";
+import { AnimatedGetStartedButton } from "./AnimatedGetStartedButton";
 import { Logo } from "./Logo";
 import { SITE_NAME } from "@/lib/site";
 
@@ -16,8 +17,8 @@ export function Footer({ seamless = false }: { seamless?: boolean }) {
     <footer
       className={
         seamless
-          ? "relative -mt-16 overflow-hidden bg-transparent px-5 pt-32 text-ink sm:-mt-20 sm:pt-36"
-          : "relative -mt-16 overflow-hidden bg-[linear-gradient(180deg,#ddecff_0%,#cfe4ff_28%,#b6d6ff_64%,#9ec4ff_100%)] px-5 pt-32 text-ink sm:-mt-20 sm:pt-36"
+          ? "relative -mt-16 overflow-hidden bg-transparent px-5 pt-36 text-ink sm:-mt-20 sm:pt-44 lg:pt-52"
+          : "relative -mt-16 overflow-hidden bg-[linear-gradient(180deg,#ddecff_0%,#cfe4ff_28%,#b6d6ff_64%,#9ec4ff_100%)] px-5 pt-36 text-ink sm:-mt-20 sm:pt-44 lg:pt-52"
       }
     >
       {!seamless && (
@@ -32,19 +33,19 @@ export function Footer({ seamless = false }: { seamless?: boolean }) {
       />
       <div
         aria-hidden
-        className="pointer-events-none absolute inset-x-0 bottom-[-3.6rem] select-none text-center text-[19vw] font-extrabold leading-none text-white/20 sm:bottom-[-4.8rem]"
+        className="pointer-events-none absolute inset-x-0 bottom-[-0.08em] select-none text-center text-[19vw] font-extrabold leading-[0.82] text-white/18"
       >
         {SITE_NAME}
       </div>
 
-      <div className="relative z-10 mx-auto grid w-full max-w-6xl gap-12 pb-28 md:grid-cols-[1fr_1.1fr_1fr] md:items-start md:pb-32">
+      <div className="relative z-10 mx-auto grid w-full max-w-6xl gap-16 pb-56 md:grid-cols-[1fr_1.1fr_1fr] md:items-start md:gap-20 md:pb-64 lg:gap-24 lg:pb-72">
         <div>
           <Logo />
-          <div className="mt-7 flex gap-3">
+          <div className="mt-9 flex gap-3">
             <SocialLink href="mailto:hello@jobposted.com" label="Email JobPosted">
               <Mail className="size-4" />
             </SocialLink>
-            <SocialLink href="#waitlist" label="Join product updates">
+            <SocialLink href="/get-started" label="Get started">
               <Send className="size-4" />
             </SocialLink>
             <SocialLink href="#faq" label="Read answers">
@@ -54,7 +55,7 @@ export function Footer({ seamless = false }: { seamless?: boolean }) {
 
           <a
             href="mailto:hello@jobposted.com"
-            className="mt-7 inline-block text-lg font-semibold text-ink transition-colors hover:text-brand-700"
+            className="mt-9 inline-block text-lg font-semibold text-ink transition-colors hover:text-brand-700"
           >
             hello@jobposted.com
           </a>
@@ -63,22 +64,13 @@ export function Footer({ seamless = false }: { seamless?: boolean }) {
           </p>
         </div>
 
-        <div className="relative flex min-h-44 items-center justify-center">
+        <div className="relative flex min-h-52 items-center justify-center md:pt-4">
           <DecorativePanel className="left-0 hidden md:block" />
           <DecorativePanel className="right-0 hidden scale-x-[-1] md:block" />
-          <a
-            href="#waitlist"
-            className="group relative inline-flex h-12 items-center gap-2 rounded-xl bg-ink px-5 text-sm font-semibold text-white shadow-[0_12px_28px_rgba(7,26,51,0.22)] transition duration-200 hover:-translate-y-1 hover:bg-brand-700 hover:shadow-[0_18px_36px_rgba(31,100,224,0.24)]"
-          >
-            Join waitlist
-            <span className="rounded-md bg-brand-500 px-1.5 py-0.5 text-[10px] font-bold uppercase text-white">
-              Free
-            </span>
-            <ArrowUpRight className="size-4 transition-transform duration-200 group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
-          </a>
+          <AnimatedGetStartedButton href="/get-started" size="md" />
         </div>
 
-        <nav className="flex flex-col items-start gap-4 text-base font-semibold md:items-end">
+        <nav className="flex flex-col items-start gap-5 text-base font-semibold md:items-end md:pt-2">
           {FOOTER_LINKS.map((link) => (
             <FooterLink key={link.href} href={link.href}>
               {link.label}

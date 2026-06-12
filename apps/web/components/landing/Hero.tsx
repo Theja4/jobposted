@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   motion,
   useMotionValue,
@@ -9,8 +9,10 @@ import {
   useTransform,
   type MotionValue,
 } from "framer-motion";
-import { ArrowRight, MousePointer2, ShieldCheck } from "lucide-react";
-import { WaitlistForm } from "./WaitlistForm";
+import Link from "next/link";
+import { ArrowRight, LayoutGrid, MousePointer2, Send } from "lucide-react";
+import { useAuthUser } from "@/components/auth/useAuthUser";
+import { AnimatedGetStartedButton } from "./AnimatedGetStartedButton";
 
 /**
  * Scroll-driven hero: a stack of rounded cards peeks below the headline, then the
@@ -25,6 +27,18 @@ export function Hero() {
   });
   const still = useMotionValue(1);
 
+  // The headline block is taller on small screens (the headline wraps to more
+  // lines), so the card stack must start lower there or it slides under the
+  // waitlist form. Track viewport width and offset the stack accordingly.
+  const [stackStart, setStackStart] = useState("66svh");
+  useEffect(() => {
+    const mq = window.matchMedia("(max-width: 640px)");
+    const apply = () => setStackStart(mq.matches ? "86svh" : "66svh");
+    apply();
+    mq.addEventListener("change", apply);
+    return () => mq.removeEventListener("change", apply);
+  }, []);
+
   // Headline drifts up and fades as the card rises over it.
   const headY = useTransform(p, [0, 0.32], [0, -90]);
   const headOpacity = useTransform(p, [0.1, 0.3], [1, 0]);
@@ -33,7 +47,7 @@ export function Hero() {
   const headVisibility = useTransform(headOpacity, (v) => (v < 0.02 ? "hidden" : "visible"));
 
   // Card stack: wrapper rises while the front card scales to full bleed.
-  const stackY = useTransform(p, [0, 0.55], ["66svh", "0svh"]);
+  const stackY = useTransform(p, [0, 0.55], [stackStart, "0svh"]);
   const stackScale = useTransform(p, [0.02, 0.6], [0.72, 1]);
   const radius = useTransform(p, [0.32, 0.6], ["3rem", "0rem"]);
 
@@ -98,26 +112,46 @@ export function Hero() {
 function HeadlineBlock() {
   return (
     <div className="mx-auto flex w-full max-w-3xl flex-col items-center px-5 pt-24 text-center sm:pt-28">
-      <span className="glass-chip inline-flex items-center gap-2 rounded-full px-4 py-2 text-xs font-bold text-brand-800">
-        <ShieldCheck className="size-3.5 text-brand-600" />
-        Copilot, not autopilot — you confirm every send
-      </span>
-
-      <h1 className="mt-7 text-5xl leading-[1.02] font-extrabold tracking-[-0.04em] text-balance text-ink sm:text-6xl lg:text-7xl">
-        Better job applications, ready for your review.
+      <h1 className="text-5xl leading-[1.02] font-extrabold tracking-[-0.04em] text-balance text-ink sm:text-6xl lg:text-7xl">
+        Your job applications, sent for you every day.
       </h1>
 
       <p className="mt-6 max-w-xl text-base leading-7 text-pretty text-muted sm:text-lg">
-        JobPosted finds matching roles, tailors your resume to each one, fills the
-        application, and waits for you to press send.
+        JobPosted finds matching roles, tailors your resume to each one, and submits the
+        application automatically. You just log in daily to acknowledge what went out.
       </p>
 
-      <div id="waitlist" className="mt-8 w-full max-w-md scroll-mt-28">
-        <WaitlistForm ctaLabel="Join" />
+      <HeroCtas />
+    </div>
+  );
+}
+
+/** Hero call-to-action — reflects auth state (dashboard link once signed in). */
+function HeroCtas() {
+  const { user, loading } = useAuthUser();
+
+  if (loading) {
+    return <div className="mt-8 h-13 w-64 animate-pulse rounded-full bg-ink/5" aria-hidden />;
+  }
+
+  if (user) {
+    return (
+      <div className="mt-8 flex w-full justify-center">
+        <Link
+          href={{ pathname: "/dashboard" }}
+          className="group inline-flex h-13 items-center justify-center gap-2 rounded-full bg-brand-600 px-8 text-base font-bold text-white shadow-[0_16px_36px_rgba(31,100,224,0.32)] transition-[transform,background-color,box-shadow] duration-150 ease-out hover:-translate-y-0.5 hover:bg-brand-700 active:translate-y-0"
+        >
+          <LayoutGrid className="size-4" />
+          Go to dashboard
+          <ArrowRight className="size-4 transition-transform duration-200 group-hover:translate-x-0.5" />
+        </Link>
       </div>
-      <p className="mt-4 text-sm font-semibold text-muted">
-        5 free applications · No card required
-      </p>
+    );
+  }
+
+  return (
+    <div className="mt-8 flex w-full justify-center">
+      <AnimatedGetStartedButton href={{ pathname: "/get-started" }} />
     </div>
   );
 }
@@ -168,7 +202,7 @@ function HeroScene({ p }: { p: MotionValue<number> }) {
           <div className="min-w-0 flex-1">
             <p className="truncate text-base font-extrabold">Senior Product Designer</p>
             <p className="truncate text-sm font-semibold text-white/65">
-              Stripe · Remote · Full-time
+              Stripe · Remote · Full time
             </p>
           </div>
           <span className="shrink-0 rounded-full bg-white px-3 py-1 text-xs font-black text-brand-700">
@@ -212,15 +246,15 @@ function HeroScene({ p }: { p: MotionValue<number> }) {
         </div>
       </motion.div>
 
-      {/* fast layer — the confirm moment */}
+      {/* fast layer — the auto-send moment */}
       <motion.div style={{ y: fast }} className="absolute right-[10%] bottom-[16%] sm:right-[14%]">
         <span className="absolute -top-7 -right-4 rotate-[8deg] rounded-full bg-sun px-3 py-1 text-[11px] font-black text-[#3d2c05]">
-          waiting on you
+          sent for you
         </span>
         <div className="liquid-glass-dark flex items-center gap-4 rounded-full py-3 pr-3 pl-6">
-          <span className="text-base font-extrabold sm:text-lg">Confirm &amp; send</span>
+          <span className="text-base font-extrabold sm:text-lg">Application sent</span>
           <span className="grid size-11 place-items-center rounded-full bg-white text-brand-700">
-            <ArrowRight className="size-5" />
+            <Send className="size-5" />
           </span>
         </div>
         <MousePointer2 className="absolute -bottom-7 right-10 size-6 rotate-[-12deg] fill-white text-navy drop-shadow-[0_4px_10px_rgba(4,16,42,0.45)]" />
@@ -231,7 +265,7 @@ function HeroScene({ p }: { p: MotionValue<number> }) {
         className="absolute inset-x-0 bottom-8 flex justify-center px-5"
       >
         <p className="liquid-glass-dark rounded-full px-5 py-2.5 text-sm font-bold text-white/90">
-          Nothing is submitted until you press confirm.
+          Sent automatically, you acknowledge each day in one click.
         </p>
       </motion.div>
     </div>
