@@ -2,6 +2,7 @@
 
 import { ArrowLeft, ArrowRight, Plus } from "lucide-react";
 import {
+  useEffect,
   useRef,
   useState,
   type MouseEvent as ReactMouseEvent,
@@ -9,15 +10,16 @@ import {
 } from "react";
 import { Reveal } from "@/components/ui/Reveal";
 import { cn } from "@/lib/cn";
+import { SUPPORT_EMAIL } from "@/lib/site";
 
 const FAQS = [
   {
-    q: "Do applications really get sent automatically?",
-    a: "Yes. JobPosted matches roles, tailors a resume to each one, fills the application, and submits it for you each day. To keep it running, you log in once a day and acknowledge the batch that went out. Miss a day and it simply pauses until you're back, so it never runs unsupervised.",
+    q: "Do applications get prepared automatically?",
+    a: "Yes. JobPosted matches roles, tailors a resume to each one, fills supported application fields, and queues the application for your review. You decide what gets submitted. Miss a check-in and the queue simply waits until you're back.",
   },
   {
     q: "Will this get my LinkedIn or other accounts banned?",
-    a: "No. Platforms that require sign in, like LinkedIn and Workday, run inside your own browser session at human pace. Open ATS applications on Greenhouse, Lever, and Ashby are tailored and submitted automatically, and every one shows up in your daily queue to review.",
+    a: "Platforms that require sign in, like LinkedIn and Workday, run inside your own browser session at human pace. Open ATS applications on Greenhouse, Lever, and Ashby can be prepared for review, and login-gated flows stay under your control.",
   },
   {
     q: "What happens to my data and my resume?",
@@ -33,13 +35,18 @@ const FAQS = [
   },
   {
     q: "Can I cancel or get a refund?",
-    a: "Plans are monthly, and you can pause anytime. You can see exactly how JobPosted works before committing.",
+    a: `Plans can be canceled from the Creem customer portal link sent after purchase, or by emailing ${SUPPORT_EMAIL}. Refund eligibility is listed in the Refund Policy linked in the footer.`,
   },
 ];
 
 export function Faq() {
   const [active, setActive] = useState(0);
   const [isDragging, setIsDragging] = useState(false);
+  const [scrollIndicator, setScrollIndicator] = useState({
+    canScroll: false,
+    progress: 0,
+    thumb: 100,
+  });
   const viewportRef = useRef<HTMLDivElement | null>(null);
   const cardRefs = useRef<Array<HTMLDivElement | null>>([]);
   const dragRef = useRef({
@@ -60,6 +67,37 @@ export function Faq() {
       acceptedAnswer: { "@type": "Answer", text: f.a },
     })),
   };
+
+  function updateScrollIndicator() {
+    const viewport = viewportRef.current;
+    if (!viewport) return;
+
+    const maxScroll = Math.max(0, viewport.scrollWidth - viewport.clientWidth);
+    const canScroll = maxScroll > 4;
+    const progress = canScroll ? viewport.scrollLeft / maxScroll : 0;
+    const thumb = canScroll
+      ? Math.min(100, Math.max(18, (viewport.clientWidth / viewport.scrollWidth) * 100))
+      : 100;
+
+    setScrollIndicator({
+      canScroll,
+      progress: Math.min(Math.max(progress, 0), 1),
+      thumb,
+    });
+  }
+
+  useEffect(() => {
+    updateScrollIndicator();
+    const resize = () => updateScrollIndicator();
+    window.addEventListener("resize", resize);
+    return () => window.removeEventListener("resize", resize);
+  }, []);
+
+  useEffect(() => {
+    updateScrollIndicator();
+    const timer = window.setTimeout(updateScrollIndicator, 360);
+    return () => window.clearTimeout(timer);
+  }, [active]);
 
   /**
    * Scroll only when the expanded card would be clipped by the viewport edge
@@ -228,6 +266,7 @@ export function Faq() {
           onPointerUp={finishDrag}
           onPointerCancel={finishDrag}
           onClickCapture={handleClickCapture}
+          onScroll={updateScrollIndicator}
         >
           <div className="flex snap-x snap-proximity select-none gap-5 pr-14 sm:pr-20">
             {FAQS.map((faq, index) => (
@@ -247,6 +286,21 @@ export function Faq() {
             ))}
           </div>
         </div>
+
+        {scrollIndicator.canScroll && (
+          <div className="mx-auto -mt-8 h-1 w-full max-w-xs overflow-hidden rounded-full bg-white/52 ring-1 ring-white/60 ring-inset sm:max-w-sm">
+            <div
+              aria-hidden
+              className="h-full rounded-full bg-brand-600 shadow-[0_0_18px_rgba(31,100,224,0.32)] transition-transform duration-200 ease-out"
+              style={{
+                width: `${scrollIndicator.thumb}%`,
+                transform: `translateX(${
+                  scrollIndicator.progress * ((100 - scrollIndicator.thumb) / scrollIndicator.thumb) * 100
+                }%)`,
+              }}
+            />
+          </div>
+        )}
       </div>
 
       <script

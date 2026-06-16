@@ -15,12 +15,21 @@
     "AI_GATEWAY_BASE_URL",
     "AI_GATEWAY_MODEL",
     "VERCEL_OIDC_TOKEN",
-    "EMBEDDING_MODEL"
+    "EMBEDDING_MODEL",
+    "JOBPOSTED_DAILY_PREP_LIMIT",
+    "JOBPOSTED_DAILY_CANDIDATE_LIMIT",
+    "JOBPOSTED_BULK_USER_PAGE_SIZE",
+    "JOBPOSTED_BULK_CONCURRENCY",
+    "INGEST_BOARDS_FILE",
+    "INGEST_QUESTIONS",
+    "INGEST_CLOSE_AFTER_DAYS",
+    "WORKER_CRON_SECRET",
+    "QUEUE_RENDER_LIMIT"
   ],
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
-      "outputs": [".next/**", "!.next/cache/**", "dist/**"]
+      "outputs": [".next/**", "!.next/cache/**", "dist/**", ".output/**"]
     },
     "dev": {
       "cache": false,

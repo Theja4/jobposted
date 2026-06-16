@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { CalendarSearch, Search, X } from "lucide-react";
-import { APPLICATIONS, type JobApplication } from "@/lib/dashboard/sample-data";
+import { type JobApplication } from "@/lib/dashboard/sample-data";
 import { searchApplications } from "@/lib/dashboard/search";
 import { ApplicationRow } from "./ApplicationRow";
 import { DateRangePicker, toDateKey, type DateRange } from "./DateRangePicker";
@@ -11,7 +11,7 @@ function startOfDay(d: Date) {
   return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
 }
 
-export function ApplicationsBrowser({ applications = APPLICATIONS }: { applications?: JobApplication[] }) {
+export function ApplicationsBrowser({ applications = [] }: { applications?: JobApplication[] }) {
   const [range, setRange] = useState<DateRange>({ from: null, to: null });
   const [query, setQuery] = useState("");
 

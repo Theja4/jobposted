@@ -1,12 +1,12 @@
 "use client";
 
 import { motion, useReducedMotion } from "framer-motion";
-import { Ban, PauseCircle, Sparkles, type LucideIcon } from "lucide-react";
+import { Ban, PauseCircle, type LucideIcon } from "lucide-react";
 import { Reveal } from "@/components/ui/Reveal";
 
 const FACTS = [
   { icon: Ban, label: "Never spray and pray, always tailored" },
-  { icon: PauseCircle, label: "Pause or skip any role, anytime" },
+  { icon: PauseCircle, label: "Powered by Rezoomed" },
 ] as const;
 
 /** One shared loop so every element of the pipeline stays in sync. */
@@ -30,10 +30,10 @@ export function Trust() {
         <div className="relative z-10 mx-auto w-full max-w-5xl">
           <Reveal className="mx-auto max-w-2xl text-center">
             <p className="text-sm font-extrabold tracking-[0.2em] text-brand-200 uppercase">
-              Stay in control
+              The Process
             </p>
             <h2 className="mt-4 text-4xl font-extrabold tracking-[-0.035em] text-balance sm:text-5xl">
-              It runs on its own. You still call the shots.
+              It runs on its own.
             </h2>
           </Reveal>
 
@@ -55,9 +55,9 @@ export function Trust() {
 }
 
 /**
- * The story as motion: a matched role leaves the queue, passes through the
- * tailoring pass (its resume is rewritten), and flies out as sent — all on its
- * own. You stay in control with a once-a-day acknowledgement, not per-send clicks.
+ * The story as motion: a matched role leaves discovery, passes through the
+ * tailoring pass (its resume is rewritten), and lands in a review queue. You
+ * stay in control before anything is submitted.
  */
 function ConfirmPipeline({ reduce }: { reduce: boolean }) {
   return (
@@ -90,18 +90,18 @@ function ConfirmPipeline({ reduce }: { reduce: boolean }) {
             }
             transition={reduce ? undefined : { ...LOOP, times: [0, 0.08, 0.34, 0.6, 0.92] }}
             style={reduce ? { transform: "translateX(228px)" } : undefined}
-            className="absolute top-1/2 left-2 z-10 w-44 -translate-y-1/2 rounded-2xl bg-white p-3.5 text-ink shadow-[0_24px_50px_rgba(2,10,28,0.5)]"
+            className="absolute top-1/2 left-2 z-10 w-44 -translate-y-1/2 rounded-2xl bg-[#102f66] p-3.5 text-white shadow-[0_24px_50px_rgba(2,10,28,0.5)] ring-1 ring-white/12 ring-inset"
           >
             <div className="flex items-center justify-between gap-2">
               <p className="text-xs font-extrabold">Product Engineer</p>
-              <span className="rounded-full bg-brand-50 px-2 py-0.5 text-[9px] font-black text-brand-700">
+              <span className="rounded-full bg-white/14 px-2 py-0.5 text-[9px] font-black text-white ring-1 ring-white/12 ring-inset">
                 96%
               </span>
             </div>
-            <p className="mt-0.5 text-[10px] font-bold text-muted">Stripe · Remote</p>
+            <p className="mt-0.5 text-[10px] font-bold text-white/68">Stripe · Remote</p>
             <div className="mt-2.5 space-y-1.5">
-              <span className="block h-1.5 w-10/12 rounded-full bg-brand-100" />
-              <span className="block h-1.5 w-7/12 rounded-full bg-aqua/40" />
+              <span className="block h-1.5 w-10/12 rounded-full bg-white/26" />
+              <span className="block h-1.5 w-7/12 rounded-full bg-aqua/55" />
             </div>
             {/* tailored check pops as it passes the tailoring node */}
             <motion.span
@@ -138,8 +138,8 @@ function ConfirmPipeline({ reduce }: { reduce: boolean }) {
             className="absolute top-1/2 left-[300px] z-20 flex w-52 -translate-y-1/2 items-center justify-between gap-3 rounded-full bg-white/90 py-3 pr-3 pl-6 text-ink shadow-[0_18px_40px_rgba(2,10,28,0.32)] ring-1 ring-white/70 ring-inset backdrop-blur-xl"
           >
             <span className="text-base font-extrabold whitespace-nowrap">Tailoring</span>
-            <span className="grid size-10 shrink-0 place-items-center rounded-full bg-brand-600 text-white shadow-[0_8px_18px_rgba(31,100,224,0.24)]">
-              <Sparkles className="size-5" />
+            <span className="grid size-10 shrink-0 place-items-center overflow-hidden rounded-full border-2 border-white bg-white shadow-[0_8px_18px_rgba(31,100,224,0.24)]">
+              <img src="/rezoomed/logo.png" alt="Rezoomed" className="size-full scale-110 object-cover" />
             </span>
           </motion.div>
 

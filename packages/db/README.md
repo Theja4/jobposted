@@ -13,6 +13,21 @@ FKs to `auth.users` and RLS via `auth.uid()` work identically in a non-public sc
 | `0002_rls.sql` | RLS on every user-scoped table; owner-only policies; jobs global read | §8.1 |
 | `0003_storage.sql` | private `resumes` + `screenshots` buckets, owner-folder RLS | §14 |
 | `0004_indexes.sql` | derived daily-usage, queue, dedupe, and HNSW vector indexes | §9.4, §12 |
+| `0005_extension.sql` | extension answer cache and field-mapping tables | §10, §11 |
+| `0006_queue.sql` | daily queue acknowledgement table | §10, §11 |
+| `0007_billing.sql` | provider billing metadata on subscriptions | §12 |
+| `0008_modes.sql` | application mode toggle, full auto or review queue | §10 |
+| `0009_onboarding.sql` | onboarding configuration storage | §10 |
+| `0010_application_mode_safety.sql` | idempotent application mode safety migration | §10 |
+| `0011_production_hardening.sql` | active resume pointer, queue indexes, freshness, vector recall RPC | §9, §11, §12 |
+| `0012_match_fn_hardening.sql` | pinned RPC search path and grant cleanup | §9, §12 |
+| `0013_apply_runner.sql` | atomic server-apply claim RPC and attempt tracking | §11 |
+| `0014_document_retention.sql` | cleanup indexes for transient tailored render pruning | §11.8, §14 |
+| `0015_job_board_pagination.sql` | paged job-board sort/search indexes, no browse-time scoring | §9, §12 |
+| `0016_job_dedupe.sql` | cross-board posting dedupe key and vector RPC return update | §9, §12 |
+| `0017_job_board_filters.sql` | normalized type/seniority/salary fields and filter indexes | §9, §12 |
+| `0018_tracker_search.sql` | server-side tracker pagination, filtering, sorting, and search | §10, §12 |
+| `0019_current_compensation.sql` | separate current salary/CTC fields from expected compensation | setup/autofill |
 
 ## How to apply
 

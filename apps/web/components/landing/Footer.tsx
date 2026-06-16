@@ -1,15 +1,16 @@
 import { Mail, MessageCircle, Send, Sparkles } from "lucide-react";
 import { AnimatedGetStartedButton } from "./AnimatedGetStartedButton";
 import { Logo } from "./Logo";
-import { SITE_NAME } from "@/lib/site";
+import { SITE_NAME, SUPPORT_EMAIL } from "@/lib/site";
 
 const FOOTER_LINKS = [
-  { href: "#how-it-works", label: "How it works" },
-  { href: "#pricing", label: "Pricing" },
-  { href: "#faq", label: "FAQ" },
+  { href: "/#how-it-works", label: "How it works" },
+  { href: "/pricing", label: "Pricing" },
+  { href: "/#faq", label: "FAQ" },
   { href: "https://rezoomed.com", label: "Rezoomed" },
   { href: "/privacy", label: "Privacy" },
   { href: "/terms", label: "Terms" },
+  { href: "/refund", label: "Refunds" },
 ];
 
 export function Footer({ seamless = false }: { seamless?: boolean }) {
@@ -42,7 +43,7 @@ export function Footer({ seamless = false }: { seamless?: boolean }) {
         <div>
           <Logo />
           <div className="mt-9 flex gap-3">
-            <SocialLink href="mailto:hello@jobposted.com" label="Email JobPosted">
+            <SocialLink href={`mailto:${SUPPORT_EMAIL}`} label="Email JobPosted support">
               <Mail className="size-4" />
             </SocialLink>
             <SocialLink href="/get-started" label="Get started">
@@ -54,10 +55,10 @@ export function Footer({ seamless = false }: { seamless?: boolean }) {
           </div>
 
           <a
-            href="mailto:hello@jobposted.com"
+            href={`mailto:${SUPPORT_EMAIL}`}
             className="mt-9 inline-block text-lg font-semibold text-ink transition-colors hover:text-brand-700"
           >
-            hello@jobposted.com
+            {SUPPORT_EMAIL}
           </a>
           <p className="mt-5 max-w-[17rem] text-sm leading-6 text-ink/62">
             © {new Date().getFullYear()} {SITE_NAME}. All rights reserved.

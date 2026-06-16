@@ -6,7 +6,7 @@ import { NextResponse, type NextRequest } from "next/server";
  * cookies to both the request (for Server Components) and the response (for the
  * browser). Required for reliable server-side auth reads and protected routes.
  */
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   let response = NextResponse.next({ request });
 
   const supabase = createServerClient(

@@ -61,12 +61,12 @@ export function StatRows() {
                   time wasted
                 </span>
                 <p className="text-7xl font-extrabold tracking-[-0.05em] text-brand-600 sm:text-8xl lg:text-9xl">
-                  <CountUp to={0} from={5} duration={1.6} />
+                  Zero
                 </p>
               </div>
               <p className="text-sm leading-6 text-pretty text-muted">
-                Forms you fill out by hand. JobPosted tailors each resume, completes the
-                application, and submits it. You just acknowledge what went out, once a day.
+                Forms you fill out by hand. JobPosted tailors each resume, prepares the
+                application, and keeps it in your queue so you can review before submitting.
               </p>
             </div>
           </Reveal>

@@ -5,7 +5,7 @@
  */
 
 import { createClient } from "@supabase/supabase-js";
-import type { Job } from "@jobposted/shared";
+import { dedupeKey, inferJobType, inferSeniority, type Job } from "@jobposted/shared";
 
 export interface UpsertResult {
   skipped: boolean;
@@ -22,6 +22,8 @@ function toRow(job: Job): Record<string, unknown> {
     title: job.title,
     location: job.location,
     remote: job.remote,
+    job_type: inferJobType(job.title, job.descriptionMd),
+    seniority: inferSeniority(job.title, job.descriptionMd),
     description_md: job.descriptionMd,
     apply_url: job.applyUrl,
     form_questions: job.formQuestions,
@@ -30,6 +32,9 @@ function toRow(job: Job): Record<string, unknown> {
     salary_currency: job.salaryCurrency,
     visa_sponsorship: job.visaSponsorship,
     posted_at: job.postedAt,
+    last_seen_at: new Date().toISOString(),
+    closed_at: null,
+    dedupe_key: dedupeKey(job.company, job.title, job.location),
     embedding: job.embedding ? JSON.stringify(job.embedding) : null,
   };
 }
@@ -57,6 +62,17 @@ export async function upsertJobs(jobs: Job[]): Promise<UpsertResult> {
       .upsert(rows, { onConflict: "source,source_job_id", count: "exact" });
     if (error) throw new Error(`[upsert] ${error.message}`);
     upserted += count ?? rows.length;
+  }
+
+  const closeAfterDays = Number(process.env.INGEST_CLOSE_AFTER_DAYS ?? 45);
+  if (Number.isFinite(closeAfterDays) && closeAfterDays > 0) {
+    const cutoff = new Date(Date.now() - closeAfterDays * 86_400_000).toISOString();
+    const { error } = await supabase
+      .from("jobs")
+      .update({ closed_at: new Date().toISOString() })
+      .is("closed_at", null)
+      .lt("last_seen_at", cutoff);
+    if (error) throw new Error(`[stale-close] ${error.message}`);
   }
   return { skipped: false, upserted };
 }

@@ -23,6 +23,11 @@ export const metadata: Metadata = {
   description: SITE_DESCRIPTION,
   applicationName: SITE_NAME,
   alternates: { canonical: "/" },
+  icons: {
+    icon: [{ url: "/favicon.png", sizes: "32x32", type: "image/png" }],
+    shortcut: [{ url: "/favicon.png", type: "image/png" }],
+    apple: [{ url: "/apple-touch-icon.png", sizes: "128x128", type: "image/png" }],
+  },
   keywords: [
     "auto apply jobs",
     "AI job application",

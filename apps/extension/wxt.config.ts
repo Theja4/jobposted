@@ -2,15 +2,27 @@ import tailwindcss from "@tailwindcss/vite";
 import { defineConfig } from "wxt";
 
 const EXTENSION_NAME = "JobPosted";
+const configuredWebOrigin = process.env.WXT_JOBPOSTED_WEB_ORIGIN || "http://localhost:3000";
 
 const includeLocalhost =
-  process.env.NODE_ENV !== "production" || process.env.INCLUDE_LOCALHOST === "1";
+  process.env.NODE_ENV !== "production" ||
+  process.env.INCLUDE_LOCALHOST === "1" ||
+  configuredWebOrigin.startsWith("http://localhost");
+
+function originMatch(origin: string) {
+  try {
+    return `${new URL(origin).origin}/*`;
+  } catch {
+    return "http://localhost:3000/*";
+  }
+}
 
 const JOBPOSTED_HOSTS = [
+  originMatch(configuredWebOrigin),
   "https://jobposted.ai/*",
   "https://www.jobposted.ai/*",
   ...(includeLocalhost ? ["http://localhost:3000/*"] : []),
-];
+].filter((value, index, all) => all.indexOf(value) === index);
 
 const ATS_HOSTS = [
   "https://*.myworkdayjobs.com/*",
@@ -39,6 +51,11 @@ const API_HOSTS = ["https://*.supabase.co/*"];
 export default defineConfig({
   manifestVersion: 3,
   modules: ["@wxt-dev/module-react"],
+  dev: {
+    server: {
+      port: 3001,
+    },
+  },
   vite: () => ({
     plugins: [tailwindcss()],
   }),
@@ -54,7 +71,7 @@ export default defineConfig({
       96: "icon/96.png",
       128: "icon/128.png",
     },
-    permissions: ["storage", "activeTab", "scripting"],
+    permissions: ["storage", "activeTab", "scripting", "alarms"],
     host_permissions: [...ATS_HOSTS, ...JOBPOSTED_HOSTS, ...API_HOSTS],
     action: {
       default_title: EXTENSION_NAME,

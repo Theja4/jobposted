@@ -115,35 +115,6 @@ function fillCheckbox(field: FieldDescriptor, value: ExtensionFieldMapping["valu
   return true;
 }
 
-async function attachFile(
-  input: HTMLInputElement,
-  url: string | null | undefined,
-  filename: string,
-) {
-  if (!url) return false;
-  const response = await fetch(url);
-  if (!response.ok) return false;
-  const blob = await response.blob();
-  const file = new File([blob], filename, {
-    type: blob.type || "application/pdf",
-    lastModified: Date.now(),
-  });
-  const transfer = new DataTransfer();
-  transfer.items.add(file);
-  input.files = transfer.files;
-  dispatchFieldEvents(input);
-  return true;
-}
-
-async function fillFile(field: FieldDescriptor, mapping: ExtensionFieldMapping, context: FillContext) {
-  if (!(field.element instanceof HTMLInputElement) || field.element.type !== "file") return false;
-  const resume = await context.getResume(null);
-  if (mapping.canonicalKey === "documents.coverLetter") {
-    return attachFile(field.element, resume.coverLetterUrl, "JobPosted-cover-letter.pdf");
-  }
-  return attachFile(field.element, resume.resumeUrl, "JobPosted-resume.pdf");
-}
-
 export async function fillField(
   field: FieldDescriptor,
   mapping: ExtensionFieldMapping,
@@ -167,12 +138,19 @@ export async function fillField(
   if (!context.overwrite && hasValue(field)) {
     return { ...base, status: "skipped", error: "Already filled." };
   }
+  if (field.type === "file") {
+    field.element.classList.add("jp-field-highlight");
+    const label = mapping.canonicalKey === "documents.coverLetter" ? "cover letter" : "resume";
+    return {
+      ...base,
+      status: field.required ? "needs_user" : "skipped",
+      error: `Upload your ${label} manually.`,
+    };
+  }
 
   try {
     let filled = false;
-    if (field.type === "file") {
-      filled = await fillFile(field, mapping, context);
-    } else if (field.element instanceof HTMLSelectElement) {
+    if (field.element instanceof HTMLSelectElement) {
       filled = fillSelect(field.element, mapping.value);
     } else if (field.type === "radio") {
       filled = fillRadio(field, mapping.value);

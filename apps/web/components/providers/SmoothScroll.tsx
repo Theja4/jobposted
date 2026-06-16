@@ -16,6 +16,7 @@ export function SmoothScroll() {
       lerp: 0.105,
       wheelMultiplier: 1,
       anchors: { offset: -96 },
+      prevent: (node) => Boolean(node.closest("[data-lenis-prevent]")),
     });
 
     let frame = requestAnimationFrame(function loop(time: number) {

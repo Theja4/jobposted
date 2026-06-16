@@ -1,11 +1,23 @@
 import {
   isExtensionMessage,
+  type ExtensionApplicationResponse,
+  type ExtensionApplicationUpsert,
   type ExtensionMessage,
   type ExtensionMessageResponse,
 } from "@jobposted/shared";
 import { EXTENSION_BRIDGE_PATH, JOBPOSTED_WEB_ORIGIN } from "../src/config/env";
-import { fetchProfile, fetchResume, mapField, saveAnswer, syncApplication } from "../src/lib/api";
+import { ExtensionHttpError, fetchProfile, fetchResume, mapField, saveAnswer, syncApplication } from "../src/lib/api";
 import { clearSession, readSession, readSettings, writeSession, writeSettings } from "../src/lib/storage";
+import {
+  APPLICATION_SYNC_ALARM,
+  dueApplicationSyncs,
+  enqueueApplicationSync,
+  markApplicationSyncAttempt,
+  readPendingApplicationSyncs,
+  readSyncQueueStatus,
+  removeApplicationSync,
+  scheduleNextApplicationSyncRetry,
+} from "../src/lib/sync-queue";
 
 interface PendingAuth {
   tabId: number;
@@ -19,6 +31,55 @@ function bridgeUrl(requestId: string) {
   const url = new URL(EXTENSION_BRIDGE_PATH, JOBPOSTED_WEB_ORIGIN);
   url.searchParams.set("requestId", requestId);
   return url.toString();
+}
+
+function transientSyncError(error: unknown) {
+  if (!(error instanceof ExtensionHttpError)) return true;
+  return error.status === 0 || error.status === 408 || error.status === 429 || error.status >= 500;
+}
+
+async function syncApplicationWithQueue(
+  payload: ExtensionApplicationUpsert,
+): Promise<ExtensionApplicationResponse> {
+  try {
+    return await syncApplication(payload);
+  } catch (error) {
+    if (!transientSyncError(error)) throw error;
+    const queued = await enqueueApplicationSync(
+      payload,
+      error instanceof Error ? error.message : "sync_failed",
+    );
+    return {
+      ok: true,
+      applicationId: null,
+      jobId: payload.jobId ?? null,
+      queued: true,
+      attempts: queued.attempts,
+      queuedAt: queued.queuedAt,
+    };
+  }
+}
+
+async function retryQueuedApplicationSyncs() {
+  const queue = await readPendingApplicationSyncs();
+  const due = dueApplicationSyncs(queue);
+  for (const item of due) {
+    try {
+      await syncApplication(item.payload);
+      await removeApplicationSync(item.id);
+    } catch (error) {
+      if (!transientSyncError(error)) {
+        await removeApplicationSync(item.id);
+        continue;
+      }
+      await markApplicationSyncAttempt(
+        item.id,
+        error instanceof Error ? error.message : "sync_failed",
+      );
+    }
+  }
+  await scheduleNextApplicationSyncRetry();
+  return readSyncQueueStatus();
 }
 
 async function startAuth(): Promise<ExtensionMessageResponse> {
@@ -76,7 +137,11 @@ async function handleMessage(message: ExtensionMessage): Promise<ExtensionMessag
     case "FIELD_MAP":
       return { ok: true, type: "FIELD_MAP", mapping: await mapField(message.field, message.profile) };
     case "APPLICATION_SYNC":
-      return { ok: true, type: "APPLICATION_SYNC", result: await syncApplication(message.payload) };
+      return { ok: true, type: "APPLICATION_SYNC", result: await syncApplicationWithQueue(message.payload) };
+    case "APPLICATION_SYNC_RETRY":
+      return { ok: true, type: "APPLICATION_SYNC_RETRY", status: await retryQueuedApplicationSyncs() };
+    case "SYNC_QUEUE_STATUS":
+      return { ok: true, type: "SYNC_QUEUE_STATUS", status: await readSyncQueueStatus() };
     case "ANSWER_SAVE":
       await saveAnswer(message.answer);
       return { ok: true, type: "ANSWER_SAVE" };
@@ -90,6 +155,17 @@ async function handleMessage(message: ExtensionMessage): Promise<ExtensionMessag
 }
 
 export default defineBackground(() => {
+  void scheduleNextApplicationSyncRetry();
+
+  chrome.runtime.onStartup?.addListener(() => {
+    void scheduleNextApplicationSyncRetry();
+  });
+
+  chrome.alarms.onAlarm.addListener((alarm) => {
+    if (alarm.name !== APPLICATION_SYNC_ALARM) return;
+    void retryQueuedApplicationSyncs();
+  });
+
   chrome.tabs.onRemoved.addListener((tabId) => {
     for (const [requestId, pending] of PENDING_AUTH) {
       if (pending.tabId !== tabId) continue;

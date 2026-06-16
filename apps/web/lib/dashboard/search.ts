@@ -1,4 +1,5 @@
 import { STATUS_META, type JobApplication, type JobListing } from "./sample-data";
+import { TRACKER_COLUMNS, type TrackerItem } from "./tracker-model";
 
 /**
  * Client-side ranked fuzzy search for the job board.
@@ -203,5 +204,26 @@ export function searchApplications(apps: JobApplication[], query: string): JobAp
       ]),
     (a) => a.matchScore / 100 + recencyBoost(a.appliedOn),
     (a, b) => new Date(b.appliedOn).getTime() - new Date(a.appliedOn).getTime(),
+  );
+}
+
+/** Rank tracker cards. Empty query -> newest first inside the current filter set. */
+export function searchTrackerItems(items: TrackerItem[], query: string): TrackerItem[] {
+  return rank(
+    items,
+    query,
+    (item) =>
+      toFields([
+        { weight: 6, text: item.role },
+        { weight: 5, text: item.company },
+        { weight: 2.5, text: item.location },
+        { weight: 2.2, text: TRACKER_COLUMNS.find((column) => column.id === item.stage)?.label ?? item.stage },
+        { weight: 2, text: item.sourceLabel },
+        { weight: 1.5, text: item.platform ?? "" },
+        { weight: 1.2, text: item.notes ?? "" },
+        { weight: 1, text: item.resumeName },
+      ]),
+    (item) => item.matchScore / 100 + recencyBoost(item.appliedOn),
+    (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
   );
 }

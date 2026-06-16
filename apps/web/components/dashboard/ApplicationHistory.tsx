@@ -1,10 +1,10 @@
 import Link from "next/link";
-import { ExternalLink } from "lucide-react";
-import { APPLICATIONS, type JobApplication } from "@/lib/dashboard/sample-data";
+import { CalendarSearch, ExternalLink } from "lucide-react";
+import { type JobApplication } from "@/lib/dashboard/sample-data";
 import { ApplicationRow } from "./ApplicationRow";
 
 export function ApplicationHistory({
-  applications = APPLICATIONS,
+  applications = [],
   limit,
   showHeader = true,
 }: {
@@ -23,7 +23,7 @@ export function ApplicationHistory({
               Recent applications
             </h2>
             <p className="mt-1 text-sm font-semibold text-muted">
-              The tailored resume used for each is one click away
+              Only applications sent by JobPosted appear here
             </p>
           </div>
           {limit && (
@@ -37,11 +37,23 @@ export function ApplicationHistory({
         </div>
       )}
 
-      <div className="space-y-2.5">
-        {rows.map((application) => (
-          <ApplicationRow key={application.id} application={application} />
-        ))}
-      </div>
+      {rows.length === 0 ? (
+        <div className="flex flex-col items-center py-12 text-center">
+          <span className="grid size-12 place-items-center rounded-2xl bg-white/70 text-muted ring-1 ring-inset ring-white">
+            <CalendarSearch className="size-5" />
+          </span>
+          <p className="mt-4 text-base font-extrabold text-ink">No JobPosted applications yet</p>
+          <p className="mt-1 max-w-sm text-sm text-muted">
+            Manual tracker entries and extension captures stay in Tracker, not application history.
+          </p>
+        </div>
+      ) : (
+        <div className="space-y-2.5">
+          {rows.map((application) => (
+            <ApplicationRow key={application.id} application={application} />
+          ))}
+        </div>
+      )}
     </section>
   );
 }

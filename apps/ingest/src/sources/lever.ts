@@ -8,7 +8,7 @@
  */
 
 import type { RawJob, SalaryRange } from "@jobposted/shared";
-import { fetchJson, humanizeSlug } from "../util.js";
+import { fetchJson, humanizeSlug } from "../util";
 
 const BASE = "https://api.lever.co/v0/postings";
 

@@ -4,9 +4,10 @@ import { readFile } from "node:fs/promises";
 export interface BoardConfig {
   greenhouse: string[]; // board tokens
   lever: string[]; // company slugs
+  ashby: string[]; // organization slugs
 }
 
-const EMPTY: BoardConfig = { greenhouse: [], lever: [] };
+const EMPTY: BoardConfig = { greenhouse: [], lever: [], ashby: [] };
 
 /**
  * Load board tokens from a JSON file (INGEST_BOARDS_FILE), shaped like
@@ -19,9 +20,10 @@ export async function loadBoardConfig(file?: string): Promise<BoardConfig> {
   return {
     greenhouse: Array.isArray(parsed.greenhouse) ? parsed.greenhouse : [],
     lever: Array.isArray(parsed.lever) ? parsed.lever : [],
+    ashby: Array.isArray(parsed.ashby) ? parsed.ashby : [],
   };
 }
 
 export function countBoards(config: BoardConfig): number {
-  return config.greenhouse.length + config.lever.length;
+  return config.greenhouse.length + config.lever.length + config.ashby.length;
 }

@@ -90,7 +90,7 @@ export function Pricing() {
             Pick your pace. <span className="text-brand-700">Pause anytime.</span>
           </h2>
           <p className="mx-auto mt-4 max-w-2xl text-pretty text-base leading-7 text-muted sm:text-lg">
-            Start with real applications sent on your behalf, then choose the daily volume that
+            Start with real applications prepared for your review, then choose the daily volume that
             matches your search. Monthly or annual, and you can pause whenever you want.
           </p>
           <div className="relative mx-auto mt-7 grid w-fit grid-cols-2 rounded-full bg-white/60 p-1 text-sm font-bold text-ink ring-1 ring-inset ring-white/80 backdrop-blur-xl">

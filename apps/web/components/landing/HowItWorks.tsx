@@ -101,7 +101,7 @@ function QueueRail() {
         {SIDEBAR_ITEMS.map((item) => (
           <a
             key={item.label}
-            href={item.active ? "#pricing" : "#how-it-works"}
+            href={item.active ? "/pricing" : "#how-it-works"}
             className={cn(
               "flex items-center gap-3 rounded-2xl px-3 py-3 text-sm font-bold transition duration-200 hover:-translate-y-0.5",
               item.active

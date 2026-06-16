@@ -2,7 +2,6 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { Route } from "next";
-import Script from "next/script";
 import { useRouter } from "next/navigation";
 import { Loader2 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
@@ -22,6 +21,8 @@ import { track } from "@/lib/analytics";
  *    client is provisioned; set the env var to upgrade the branding.
  */
 export const GOOGLE_CLIENT_ID = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID ?? "";
+const GOOGLE_SCRIPT_ID = "google-gsi";
+const GOOGLE_SCRIPT_SRC = "https://accounts.google.com/gsi/client";
 
 interface CredentialResponse {
   credential?: string;
@@ -54,9 +55,38 @@ declare global {
   }
 }
 
-export function GoogleSignIn({ onError }: { onError: (message: string) => void }) {
-  if (GOOGLE_CLIENT_ID) return <GoogleIdTokenButton onError={onError} />;
-  return <GoogleOAuthFallback onError={onError} />;
+export function GoogleSignIn({
+  onError,
+  redirectTo = "/dashboard/onboarding",
+}: {
+  onError: (message: string) => void;
+  redirectTo?: string;
+}) {
+  if (GOOGLE_CLIENT_ID) return <GoogleIdTokenButton onError={onError} redirectTo={redirectTo} />;
+  return <GoogleOAuthFallback onError={onError} redirectTo={redirectTo} />;
+}
+
+function loadGoogleIdentityScript(): Promise<void> {
+  if (window.google) return Promise.resolve();
+
+  return new Promise((resolve, reject) => {
+    const existing = document.getElementById(GOOGLE_SCRIPT_ID) as HTMLScriptElement | null;
+    const script = existing ?? document.createElement("script");
+
+    const onLoad = () => resolve();
+    const onError = () => reject(new Error("Google sign-in script failed to load."));
+
+    script.addEventListener("load", onLoad, { once: true });
+    script.addEventListener("error", onError, { once: true });
+
+    if (!existing) {
+      script.id = GOOGLE_SCRIPT_ID;
+      script.src = GOOGLE_SCRIPT_SRC;
+      script.async = true;
+      script.defer = true;
+      document.head.appendChild(script);
+    }
+  });
 }
 
 async function sha256Hex(input: string): Promise<string> {
@@ -68,10 +98,31 @@ async function sha256Hex(input: string): Promise<string> {
 }
 
 /** Mode 1 — GIS ID-token flow with a JobPosted-owned client (JobPosted branding). */
-function GoogleIdTokenButton({ onError }: { onError: (message: string) => void }) {
+function GoogleIdTokenButton({
+  onError,
+  redirectTo,
+}: {
+  onError: (message: string) => void;
+  redirectTo: string;
+}) {
   const router = useRouter();
   const containerRef = useRef<HTMLDivElement>(null);
   const [scriptReady, setScriptReady] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    loadGoogleIdentityScript()
+      .then(() => {
+        if (!cancelled) setScriptReady(true);
+      })
+      .catch((error) => {
+        if (!cancelled) onError(error instanceof Error ? error.message : "Google sign-in script failed to load.");
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [onError]);
 
   useEffect(() => {
     const el = containerRef.current;
@@ -107,7 +158,7 @@ function GoogleIdTokenButton({ onError }: { onError: (message: string) => void }
             return;
           }
           track("auth_google");
-          router.push("/dashboard" as Route);
+          router.push(redirectTo as Route);
           router.refresh();
         },
       });
@@ -128,24 +179,22 @@ function GoogleIdTokenButton({ onError }: { onError: (message: string) => void }
     return () => {
       cancelled = true;
     };
-  }, [scriptReady, router, onError]);
+  }, [scriptReady, router, onError, redirectTo]);
 
   return (
-    <>
-      <Script
-        id="google-gsi"
-        src="https://accounts.google.com/gsi/client"
-        strategy="afterInteractive"
-        onReady={() => setScriptReady(true)}
-      />
-      {/* GIS renders a light-themed button; pin color-scheme so it stays legible. */}
-      <div ref={containerRef} className="flex min-h-12 justify-center [color-scheme:light]" />
-    </>
+    /* GIS renders a light-themed button; pin color-scheme so it stays legible. */
+    <div ref={containerRef} className="flex min-h-12 justify-center [color-scheme:light]" />
   );
 }
 
 /** Mode 2 — Supabase web OAuth via the shared client (works without a dedicated client). */
-function GoogleOAuthFallback({ onError }: { onError: (message: string) => void }) {
+function GoogleOAuthFallback({
+  onError,
+  redirectTo,
+}: {
+  onError: (message: string) => void;
+  redirectTo: string;
+}) {
   const [loading, setLoading] = useState(false);
 
   async function onClick() {
@@ -155,7 +204,9 @@ function GoogleOAuthFallback({ onError }: { onError: (message: string) => void }
       const supabase = createClient();
       const { error } = await supabase.auth.signInWithOAuth({
         provider: "google",
-        options: { redirectTo: `${window.location.origin}/auth/callback` },
+        options: {
+          redirectTo: `${window.location.origin}/auth/callback?next=${encodeURIComponent(redirectTo)}`,
+        },
       });
       if (error) throw error;
       track("auth_google");

@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import {
+  AnimatePresence,
   motion,
   useMotionValue,
   useReducedMotion,
@@ -13,6 +14,8 @@ import Link from "next/link";
 import { ArrowRight, LayoutGrid, MousePointer2, Send } from "lucide-react";
 import { useAuthUser } from "@/components/auth/useAuthUser";
 import { AnimatedGetStartedButton } from "./AnimatedGetStartedButton";
+
+const ROTATING_HERO_WORDS = ["sleep", "prepare", "chill"] as const;
 
 /**
  * Scroll-driven hero: a stack of rounded cards peeks below the headline, then the
@@ -113,16 +116,79 @@ function HeadlineBlock() {
   return (
     <div className="mx-auto flex w-full max-w-3xl flex-col items-center px-5 pt-24 text-center sm:pt-28">
       <h1 className="text-5xl leading-[1.02] font-extrabold tracking-[-0.04em] text-balance text-ink sm:text-6xl lg:text-7xl">
-        Your job applications, sent for you every day.
+        <span className="block">Your job applications automated while you</span>
+        <span className="mt-2 block sm:mt-3">
+          <RotatingWord />
+        </span>
       </h1>
 
       <p className="mt-6 max-w-xl text-base leading-7 text-pretty text-muted sm:text-lg">
-        JobPosted finds matching roles, tailors your resume to each one, and submits the
-        application automatically. You just log in daily to acknowledge what went out.
+        JobPosted finds matching roles, tailors your resume to each one, and queues the
+        application for your review.
       </p>
 
       <HeroCtas />
     </div>
+  );
+}
+
+function RotatingWord() {
+  const [index, setIndex] = useState(0);
+  const reduce = useReducedMotion();
+  const word = ROTATING_HERO_WORDS[index];
+
+  useEffect(() => {
+    if (reduce) return;
+
+    const interval = window.setInterval(() => {
+      setIndex((current) => (current + 1) % ROTATING_HERO_WORDS.length);
+    }, 5000);
+
+    return () => window.clearInterval(interval);
+  }, [reduce]);
+
+  return (
+    <span className="relative inline-flex w-[4.6em] justify-center align-baseline text-brand-700 [perspective:900px]">
+      <AnimatePresence mode="wait" initial={false}>
+        <motion.span
+          key={word}
+          initial={reduce ? false : { opacity: 0, y: "0.55em", rotateX: -78, filter: "blur(5px)" }}
+          animate={{ opacity: 1, y: 0, rotateX: 0, filter: "blur(0px)" }}
+          exit={reduce ? undefined : { opacity: 0, y: "-0.55em", rotateX: 78, filter: "blur(5px)" }}
+          transition={{ duration: 0.42, ease: [0.22, 1, 0.36, 1] }}
+          className="relative inline-block origin-center whitespace-nowrap pr-[0.03em] font-serif italic tracking-[-0.035em] text-brand-700 [transform-style:preserve-3d]"
+        >
+          {word}
+          <svg
+            aria-hidden
+            viewBox="0 0 180 24"
+            className="pointer-events-none absolute -bottom-[0.16em] left-1/2 h-[0.24em] w-[108%] -translate-x-1/2 overflow-visible"
+            preserveAspectRatio="none"
+          >
+            <motion.path
+              key={`${word}-stroke`}
+              d="M7 15 C43 23, 76 5, 116 13 S160 19, 173 9"
+              fill="none"
+              stroke="#f8b84e"
+              strokeWidth="9"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              initial={reduce ? false : { pathLength: 0, opacity: 0 }}
+              animate={{ pathLength: 1, opacity: 1 }}
+              transition={{ duration: 0.38, delay: 0.12, ease: [0.22, 1, 0.36, 1] }}
+            />
+            <path
+              d="M8 16 C45 21, 77 8, 117 14 S160 18, 172 10"
+              fill="none"
+              stroke="#174fb8"
+              strokeWidth="2"
+              strokeLinecap="round"
+              opacity="0.22"
+            />
+          </svg>
+        </motion.span>
+      </AnimatePresence>
+    </span>
   );
 }
 
@@ -246,13 +312,13 @@ function HeroScene({ p }: { p: MotionValue<number> }) {
         </div>
       </motion.div>
 
-      {/* fast layer — the auto-send moment */}
+      {/* fast layer - the review-ready moment */}
       <motion.div style={{ y: fast }} className="absolute right-[10%] bottom-[16%] sm:right-[14%]">
         <span className="absolute -top-7 -right-4 rotate-[8deg] rounded-full bg-sun px-3 py-1 text-[11px] font-black text-[#3d2c05]">
-          sent for you
+          review ready
         </span>
         <div className="liquid-glass-dark flex items-center gap-4 rounded-full py-3 pr-3 pl-6">
-          <span className="text-base font-extrabold sm:text-lg">Application sent</span>
+          <span className="text-base font-extrabold sm:text-lg">Ready to review</span>
           <span className="grid size-11 place-items-center rounded-full bg-white text-brand-700">
             <Send className="size-5" />
           </span>
@@ -265,7 +331,7 @@ function HeroScene({ p }: { p: MotionValue<number> }) {
         className="absolute inset-x-0 bottom-8 flex justify-center px-5"
       >
         <p className="liquid-glass-dark rounded-full px-5 py-2.5 text-sm font-bold text-white/90">
-          Sent automatically, you acknowledge each day in one click.
+          Prepared automatically. You decide what gets submitted.
         </p>
       </motion.div>
     </div>

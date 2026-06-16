@@ -30,6 +30,11 @@ export function AuthScreen() {
   const [message, setMessage] = useState(
     params.get("error") === "oauth" ? "Google sign-in didn't complete. Please try again." : "",
   );
+  const requestedNext = params.get("next");
+  const redirectTo =
+    requestedNext && requestedNext.startsWith("/") && !requestedNext.startsWith("//")
+      ? requestedNext
+      : null;
   const supabase = useMemo(() => {
     try {
       return createClient();
@@ -83,7 +88,7 @@ export function AuthScreen() {
         track("auth_signup", { email_domain: email.split("@")[1] ?? null });
         // Email-confirmation projects return a user but no active session.
         if (data.session) {
-          router.push("/dashboard" as Route);
+          router.push((redirectTo ?? "/dashboard/onboarding") as Route);
           router.refresh();
           return;
         }
@@ -95,7 +100,7 @@ export function AuthScreen() {
       const { error } = await supabase.auth.signInWithPassword({ email, password });
       if (error) throw error;
       track("auth_signin", { email_domain: email.split("@")[1] ?? null });
-      router.push("/");
+      router.push((redirectTo ?? "/") as Route);
       router.refresh();
     } catch (err) {
       setStatus("error");
@@ -200,7 +205,7 @@ export function AuthScreen() {
                   className="mt-6 space-y-4"
                   noValidate
                 >
-                  <GoogleSignIn onError={handleGoogleError} />
+                  <GoogleSignIn onError={handleGoogleError} redirectTo={redirectTo ?? undefined} />
                   <div className="flex items-center gap-3">
                     <span className="h-px flex-1 bg-ink/10" />
                     <span className="text-xs font-bold tracking-wide text-muted uppercase">
@@ -349,7 +354,7 @@ function BrandPanel({ reduce }: { reduce: boolean }) {
             style={{ background: "rgba(255,255,255,0.14)" }}
           >
             <ShieldCheck className="size-3.5" />
-            Applies automatically — you acknowledge each day
+            Prepared automatically - you review each day
           </motion.span>
 
           <motion.h2
@@ -358,7 +363,7 @@ function BrandPanel({ reduce }: { reduce: boolean }) {
             transition={{ duration: 0.6, delay: 0.08, ease: EASE }}
             className="mt-6 max-w-md text-4xl font-extrabold tracking-[-0.04em] text-balance xl:text-5xl"
           >
-            Your job applications, sent for you every day.
+            Your job applications, ready to review every day.
           </motion.h2>
           <motion.p
             initial={reduce ? false : { opacity: 0, y: 20 }}
@@ -366,8 +371,8 @@ function BrandPanel({ reduce }: { reduce: boolean }) {
             transition={{ duration: 0.6, delay: 0.16, ease: EASE }}
             className="mt-5 max-w-md text-base leading-7 text-pretty text-white/75"
           >
-            JobPosted finds matching roles, tailors your resume to each one, and submits the
-            application automatically. You just acknowledge each day&apos;s batch.
+            JobPosted finds matching roles, tailors your resume to each one, and prepares the
+            application for your approval. You decide what gets submitted.
           </motion.p>
         </div>
 
@@ -409,4 +414,3 @@ function BrandPanel({ reduce }: { reduce: boolean }) {
     </div>
   );
 }
-

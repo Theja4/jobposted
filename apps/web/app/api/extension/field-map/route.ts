@@ -9,6 +9,11 @@ import { authErrorResponse, extensionError, getExtensionAuthContext } from "@/li
 
 export const runtime = "nodejs";
 
+function gatewayTimeoutMs() {
+  const value = Number(process.env.AI_GATEWAY_TIMEOUT_MS ?? 12_000);
+  return Number.isFinite(value) && value > 0 ? Math.min(30_000, Math.floor(value)) : 12_000;
+}
+
 function asString(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
 }
@@ -55,6 +60,7 @@ function profileSummary(profile: MasterProfile) {
     location: profile.location,
     links: profile.links,
     workAuth: profile.workAuth,
+    compensation: profile.compensation,
     demographics: profile.demographics,
     skills: profile.skills,
     answers: profile.answers,
@@ -66,62 +72,77 @@ async function callGateway(field: ExtensionFieldContext, profile: MasterProfile)
   if (!apiKey) return null;
   const baseUrl = process.env.AI_GATEWAY_BASE_URL || "https://ai-gateway.vercel.sh/v1";
   const model = process.env.AI_GATEWAY_MODEL || "openai/gpt-5-mini";
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), gatewayTimeoutMs());
 
-  const response = await fetch(`${baseUrl.replace(/\/$/, "")}/chat/completions`, {
-    method: "POST",
-    headers: {
-      authorization: `Bearer ${apiKey}`,
-      "content-type": "application/json",
-    },
-    body: JSON.stringify({
-      model,
-      stream: false,
-      response_format: { type: "json_object" },
-      messages: [
-        {
-          role: "system",
-          content:
-            "Map a job-application form field to the best JobPosted profile key. Return strict JSON: {\"canonicalKey\": string, \"value\": string|boolean|string[]|null, \"confidence\": number, \"reason\": string}. Use unknown/null when not safe.",
-        },
-        {
-          role: "user",
-          content: JSON.stringify({
-            field,
-            allowedKeys: [
-              "identity.fullName",
-              "identity.firstName",
-              "identity.lastName",
-              "identity.preferredName",
-              "identity.email",
-              "identity.phone",
-              "location.street",
-              "location.city",
-              "location.state",
-              "location.postalCode",
-              "location.country",
-              "links.portfolio",
-              "links.linkedin",
-              "links.github",
-              "workAuth.authorizedToWork",
-              "workAuth.requiresSponsorship",
-              "workAuth.country",
-              "demographics.gender",
-              "demographics.race",
-              "demographics.veteranStatus",
-              "demographics.disabilityStatus",
-              "demographics.hispanicLatino",
-              "experience",
-              "education",
-              "skills",
-              "unknown",
-              "answers.<key>",
-            ],
-            profile: profileSummary(profile),
-          }),
-        },
-      ],
-    }),
-  });
+  let response: Response;
+  try {
+    response = await fetch(`${baseUrl.replace(/\/$/, "")}/chat/completions`, {
+      method: "POST",
+      signal: controller.signal,
+      headers: {
+        authorization: `Bearer ${apiKey}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        model,
+        stream: false,
+        response_format: { type: "json_object" },
+        messages: [
+          {
+            role: "system",
+            content:
+              "Map a job-application form field to the best JobPosted profile key. Return strict JSON: {\"canonicalKey\": string, \"value\": string|boolean|string[]|null, \"confidence\": number, \"reason\": string}. Use unknown/null when not safe.",
+          },
+          {
+            role: "user",
+            content: JSON.stringify({
+              field,
+              allowedKeys: [
+                "identity.fullName",
+                "identity.firstName",
+                "identity.lastName",
+                "identity.preferredName",
+                "identity.email",
+                "identity.phone",
+                "location.street",
+                "location.city",
+                "location.state",
+                "location.postalCode",
+                "location.country",
+                "links.portfolio",
+                "links.linkedin",
+                "links.github",
+                "workAuth.authorizedToWork",
+                "workAuth.requiresSponsorship",
+                "workAuth.country",
+                "compensation.current",
+                "compensation.currentCurrency",
+                "compensation.expected",
+                "compensation.expectedCurrency",
+                "demographics.gender",
+                "demographics.race",
+                "demographics.veteranStatus",
+                "demographics.disabilityStatus",
+                "demographics.hispanicLatino",
+                "experience",
+                "education",
+                "skills",
+                "unknown",
+                "answers.<key>",
+              ],
+              profile: profileSummary(profile),
+            }),
+          },
+        ],
+      }),
+    });
+  } catch (error) {
+    console.error("AI Gateway field map request failed", error);
+    return null;
+  } finally {
+    clearTimeout(timeoutId);
+  }
 
   if (!response.ok) {
     console.error("AI Gateway field map failed", response.status, await response.text());

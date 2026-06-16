@@ -61,7 +61,7 @@ export function OptionsApp() {
             <img src={chrome.runtime.getURL("brand/jobposted-mark.png")} alt="" className="h-11 w-11 object-contain" />
             <div>
               <h1 className="text-2xl font-black tracking-[-0.02em]">JobPosted extension options</h1>
-              <p className="text-sm font-semibold text-[var(--jp-muted)]">Control submission, privacy, and platform behavior.</p>
+              <p className="text-sm font-semibold text-[var(--jp-muted)]">Control privacy and platform behavior.</p>
             </div>
           </div>
           {saved && (
@@ -74,26 +74,11 @@ export function OptionsApp() {
 
         <section className="jp-glass rounded-[18px] p-5">
           <h2 className="text-base font-black">Submission policy</h2>
-          <div className="mt-3 grid gap-2 sm:grid-cols-2">
-            {(["review", "auto"] as const).map((mode) => (
-              <button
-                key={mode}
-                type="button"
-                aria-pressed={settings.submissionPolicy === mode}
-                onClick={() => update({ submissionPolicy: mode })}
-                className={
-                  "rounded-[14px] px-4 py-3 text-left ring-1 ring-inset transition-colors " +
-                  (settings.submissionPolicy === mode
-                    ? "bg-[var(--jp-brand-600)] text-white ring-[var(--jp-brand-600)]"
-                    : "bg-white/75 text-[var(--jp-ink)] ring-[var(--jp-border)]")
-                }
-              >
-                <span className="block text-sm font-black">{mode === "review" ? "Fill, stop at Submit" : "Auto-submit"}</span>
-                <span className={settings.submissionPolicy === mode ? "mt-1 block text-xs text-white/78" : "mt-1 block text-xs text-[var(--jp-muted)]"}>
-                  {mode === "review" ? "Default. You click the final submit button." : "Explicit opt-in for trusted flows only."}
-                </span>
-              </button>
-            ))}
+          <div className="mt-3 rounded-[14px] bg-white/75 px-4 py-3 ring-1 ring-inset ring-[var(--jp-border)]">
+            <span className="block text-sm font-black">Fill, stop at Submit</span>
+            <span className="mt-1 block text-xs font-semibold leading-5 text-[var(--jp-muted)]">
+              JobPosted can fill known fields and move through steps, but you upload documents and click the final submit button.
+            </span>
           </div>
         </section>
 

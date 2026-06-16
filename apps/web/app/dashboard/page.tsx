@@ -74,11 +74,15 @@ export default async function DashboardPage() {
           Welcome back, {firstName(user?.email)}
         </h1>
         <p className="mt-1 text-sm font-semibold text-muted">
-          JobPosted is applying to matched roles for you automatically.
+          JobPosted is preparing matched roles for your worker queue.
         </p>
       </div>
 
-      <AckBanner todayCount={queue.today.length} tomorrowCount={queue.tomorrow.length} />
+      <AckBanner
+        acknowledged={queue.acknowledged}
+        mode={queue.mode}
+        todayCount={queue.today.length}
+      />
 
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         {statTiles(stats).map(({ label, value, hint, Icon, gradient, text, sub }) => (

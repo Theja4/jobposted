@@ -1,536 +1,518 @@
 "use client";
 
-import { useRef, type CSSProperties } from "react";
+import { useRef } from "react";
 import {
   motion,
-  useMotionTemplate,
-  useMotionValue,
   useReducedMotion,
   useScroll,
-  useSpring,
   useTransform,
+  type MotionStyle,
+  type Variants,
 } from "framer-motion";
-import { CheckCircle2, KanbanSquare, PlugZap } from "lucide-react";
+import { CheckCircle2, KanbanSquare, ListChecks, PlugZap, Send } from "lucide-react";
 
 const EASE = [0.22, 1, 0.36, 1] as const;
 
-const COLUMNS = [
-  { label: "Applied", count: 18, tone: "bg-brand-500" },
-  { label: "Interview", count: 5, tone: "bg-aqua" },
-  { label: "Offer", count: 1, tone: "bg-mint" },
+const fadeUp: Variants = {
+  hidden: { opacity: 0, y: 28 },
+  show: { opacity: 1, y: 0, transition: { duration: 0.7, ease: EASE } },
+};
+
+const stagger: Variants = {
+  hidden: {},
+  show: { transition: { staggerChildren: 0.08, delayChildren: 0.08 } },
+};
+
+const JOB_CARDS = [
+  {
+    company: "Stripe",
+    role: "Product Designer",
+    source: "Greenhouse",
+    fit: "96%",
+    status: "Applied",
+    color: "#635BFF",
+    pattern: "waves",
+  },
+  {
+    company: "Ramp",
+    role: "Growth Analyst",
+    source: "Lever",
+    fit: "91%",
+    status: "Interview",
+    color: "#0BAA6E",
+    pattern: "bars",
+  },
+  {
+    company: "Linear",
+    role: "Customer Ops",
+    source: "Ashby",
+    fit: "88%",
+    status: "Queued",
+    color: "#5E6AD2",
+    pattern: "grid",
+  },
+  {
+    company: "Vercel",
+    role: "Staff Engineer",
+    source: "Direct",
+    fit: "94%",
+    status: "Ready",
+    color: "#111111",
+    pattern: "arc",
+  },
 ] as const;
 
-const PERKS = [
+const BOARD_COLUMNS = [
   {
-    icon: SendLogIcon,
-    label: "Logs every send the moment it happens",
-    color: "#1f64e0",
-    tint: "#eff6ff",
-    glow: "rgba(31,100,224,0.24)",
+    label: "Applied",
+    count: 18,
+    tint: "bg-brand-600",
+    cards: [
+      { company: "Stripe", role: "Product design", meta: "96% fit" },
+      { company: "Notion", role: "Research", meta: "extension" },
+    ],
   },
   {
-    icon: StatusPulseIcon,
-    label: "Statuses update themselves",
-    color: "#1f64e0",
-    tint: "#eff6ff",
-    glow: "rgba(31,100,224,0.24)",
+    label: "Interview",
+    count: 5,
+    tint: "bg-aqua",
+    cards: [
+      { company: "Ramp", role: "Growth", meta: "reply today" },
+      { company: "Figma", role: "PMM", meta: "screen booked" },
+    ],
   },
   {
-    icon: ExtensionPlugIcon,
-    label: "Works with the extension, apply on any job board, it lands here",
-    color: "#1f64e0",
-    tint: "#eff6ff",
-    glow: "rgba(31,100,224,0.24)",
-  },
-  {
-    icon: QueueBoardIcon,
-    label: "Synced with your daily queue",
-    color: "#1f64e0",
-    tint: "#eff6ff",
-    glow: "rgba(31,100,224,0.24)",
+    label: "Offer",
+    count: 2,
+    tint: "bg-mint",
+    cards: [
+      { company: "Linear", role: "Customer ops", meta: "final loop" },
+      { company: "Ashby", role: "Growth PM", meta: "waiting" },
+    ],
   },
 ] as const;
 
-/** One shared loop so the hero card, the extension drop, and badges stay in step. */
-const LOOP = { duration: 9, repeat: Infinity, ease: "easeInOut" as const };
+const PROOF_CHIPS = [
+  { label: "Auto logged", value: "18", icon: Send },
+  { label: "Status synced", value: "5", icon: CheckCircle2 },
+  { label: "Captured via extention", value: "12", icon: PlugZap },
+  { label: "From Daily queue", value: "17", icon: ListChecks },
+] as const;
 
 /**
- * "The best job tracker you'll ever use" — because it fills itself. Liquid-glass
- * board with cursor tilt + tracked specular; the hero card drags itself across
- * stages while a second card drops in from the browser extension, so "apply
- * anywhere, it's logged here" needs no paragraph.
+ * Visual product demo for the self filling tracker. The section is intentionally
+ * demo led, with a card gallery and live board carrying the idea before copy.
  */
 export function JobTrackerShowcase() {
   const reduce = useReducedMotion();
   const sectionRef = useRef<HTMLElement>(null);
-
   const { scrollYProgress } = useScroll({
     target: sectionRef,
     offset: ["start end", "end start"],
   });
-  const copyY = useTransform(scrollYProgress, [0, 1], [28, -28]);
-  const boardY = useTransform(scrollYProgress, [0, 1], [64, -64]);
+  const stripeX = useTransform(scrollYProgress, [0.08, 0.42], [-170, 0]);
+  const stripeY = useTransform(scrollYProgress, [0.08, 0.42], [110, 0]);
+  const stripeRotate = useTransform(scrollYProgress, [0.08, 0.42], [-18, -5]);
+  const stripeScale = useTransform(scrollYProgress, [0.08, 0.42], [0.9, 1]);
+  const stripeOpacity = useTransform(scrollYProgress, [0.08, 0.42], [0, 0.7]);
+
+  const rampX = useTransform(scrollYProgress, [0.1, 0.44], [170, 0]);
+  const rampY = useTransform(scrollYProgress, [0.1, 0.44], [82, 0]);
+  const rampRotate = useTransform(scrollYProgress, [0.1, 0.44], [16, 5]);
+  const rampScale = useTransform(scrollYProgress, [0.1, 0.44], [0.9, 1]);
+  const rampOpacity = useTransform(scrollYProgress, [0.1, 0.44], [0, 0.76]);
+
+  const linearX = useTransform(scrollYProgress, [0.14, 0.48], [-120, 0]);
+  const linearY = useTransform(scrollYProgress, [0.14, 0.48], [170, 0]);
+  const linearRotate = useTransform(scrollYProgress, [0.14, 0.48], [14, 4]);
+  const linearScale = useTransform(scrollYProgress, [0.14, 0.48], [0.88, 1]);
+  const linearOpacity = useTransform(scrollYProgress, [0.14, 0.48], [0, 0.6]);
+
+  const vercelX = useTransform(scrollYProgress, [0.14, 0.48], [150, 0]);
+  const vercelY = useTransform(scrollYProgress, [0.14, 0.48], [160, 0]);
+  const vercelRotate = useTransform(scrollYProgress, [0.14, 0.48], [-14, -4]);
+  const vercelScale = useTransform(scrollYProgress, [0.14, 0.48], [0.88, 1]);
+  const vercelOpacity = useTransform(scrollYProgress, [0.14, 0.48], [0, 0.6]);
+
+  const boardY = useTransform(scrollYProgress, [0.06, 0.38], [88, 0]);
+  const boardScale = useTransform(scrollYProgress, [0.06, 0.38], [0.92, 1]);
+  const boardOpacity = useTransform(scrollYProgress, [0.06, 0.38], [0.35, 1]);
+
+  const proofX = useTransform(scrollYProgress, [0.16, 0.5], [150, 0]);
+  const proofY = useTransform(scrollYProgress, [0.16, 0.5], [50, 0]);
+  const proofScale = useTransform(scrollYProgress, [0.16, 0.5], [0.92, 1]);
+  const proofOpacity = useTransform(scrollYProgress, [0.16, 0.5], [0, 1]);
+
+  const stripeStyle = reduce
+    ? undefined
+    : { x: stripeX, y: stripeY, rotate: stripeRotate, scale: stripeScale, opacity: stripeOpacity };
+  const rampStyle = reduce
+    ? undefined
+    : { x: rampX, y: rampY, rotate: rampRotate, scale: rampScale, opacity: rampOpacity };
+  const linearStyle = reduce
+    ? undefined
+    : { x: linearX, y: linearY, rotate: linearRotate, scale: linearScale, opacity: linearOpacity };
+  const vercelStyle = reduce
+    ? undefined
+    : { x: vercelX, y: vercelY, rotate: vercelRotate, scale: vercelScale, opacity: vercelOpacity };
+  const boardStyle = reduce ? undefined : { y: boardY, scale: boardScale, opacity: boardOpacity };
+  const proofStyle = reduce ? undefined : { x: proofX, y: proofY, scale: proofScale, opacity: proofOpacity };
 
   return (
-    <section ref={sectionRef} className="relative isolate overflow-hidden px-5 py-20 sm:py-28">
+    <section ref={sectionRef} className="relative isolate overflow-hidden px-3 py-20 sm:px-5 sm:py-28">
       <div
         aria-hidden
-        className="pointer-events-none absolute inset-0 -z-10 bg-[radial-gradient(circle_at_14%_20%,rgba(31,100,224,0.1),transparent_30%),radial-gradient(circle_at_88%_70%,rgba(22,199,212,0.12),transparent_30%),linear-gradient(180deg,#ffffff_0%,#f5faff_55%,#ffffff_100%)]"
+        className="pointer-events-none absolute inset-0 -z-10 bg-[linear-gradient(180deg,#ffffff_0%,#f4f7fb_48%,#ffffff_100%)]"
       />
-      {/* drifting ambient orb */}
-      <motion.span
+      <div
         aria-hidden
-        animate={reduce ? undefined : { x: [0, 50, -30, 0], y: [0, -36, 24, 0] }}
-        transition={reduce ? undefined : { duration: 24, repeat: Infinity, ease: "easeInOut" }}
-        className="pointer-events-none absolute top-[16%] right-[10%] -z-10 size-72 rounded-full bg-[radial-gradient(circle,rgba(31,100,224,0.12),transparent_65%)] blur-2xl"
+        className="pointer-events-none absolute inset-x-0 top-24 -z-10 h-[32rem] rotate-[-7deg] bg-[linear-gradient(90deg,transparent,rgba(31,100,224,0.07),transparent)]"
       />
 
-      <div className="mx-auto grid w-full max-w-6xl items-center gap-12 lg:grid-cols-[0.9fr_1.1fr]">
-        {/* ── Copy ───────────────────────────────────────────── */}
-        <motion.div style={reduce ? undefined : { y: copyY }}>
-          <div className="max-w-xl">
-            <motion.span
-              initial={reduce ? false : { opacity: 0, y: 18 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              viewport={{ once: true, amount: 0.6 }}
-              transition={{ duration: 0.5, ease: EASE }}
-              className="inline-flex items-center gap-2 rounded-full bg-white px-3.5 py-2 text-sm font-extrabold text-brand-700 shadow-[inset_0_1px_0_rgba(255,255,255,0.9),0_10px_24px_rgba(31,100,224,0.1)] ring-1 ring-inset ring-brand-100"
-            >
+      <motion.div
+        variants={stagger}
+        initial="hidden"
+        whileInView="show"
+        viewport={{ once: true, amount: 0.35 }}
+        className="mx-auto w-full max-w-7xl"
+      >
+        <div className="grid items-end gap-8 lg:grid-cols-[0.9fr_1.1fr]">
+          <motion.div variants={fadeUp}>
+            <span className="inline-flex items-center gap-2 rounded-full bg-ink px-3.5 py-2 text-sm font-extrabold text-white shadow-[0_14px_32px_rgba(7,26,51,0.2)]">
               <KanbanSquare className="size-4" />
               Job tracker
-            </motion.span>
-
-            <motion.h2
-              initial={reduce ? false : { opacity: 0, y: 26 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              viewport={{ once: true, amount: 0.6 }}
-              transition={{ duration: 0.65, delay: 0.08, ease: EASE }}
-              className="mt-5 text-4xl font-extrabold tracking-[-0.035em] text-balance text-ink sm:text-5xl lg:text-6xl"
-            >
-              The best job tracker you&apos;ll{" "}
-              <motion.span
-                className="text-brand-700"
-                animate={
-                  reduce
-                    ? undefined
-                    : {
-                        textShadow: [
-                          "0 0 18px rgba(31,100,224,0.0)",
-                          "0 0 30px rgba(31,100,224,0.45)",
-                          "0 0 18px rgba(31,100,224,0.0)",
-                        ],
-                      }
-                }
-                transition={reduce ? undefined : { duration: 4.2, repeat: Infinity, ease: "easeInOut" }}
-              >
-                ever use.
-              </motion.span>
-            </motion.h2>
-
-            <motion.p
-              initial={reduce ? false : { opacity: 0, y: 22 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              viewport={{ once: true, amount: 0.6 }}
-              transition={{ duration: 0.6, delay: 0.16, ease: EASE }}
-              className="mt-5 max-w-lg text-base leading-7 text-pretty text-muted sm:text-lg"
-            >
-              Because you never have to fill it in. Every application lands on the board the
-              moment it&apos;s sent, by JobPosted or by you, anywhere on the web.
-            </motion.p>
-
-            <div className="mt-7 space-y-3">
-              {PERKS.map((perk, index) => (
-                <PerkRow key={perk.label} perk={perk} index={index} reduce={Boolean(reduce)} />
-              ))}
-            </div>
-          </div>
-        </motion.div>
-
-        {/* ── Self-filling glass board ───────────────────────── */}
-        <motion.div style={reduce ? undefined : { y: boardY }}>
-          <motion.div
-            initial={reduce ? false : { opacity: 0, y: 60, scale: 0.95, rotate: 1.6 }}
-            whileInView={{ opacity: 1, y: 0, scale: 1, rotate: 0 }}
-            viewport={{ once: true, amount: 0.3 }}
-            transition={{ duration: 0.8, delay: 0.1, ease: EASE }}
-          >
-            <TrackerBoard reduce={Boolean(reduce)} />
+            </span>
+            <h2 className="mt-5 max-w-2xl text-4xl font-extrabold tracking-[-0.035em] text-balance text-ink sm:text-6xl">
+              Tracker so good you will fall in{" "}
+              <span className="text-[#ef7078] [text-shadow:0_0_18px_rgba(239,112,120,0.34)]">
+                love
+              </span>
+            </h2>
           </motion.div>
-        </motion.div>
-      </div>
+
+          <motion.p
+            variants={fadeUp}
+            className="max-w-xl text-base leading-7 text-pretty text-muted sm:text-lg lg:justify-self-end"
+          >
+            Every send lands on the board with its resume, status, source, and next step already
+            attached. You get the view, without becoming the data entry person.
+          </motion.p>
+        </div>
+
+        <div className="relative mt-12 lg:min-h-[32rem]">
+          <motion.div
+            variants={stagger}
+            className="pointer-events-none absolute inset-x-0 top-0 hidden h-full lg:block"
+          >
+            <FloatingJobCard
+              card={JOB_CARDS[0]}
+              className="absolute left-[6%] top-16 w-52 opacity-70"
+              rotate={-5}
+              delay={0.02}
+              style={stripeStyle}
+            />
+            <FloatingJobCard
+              card={JOB_CARDS[1]}
+              className="absolute right-[34%] bottom-10 w-52 opacity-75"
+              rotate={5}
+              delay={0.14}
+              style={rampStyle}
+            />
+            <FloatingJobCard
+              card={JOB_CARDS[2]}
+              className="absolute bottom-8 left-[15%] w-52 opacity-60"
+              rotate={4}
+              delay={0.26}
+              style={linearStyle}
+            />
+            <FloatingJobCard
+              card={JOB_CARDS[3]}
+              className="absolute bottom-6 right-[16%] w-52 opacity-60"
+              rotate={-4}
+              delay={0.38}
+              style={vercelStyle}
+            />
+          </motion.div>
+
+          <div className="relative z-10 mx-auto grid max-w-6xl gap-4 lg:grid-cols-[0.38fr_minmax(0,1fr)_0.38fr] lg:items-center xl:gap-5">
+            <div aria-hidden className="hidden lg:block" />
+            <motion.div
+              style={boardStyle}
+              variants={reduce ? fadeUp : undefined}
+              className="order-1 lg:order-2"
+            >
+              <PipelineBoard reduce={Boolean(reduce)} />
+            </motion.div>
+
+            <ProofPanel style={proofStyle} />
+          </div>
+
+          <motion.div
+            variants={stagger}
+            className="mt-5 grid gap-4 sm:grid-cols-2 lg:hidden"
+          >
+            {JOB_CARDS.map((card, index) => (
+              <FloatingJobCard key={card.company} card={card} delay={index * 0.08} />
+            ))}
+          </motion.div>
+        </div>
+      </motion.div>
     </section>
   );
 }
 
-function SendLogIcon({ className = "" }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 24 24" aria-hidden className={className} fill="none">
-      <path
-        d="M5.8 7.4h6.6c2.7 0 4.9 2.2 4.9 4.9s-2.2 4.9-4.9 4.9h-1.2"
-        stroke="currentColor"
-        strokeWidth="2.1"
-        strokeLinecap="round"
-      />
-      <path
-        d="M8.1 4.9 5.3 7.4l2.8 2.5"
-        stroke="currentColor"
-        strokeWidth="2.1"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-      <path
-        d="M7.4 13.2h5.1"
-        stroke="currentColor"
-        strokeWidth="2.1"
-        strokeLinecap="round"
-        opacity="0.48"
-      />
-      <circle cx="17.6" cy="16.4" r="2.6" fill="currentColor" opacity="0.22" />
-      <path
-        d="m16.5 16.4.7.7 1.5-1.6"
-        stroke="currentColor"
-        strokeWidth="1.5"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
-}
-
-function StatusPulseIcon({ className = "" }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 24 24" aria-hidden className={className} fill="none">
-      <rect
-        x="4.6"
-        y="5"
-        width="14.8"
-        height="14"
-        rx="3.4"
-        stroke="currentColor"
-        strokeWidth="2"
-      />
-      <path
-        d="M7.6 13h2.4l1.3-3.5 2.1 6 1.4-2.5h1.7"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-      <circle cx="8.6" cy="8.8" r="1.1" fill="currentColor" opacity="0.35" />
-      <circle cx="15.5" cy="8.8" r="1.1" fill="currentColor" opacity="0.35" />
-    </svg>
-  );
-}
-
-function ExtensionPlugIcon({ className = "" }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 24 24" aria-hidden className={className} fill="none">
-      <path
-        d="M8.4 4.5v4M14.6 4.5v4"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinecap="round"
-      />
-      <path
-        d="M6.5 8.3h10v3.5a5 5 0 0 1-5 5h0a5 5 0 0 1-5-5V8.3Z"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinejoin="round"
-      />
-      <path
-        d="M11.5 16.8v2.7"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinecap="round"
-      />
-      <path
-        d="m14.5 12-2.4 2.8h2.2l-1.9 3"
-        stroke="currentColor"
-        strokeWidth="1.6"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-      <path d="M7.8 9.8h7.4v2H7.8z" fill="currentColor" opacity="0.2" />
-    </svg>
-  );
-}
-
-function QueueBoardIcon({ className = "" }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 24 24" aria-hidden className={className} fill="none">
-      <rect
-        x="4"
-        y="4.8"
-        width="16"
-        height="14.4"
-        rx="3.2"
-        stroke="currentColor"
-        strokeWidth="2"
-      />
-      <path
-        d="M9.3 8.2v7.6M14.7 8.2v7.6"
-        stroke="currentColor"
-        strokeWidth="1.8"
-        strokeLinecap="round"
-        opacity="0.58"
-      />
-      <rect x="6.7" y="8.1" width="2.4" height="3.7" rx="1" fill="currentColor" opacity="0.35" />
-      <rect x="10.8" y="11.8" width="2.4" height="4" rx="1" fill="currentColor" opacity="0.28" />
-      <rect x="15" y="8.1" width="2.4" height="5.4" rx="1" fill="currentColor" opacity="0.35" />
-    </svg>
-  );
-}
-
-/* ── Perk rows: light glass, staggered, hover nudge ────────────── */
-
-function PerkRow({
-  perk,
-  index,
-  reduce,
+function FloatingJobCard({
+  card,
+  className = "",
+  rotate = 0,
+  delay = 0,
+  style,
 }: {
-  perk: (typeof PERKS)[number];
-  index: number;
-  reduce: boolean;
+  card: (typeof JOB_CARDS)[number];
+  className?: string;
+  rotate?: number;
+  delay?: number;
+  style?: MotionStyle;
 }) {
-  const Icon = perk.icon;
+  const hasScrollFlow = Boolean(style);
 
   return (
-    <motion.div
-      initial={reduce ? false : { opacity: 0, x: -22 }}
-      whileInView={{ opacity: 1, x: 0 }}
-      viewport={{ once: true, amount: 0.5 }}
-      transition={{ delay: 0.12 + index * 0.09, duration: 0.5, ease: EASE }}
-      whileHover={reduce ? undefined : { x: 5, transition: { duration: 0.2 } }}
-      style={
-        {
-          "--perk-color": perk.color,
-          "--perk-tint": perk.tint,
-          "--perk-glow": perk.glow,
-        } as CSSProperties
+    <motion.article
+      style={style}
+      variants={
+        hasScrollFlow
+          ? undefined
+          : {
+              hidden: { opacity: 0, y: 42, rotate: rotate * 0.45 },
+              show: {
+                opacity: 1,
+                y: 0,
+                rotate,
+                transition: { duration: 0.75, delay, ease: EASE },
+              },
+            }
       }
-      className="group/perk rounded-2xl p-px bg-[linear-gradient(160deg,rgba(255,255,255,0.95),rgba(255,255,255,0.4)_45%,rgba(31,100,224,0.14))] shadow-[0_10px_28px_-14px_rgba(16,47,102,0.25)] transition-[background,box-shadow,transform] duration-300 hover:bg-[var(--perk-color)] hover:shadow-[0_20px_44px_-18px_var(--perk-glow)]"
+      whileHover={hasScrollFlow ? undefined : { y: -8, rotate: 0, transition: { duration: 0.22 } }}
+      className={`rounded-2xl bg-white p-4 text-ink shadow-[0_18px_48px_-30px_rgba(7,26,51,0.46)] ring-1 ring-black/5 ${className}`}
     >
-      <div className="relative flex items-center gap-3 overflow-hidden rounded-[calc(1rem-1px)] bg-white/75 p-3.5 backdrop-blur-xl transition-colors duration-300 group-hover/perk:bg-[var(--perk-tint)]">
-        <span className="relative grid size-9 shrink-0 place-items-center overflow-hidden rounded-xl bg-[linear-gradient(150deg,#eff6ff,#dbeafe)] text-brand-700 shadow-[inset_0_1px_0_rgba(255,255,255,0.9)] ring-1 ring-inset ring-brand-100 transition-[background,color,box-shadow,transform] duration-300 group-hover/perk:scale-110 group-hover/perk:bg-[var(--perk-color)] group-hover/perk:text-ink group-hover/perk:shadow-[0_10px_24px_-10px_var(--perk-glow)] group-hover/perk:ring-white/70">
-          <span
-            aria-hidden
-            className="absolute -right-3 -top-3 size-6 rounded-full bg-white/35 opacity-0 transition duration-300 group-hover/perk:opacity-100"
-          />
-          <Icon className="relative z-10 size-4.5 transition-transform duration-300 group-hover/perk:rotate-[-6deg] group-hover/perk:scale-110" />
+      <div className="flex items-start justify-between gap-3">
+        <CompanyBadge name={card.company} color={card.color} />
+        <span className="rounded-full bg-mint px-2.5 py-1 text-[10px] font-black text-[#04241a]">
+          {card.fit} fit
         </span>
-        <p className="text-sm font-extrabold text-ink transition-colors duration-300 group-hover/perk:text-[var(--perk-color)]">
-          {perk.label}
-        </p>
       </div>
-    </motion.div>
+      <p className="mt-4 text-xs font-bold text-muted">{card.source}</p>
+      <h3 className="mt-1 text-xl font-black tracking-[-0.03em] text-balance">{card.role}</h3>
+      <div className="mt-4 grid grid-cols-3 gap-2 text-[9px] font-black text-ink/80">
+        <Metric label="Status" value={card.status} />
+        <Metric label="Resume" value="Fresh" />
+        <Metric label="Next" value="Tracked" />
+      </div>
+      <CardPattern pattern={card.pattern} color={card.color} />
+    </motion.article>
   );
 }
 
-/* ── The board: liquid-glass slab with cursor tilt ─────────────── */
-
-function TrackerBoard({ reduce }: { reduce: boolean }) {
-  const ref = useRef<HTMLDivElement>(null);
-  const px = useMotionValue(0.5);
-  const py = useMotionValue(0.5);
-  const rotateX = useSpring(useTransform(py, [0, 1], [4.5, -4.5]), { stiffness: 200, damping: 24 });
-  const rotateY = useSpring(useTransform(px, [0, 1], [-5.5, 5.5]), { stiffness: 200, damping: 24 });
-  const mx = useTransform(px, (v) => v * 100);
-  const my = useTransform(py, (v) => v * 100);
-  const specular = useMotionTemplate`radial-gradient(320px circle at ${mx}% ${my}%, rgba(255,255,255,0.55), transparent 60%)`;
-
-  function onMove(event: React.MouseEvent<HTMLDivElement>) {
-    const rect = ref.current?.getBoundingClientRect();
-    if (!rect) return;
-    px.set((event.clientX - rect.left) / rect.width);
-    py.set((event.clientY - rect.top) / rect.height);
-  }
-  function onLeave() {
-    px.set(0.5);
-    py.set(0.5);
-  }
-
-  // The hero card is 26% of the board wide; one column step (column + gap) is
-  // ~34% of the board, so each hop translates by 34/26 of the card's own width.
-  const hop = "130%";
-  const hop2 = "260%";
-
+function PipelineBoard({ reduce }: { reduce: boolean }) {
   return (
-    <motion.div
-      ref={ref}
-      onMouseMove={reduce ? undefined : onMove}
-      onMouseLeave={reduce ? undefined : onLeave}
-      style={reduce ? undefined : { rotateX, rotateY, transformPerspective: 1100 }}
-      className="group relative mx-auto w-full max-w-2xl rounded-[1.85rem] p-px bg-[linear-gradient(165deg,rgba(255,255,255,1),rgba(255,255,255,0.45)_30%,rgba(31,100,224,0.18)_70%,rgba(255,255,255,0.5))] shadow-[0_30px_70px_-24px_rgba(16,47,102,0.4)] transition-shadow duration-500 hover:shadow-[0_48px_110px_-30px_rgba(31,100,224,0.5)]"
-    >
-      <div className="relative overflow-hidden rounded-[calc(1.85rem-1px)] bg-white/70 p-5 backdrop-blur-2xl sm:p-6">
-        {/* specular hairline + cursor-tracked sheen */}
-        <span
-          aria-hidden
-          className="pointer-events-none absolute inset-x-6 top-0 h-px bg-[linear-gradient(90deg,transparent,rgba(255,255,255,0.95),transparent)]"
-        />
-        <motion.span
-          aria-hidden
-          style={{ background: specular }}
-          className="pointer-events-none absolute inset-0 opacity-0 transition-opacity duration-300 group-hover:opacity-100"
-        />
-        {/* accent under-glow */}
-        <span
-          aria-hidden
-          className="pointer-events-none absolute -bottom-16 left-1/2 h-36 w-3/4 -translate-x-1/2 rounded-full bg-[radial-gradient(ellipse,rgba(31,100,224,0.22),transparent_70%)] opacity-60 blur-3xl transition-opacity duration-500 group-hover:opacity-100"
-        />
-        {/* corner motif */}
-        <svg
-          aria-hidden
-          viewBox="0 0 72 72"
-          className="pointer-events-none absolute top-4 right-4 size-12 text-brand-700/[0.08] transition-transform duration-700 group-hover:translate-x-1 group-hover:-translate-y-1"
-        >
-          {[0, 1, 2].flatMap((row) =>
-            [0, 1, 2].map((col) => (
-              <circle key={`${row}-${col}`} cx={10 + col * 24} cy={10 + row * 24} r="3" fill="currentColor" />
-            )),
-          )}
-        </svg>
-
-        {/* board header */}
-        <div className="relative z-10 flex items-center justify-between gap-3">
-          <p className="text-sm font-extrabold text-ink">Your pipeline</p>
+    <div className="relative mx-auto max-w-2xl rounded-2xl bg-ink p-2 text-white shadow-[0_30px_70px_-36px_rgba(7,26,51,0.55)]">
+      <div
+        aria-hidden
+        className="absolute -inset-6 -z-10 rounded-2xl bg-[radial-gradient(circle_at_50%_0%,rgba(31,100,224,0.16),transparent_62%)] blur-2xl"
+      />
+      <div className="overflow-hidden rounded-xl bg-[linear-gradient(180deg,#121b31_0%,#07111f_100%)] p-4 sm:p-5">
+        <div className="flex items-center justify-between gap-4">
+          <div className="flex items-center gap-2">
+            <span className="grid size-9 place-items-center rounded-xl bg-white text-ink">
+              <KanbanSquare className="size-4" />
+            </span>
+            <p className="text-sm font-black">Your pipeline</p>
+          </div>
         </div>
 
-        {/* columns */}
-        <div className="relative z-10 mt-4 grid grid-cols-3 gap-3">
-          {COLUMNS.map((column, columnIndex) => (
-            <div
+        <div className="relative mt-5 grid gap-3 sm:grid-cols-3">
+          {BOARD_COLUMNS.map((column, columnIndex) => (
+            <motion.div
               key={column.label}
-              className="rounded-2xl bg-white/65 p-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.95),inset_0_-8px_18px_rgba(16,47,102,0.04)] ring-1 ring-inset ring-brand-100/60"
+              initial={reduce ? false : { opacity: 0, y: 24 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true, amount: 0.45 }}
+              transition={{ duration: 0.55, delay: 0.12 + columnIndex * 0.08, ease: EASE }}
+              className="relative rounded-xl bg-white/[0.055] p-3 ring-1 ring-white/10 ring-inset"
             >
-              <div className="flex items-center justify-between px-1 pb-2">
-                <p className="text-[11px] font-black tracking-wide text-ink/70 uppercase">
+              <div className="mb-3 flex items-center justify-between">
+                <p className="text-[11px] font-black uppercase tracking-[0.08em] text-white/60">
                   {column.label}
                 </p>
-                <span className={`grid size-5 place-items-center rounded-full text-[10px] font-black text-white ${column.tone}`}>
+                <span className={`grid size-6 place-items-center rounded-full text-[11px] font-black ${column.tint}`}>
                   {column.count}
                 </span>
               </div>
-
-              {/* travel lane the hero card moves through */}
-              <div className="h-[4.5rem]" aria-hidden />
-
-              {/* slots: the Applied column receives the extension drop */}
               <div className="space-y-2">
-                {columnIndex === 0 ? <ExtensionDrop reduce={reduce} /> : <GhostCard />}
-                <GhostCard faint />
+                {column.cards.map((card, index) => (
+                  <PipelineMiniCard
+                    key={`${column.label}-${card.company}`}
+                    card={card}
+                    delay={columnIndex * 0.12 + index * 0.08}
+                  />
+                ))}
               </div>
-            </div>
+            </motion.div>
           ))}
         </div>
+      </div>
+    </div>
+  );
+}
 
-        {/* the self-moving hero card */}
-        <motion.div
-          animate={
-            reduce
-              ? undefined
-              : {
-                  x: ["0%", "0%", hop, hop, hop2, hop2, hop2],
-                  y: [0, 0, -8, 0, -8, 0, 0],
-                  rotate: [0, 0, 2.5, 0, 2.5, 0, 0],
-                  opacity: [0, 1, 1, 1, 1, 1, 0],
-                  scale: [0.92, 1, 1, 1, 1, 1, 0.95],
-                }
-          }
-          transition={reduce ? undefined : { ...LOOP, times: [0, 0.06, 0.3, 0.5, 0.74, 0.95, 1] }}
-          style={reduce ? { transform: "translateX(130%)" } : undefined}
-          className="absolute top-[6.7rem] left-[1.95rem] z-20 w-[26%] rounded-xl p-px bg-[linear-gradient(160deg,rgba(255,255,255,1),rgba(255,255,255,0.5)_45%,rgba(31,100,224,0.22))] shadow-[0_16px_38px_rgba(16,47,102,0.22)] sm:top-[7rem] sm:left-[2.2rem]"
-        >
-          <div className="rounded-[calc(0.75rem-1px)] bg-white/95 p-2.5">
-            <div className="flex items-center gap-2">
-              <span className="grid size-7 shrink-0 place-items-center rounded-lg bg-[linear-gradient(150deg,#1f64e0,#143f91)] text-[10px] font-black text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.3)]">
-                S
+function ProofPanel({ style }: { style?: MotionStyle }) {
+  return (
+    <motion.div
+      style={style}
+      variants={stagger}
+      className="order-3 rounded-2xl bg-white/95 p-3 shadow-[0_18px_48px_-34px_rgba(7,26,51,0.44)] ring-1 ring-black/5"
+    >
+      <div className="px-1 pb-2">
+        <p className="text-sm font-black tracking-[-0.02em] text-ink">Today</p>
+      </div>
+      <div className="space-y-2">
+        {PROOF_CHIPS.map((chip, index) => {
+          const Icon = chip.icon;
+
+          return (
+            <motion.div
+              key={chip.label}
+              variants={{
+                hidden: { opacity: 0, y: 14 },
+                show: {
+                  opacity: 1,
+                  y: 0,
+                  transition: { duration: 0.45, delay: index * 0.04, ease: EASE },
+                },
+              }}
+              className="flex items-center gap-3 rounded-xl bg-panel px-3 py-2.5"
+            >
+              <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-brand-50 text-brand-700">
+                <Icon className="size-4" />
               </span>
               <div className="min-w-0">
-                <p className="truncate text-[11px] font-extrabold text-ink">Product Designer</p>
-                <p className="truncate text-[9px] font-bold text-muted">Stripe · 96%</p>
+                <p className="text-base font-black tracking-[-0.03em] text-ink">{chip.value}</p>
+                <p className="truncate text-[11px] font-black text-muted">{chip.label}</p>
               </div>
-            </div>
-            {/* offer badge pops on the final column */}
-            <motion.span
-              animate={reduce ? undefined : { scale: [0, 0, 0, 0, 0, 1, 1], opacity: [0, 0, 0, 0, 0, 1, 1] }}
-              transition={reduce ? undefined : { ...LOOP, times: [0, 0.3, 0.5, 0.7, 0.78, 0.84, 1] }}
-              className="absolute -top-2 -right-2 grid size-6 place-items-center rounded-full bg-mint text-white shadow-[0_8px_18px_rgba(38,196,133,0.5)]"
-              style={reduce ? { opacity: 0 } : undefined}
-            >
-              <CheckCircle2 className="size-3.5" />
-            </motion.span>
-          </div>
-        </motion.div>
-
+            </motion.div>
+          );
+        })}
       </div>
     </motion.div>
   );
 }
 
-/* ── A card dropping in from the browser extension ─────────────── */
-
-function ExtensionDrop({ reduce }: { reduce: boolean }) {
+function PipelineMiniCard({
+  card,
+  delay,
+}: {
+  card: { company: string; role: string; meta: string };
+  delay: number;
+}) {
   return (
-    <div className="relative">
-      <motion.div
-        animate={
-          reduce
-            ? undefined
-            : {
-                opacity: [0, 0, 1, 1, 1, 0],
-                y: [-26, -26, 0, 0, 0, 6],
-                scale: [0.9, 0.9, 1, 1, 1, 0.96],
-              }
-        }
-        transition={reduce ? undefined : { ...LOOP, times: [0, 0.34, 0.44, 0.8, 0.95, 1], ease: EASE }}
-        className="relative rounded-xl p-px bg-[linear-gradient(160deg,rgba(255,255,255,1),rgba(255,255,255,0.5)_45%,rgba(22,199,212,0.25))] shadow-[0_12px_28px_rgba(16,47,102,0.16)]"
-      >
-        <div className="rounded-[calc(0.75rem-1px)] bg-white/95 p-2.5">
-          <div className="flex items-center gap-2">
-            <span className="grid size-7 shrink-0 place-items-center rounded-lg bg-[linear-gradient(150deg,#0a66c2,#084c8f)] text-[10px] font-black text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.3)]">
-              in
-            </span>
-            <div className="min-w-0 flex-1">
-              <p className="truncate text-[11px] font-extrabold text-ink">UX Researcher</p>
-              <p className="truncate text-[9px] font-bold text-muted">LinkedIn · you applied</p>
-            </div>
-          </div>
-          <span className="mt-1.5 inline-flex items-center gap-1 rounded-full bg-aqua/12 px-1.5 py-0.5 text-[8px] font-black tracking-wide text-[#0a6b73] uppercase ring-1 ring-inset ring-aqua/25">
-            <PlugZap className="size-2.5" />
-            via extension
-          </span>
+    <motion.div
+      initial={{ opacity: 0, y: 18 }}
+      whileInView={{ opacity: 1, y: 0 }}
+      viewport={{ once: true }}
+      transition={{ duration: 0.48, delay: 0.2 + delay, ease: EASE }}
+      className="rounded-lg bg-white p-2.5 text-ink shadow-[0_10px_24px_-18px_rgba(0,0,0,0.36)]"
+    >
+      <div className="flex items-center gap-2">
+        <CompanyBadge name={card.company} />
+        <div className="min-w-0">
+          <p className="truncate text-[11px] font-black">{card.company}</p>
+          <p className="truncate text-[9px] font-bold text-muted">{card.role}, {card.meta}</p>
         </div>
-
-        {/* landing pulse */}
-        {!reduce && (
-          <motion.span
-            aria-hidden
-            animate={{ scale: [0.9, 0.9, 1.12, 1], opacity: [0, 0, 0.7, 0] }}
-            transition={{ ...LOOP, times: [0, 0.43, 0.5, 0.62] }}
-            className="pointer-events-none absolute -inset-1 rounded-2xl border-2 border-aqua/60"
-          />
-        )}
-      </motion.div>
-
-      {/* ghost placeholder so the column doesn't collapse while the card is away */}
-      <div className="absolute inset-0 -z-10">
-        <GhostCard faint />
       </div>
+    </motion.div>
+  );
+}
+
+function CompanyBadge({ name, color }: { name: string; color?: string }) {
+  const initial = name.slice(0, 1);
+  const bg = color ?? "#1f64e0";
+
+  return (
+    <span
+      className="grid size-9 shrink-0 place-items-center rounded-lg text-sm font-black text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.28)]"
+      style={{ backgroundColor: bg }}
+    >
+      {initial}
+    </span>
+  );
+}
+
+function Metric({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <p className="text-[9px] text-muted">{label}</p>
+      <p>{value}</p>
     </div>
   );
 }
 
-function GhostCard({ faint }: { faint?: boolean }) {
-  return (
-    <div className={`rounded-xl bg-brand-50/70 p-2.5 ${faint ? "opacity-45" : "opacity-75"}`}>
-      <div className="flex items-center gap-2">
-        <span className="size-7 shrink-0 rounded-lg bg-brand-100" />
-        <div className="min-w-0 flex-1 space-y-1.5">
-          <span className="block h-1.5 w-9/12 rounded-full bg-brand-200/80" />
-          <span className="block h-1.5 w-6/12 rounded-full bg-brand-100" />
-        </div>
+function CardPattern({
+  pattern,
+  color,
+}: {
+  pattern: (typeof JOB_CARDS)[number]["pattern"];
+  color: string;
+}) {
+  if (pattern === "waves") {
+    return (
+      <svg viewBox="0 0 160 48" aria-hidden className="mt-4 h-10 w-full">
+        {[0, 1, 2].map((row) => (
+          <path
+            key={row}
+            d={`M${8 + row * 4} ${34 - row * 6} C 36 ${8 + row * 4}, 58 ${48 - row * 3}, 88 ${22 + row * 2} S 132 ${20 - row}, 154 ${8 + row * 5}`}
+            fill="none"
+            stroke={color}
+            strokeWidth="4"
+            strokeLinecap="round"
+            opacity={0.8 - row * 0.18}
+          />
+        ))}
+      </svg>
+    );
+  }
+
+  if (pattern === "bars") {
+    return (
+      <div className="mt-4 flex h-10 items-end gap-1.5">
+        {[28, 42, 20, 36, 46, 30].map((height, index) => (
+          <span
+            key={index}
+            className="w-full rounded-t-full"
+            style={{ height, backgroundColor: color, opacity: 0.35 + index * 0.08 }}
+          />
+        ))}
       </div>
-    </div>
+    );
+  }
+
+  if (pattern === "grid") {
+    return (
+      <div className="mt-4 grid h-10 grid-cols-8 gap-1">
+        {Array.from({ length: 24 }).map((_, index) => (
+          <span
+            key={index}
+            className="rounded-[0.2rem]"
+            style={{ backgroundColor: color, opacity: index % 3 === 0 ? 0.8 : 0.24 }}
+          />
+        ))}
+      </div>
+    );
+  }
+
+  return (
+    <svg viewBox="0 0 160 48" aria-hidden className="mt-4 h-10 w-full">
+      <path d="M24 44 A 52 52 0 0 1 136 44" fill="none" stroke={color} strokeWidth="12" strokeLinecap="round" />
+      <path d="M54 44 A 24 24 0 0 1 106 44" fill="none" stroke={color} strokeWidth="8" strokeLinecap="round" opacity="0.42" />
+    </svg>
   );
 }

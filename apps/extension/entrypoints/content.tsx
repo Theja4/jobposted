@@ -13,7 +13,17 @@ import { applicationMetadata, fillCurrentStep, humanDelay } from "../src/autofil
 import { Overlay, type OverlayRunState } from "../src/content/Overlay";
 
 const includeLocalhost =
-  import.meta.env.MODE !== "production" || import.meta.env.WXT_INCLUDE_LOCALHOST === "1";
+  import.meta.env.MODE !== "production" ||
+  import.meta.env.WXT_INCLUDE_LOCALHOST === "1" ||
+  JOBPOSTED_WEB_ORIGIN.startsWith("http://localhost");
+
+function originMatch(origin: string) {
+  try {
+    return `${new URL(origin).origin}/*`;
+  } catch {
+    return "http://localhost:3000/*";
+  }
+}
 
 const CONTENT_MATCHES = [
   "https://*.myworkdayjobs.com/*",
@@ -35,10 +45,11 @@ const CONTENT_MATCHES = [
   "https://*.indeed.com/*",
   "https://*.rippling.com/*",
   "https://*.paylocity.com/*",
+  originMatch(JOBPOSTED_WEB_ORIGIN),
   "https://jobposted.ai/*",
   "https://www.jobposted.ai/*",
   ...(includeLocalhost ? ["http://localhost:3000/*"] : []),
-];
+].filter((value, index, all) => all.indexOf(value) === index);
 
 function message<T extends ExtensionMessageResponse>(payload: unknown): Promise<T> {
   return chrome.runtime.sendMessage(payload) as Promise<T>;
@@ -127,7 +138,10 @@ function JobPostedOverlayApp() {
       appliedAt: new Date().toISOString(),
       fieldsFilled,
     };
-    await message<ExtensionMessageResponse>({ type: "APPLICATION_SYNC", payload });
+    const response = await message<ExtensionMessageResponse>({ type: "APPLICATION_SYNC", payload });
+    if (response.ok && response.type === "APPLICATION_SYNC" && response.result.queued) {
+      setError("Saved locally. JobPosted will retry syncing this application automatically.");
+    }
   }
 
   async function run(continueSteps: boolean) {
@@ -145,7 +159,6 @@ function JobPostedOverlayApp() {
 
       setState("filling");
       const allRecords: ExtensionFieldFillRecord[] = [];
-      let submitted = false;
       for (let step = 0; step < (continueSteps ? 8 : 1); step += 1) {
         if (stopRequested.current) break;
         setStepName(adapter.detectStep(document).name);
@@ -160,12 +173,9 @@ function JobPostedOverlayApp() {
         });
 
         const submit = adapter.findSubmit(document);
-        if (!continueSteps || stopRequested.current) break;
+        const canAdvance = continueSteps && settings.autoAdvance;
+        if (!canAdvance || stopRequested.current) break;
         if (submit) {
-          if (settings.submissionPolicy === "auto") {
-            submit.click();
-            submitted = true;
-          }
           break;
         }
 
@@ -177,7 +187,7 @@ function JobPostedOverlayApp() {
         if (result.total === 0) break;
       }
 
-      await sync(allRecords, submitted ? "submitted" : "filled");
+      await sync(allRecords, "filled");
       setState("done");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Autofill failed.");

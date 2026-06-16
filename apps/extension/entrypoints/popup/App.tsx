@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
-import { ArrowRight, CheckCircle2, ExternalLink, Loader2, LogOut, Settings, ShieldCheck } from "lucide-react";
-import type { ExtensionMessageResponse, MasterProfile } from "@jobposted/shared";
+import { ArrowRight, CheckCircle2, ExternalLink, Loader2, LogOut, RefreshCw, Settings, ShieldCheck } from "lucide-react";
+import type { ExtensionMessageResponse, ExtensionSyncQueueStatus, MasterProfile } from "@jobposted/shared";
 import { JOBPOSTED_WEB_ORIGIN } from "../../src/config/env";
 
 type AuthState = "checking" | "signed-out" | "signed-in";
@@ -13,6 +13,7 @@ export function PopupApp() {
   const [auth, setAuth] = useState<AuthState>("checking");
   const [email, setEmail] = useState<string | null>(null);
   const [profile, setProfile] = useState<MasterProfile | null>(null);
+  const [syncStatus, setSyncStatus] = useState<ExtensionSyncQueueStatus | null>(null);
   const [busy, setBusy] = useState(false);
 
   async function refresh() {
@@ -27,6 +28,10 @@ export function PopupApp() {
     const profileResponse = await send<ExtensionMessageResponse>({ type: "PROFILE_GET" });
     if (profileResponse.ok && profileResponse.type === "PROFILE_GET") {
       setProfile(profileResponse.profile);
+    }
+    const queueResponse = await send<ExtensionMessageResponse>({ type: "SYNC_QUEUE_STATUS" });
+    if (queueResponse.ok && queueResponse.type === "SYNC_QUEUE_STATUS") {
+      setSyncStatus(queueResponse.status);
     }
   }
 
@@ -45,6 +50,15 @@ export function PopupApp() {
     await send<ExtensionMessageResponse>({ type: "AUTH_SIGN_OUT" });
     setProfile(null);
     setAuth("signed-out");
+    setBusy(false);
+  }
+
+  async function retrySync() {
+    setBusy(true);
+    const response = await send<ExtensionMessageResponse>({ type: "APPLICATION_SYNC_RETRY" });
+    if (response.ok && response.type === "APPLICATION_SYNC_RETRY") {
+      setSyncStatus(response.status);
+    }
     setBusy(false);
   }
 
@@ -120,13 +134,31 @@ export function PopupApp() {
         </div>
 
         <div className="grid gap-2">
+          {auth === "signed-in" && syncStatus && syncStatus.pending > 0 && (
+            <div className="rounded-[14px] bg-[#fff7ed] p-3 text-xs font-semibold leading-5 text-[#9a3412] ring-1 ring-inset ring-[#fed7aa]">
+              <div className="flex items-center justify-between gap-3">
+                <span>{syncStatus.pending} application sync pending</span>
+                <button
+                  type="button"
+                  className="inline-flex items-center gap-1.5 rounded-full bg-white px-2.5 py-1 font-black text-[#9a3412] ring-1 ring-inset ring-[#fed7aa]"
+                  onClick={retrySync}
+                  disabled={busy}
+                >
+                  {busy ? <Loader2 className="size-3.5 animate-spin" /> : <RefreshCw className="size-3.5" />}
+                  Retry
+                </button>
+              </div>
+              {syncStatus.lastError && <p className="mt-1 opacity-80">{syncStatus.lastError}</p>}
+            </div>
+          )}
+
           <a
-            href={`${JOBPOSTED_WEB_ORIGIN}/dashboard/information`}
+            href={`${JOBPOSTED_WEB_ORIGIN}/dashboard/onboarding`}
             target="_blank"
             className="jp-button jp-button-secondary no-underline"
             rel="noreferrer"
           >
-            Open master profile
+            Open setup
             <ArrowRight className="size-4" />
           </a>
           <a

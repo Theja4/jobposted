@@ -3,12 +3,12 @@ import { Logo } from "./Logo";
 import { NavAuthButtons } from "@/components/auth/NavAuthButtons";
 
 const LINKS = [
-  { href: "#how-it-works", label: "How it works" },
-  { href: "#analytics", label: "Results" },
-  { href: "#trust", label: "Control" },
-  { href: "#pricing", label: "Pricing" },
-  { href: "#faq", label: "FAQ" },
-];
+  { href: "/#how-it-works", label: "How it works" },
+  { href: "/#analytics", label: "Results" },
+  { href: "/#trust", label: "Control" },
+  { href: "/pricing", label: "Pricing" },
+  { href: "/#faq", label: "FAQ" },
+] as const;
 
 export function Nav() {
   return (

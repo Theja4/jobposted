@@ -14,8 +14,8 @@ export default async function ApplicationsPage() {
           Job application history
         </h1>
         <p className="mt-1 text-sm font-semibold text-muted">
-          {applications.length} applications · filter by date, and open the exact tailored resume
-          used for each.
+          {applications.length} JobPosted applications · manual tracker entries and extension
+          captures stay in Tracker.
         </p>
       </div>
 

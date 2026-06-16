@@ -2,15 +2,17 @@
  * Live verification CLI (no secrets needed): fetch a real public board, normalize, dedupe, and
  * print the result.
  *
- *   pnpm --filter @jobposted/ingest fetch -- --source lever --company netflix
- *   pnpm --filter @jobposted/ingest fetch -- --source greenhouse --board stripe --questions
- *   pnpm --filter @jobposted/ingest fetch -- --source greenhouse --board figma --limit 3 --json
+ *   pnpm --filter @jobposted/ingest run fetch -- --source lever --company netflix
+ *   pnpm --filter @jobposted/ingest run fetch -- --source ashby --company ashby
+ *   pnpm --filter @jobposted/ingest run fetch -- --source greenhouse --board stripe --questions
+ *   pnpm --filter @jobposted/ingest run fetch -- --source greenhouse --board figma --limit 3 --json
  */
 
 import { argv } from "node:process";
 import { applyUrlDirectness, dedupeJobs, normalizeJob, type Job, type RawJob } from "@jobposted/shared";
-import { fetchGreenhouseBoard } from "./sources/greenhouse.js";
-import { fetchLeverCompany } from "./sources/lever.js";
+import { fetchAshbyBoard } from "./sources/ashby";
+import { fetchGreenhouseBoard } from "./sources/greenhouse";
+import { fetchLeverCompany } from "./sources/lever";
 
 interface Args {
   source?: string;
@@ -72,6 +74,10 @@ async function main() {
     if (!args.company) return fail("--company <slug> is required for --source lever");
     console.info(`Fetching Lever postings for "${args.company}"…`);
     raw = await fetchLeverCompany(args.company);
+  } else if (args.source === "ashby") {
+    if (!args.company) return fail("--company <organization> is required for --source ashby");
+    console.info(`Fetching Ashby board "${args.company}"…`);
+    raw = await fetchAshbyBoard(args.company);
   } else if (args.source === "greenhouse") {
     if (!args.board) return fail("--board <token> is required for --source greenhouse");
     console.info(`Fetching Greenhouse board "${args.board}"…`);
@@ -80,7 +86,7 @@ async function main() {
       questionsLimit: args.limit,
     });
   } else {
-    return fail("Usage: --source <lever|greenhouse> --company <slug> | --board <token>");
+    return fail("Usage: --source <lever|ashby|greenhouse> --company <slug> | --board <token>");
   }
 
   const normalized = raw.map(normalizeJob);

@@ -26,6 +26,8 @@ class ExtensionHttpError extends Error {
   }
 }
 
+const DEFAULT_TIMEOUT_MS = 20_000;
+
 function apiUrl(path: string) {
   return `${JOBPOSTED_WEB_ORIGIN.replace(/\/$/, "")}${path}`;
 }
@@ -33,14 +35,28 @@ function apiUrl(path: string) {
 async function authedFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
   const session = await getFreshSession();
   if (!session?.accessToken) throw new ExtensionHttpError(401, "not_authenticated");
-  const response = await fetch(apiUrl(path), {
-    ...init,
-    headers: {
-      authorization: `Bearer ${session.accessToken}`,
-      ...(init.body ? { "content-type": "application/json" } : {}),
-      ...(init.headers ?? {}),
-    },
-  });
+  const controller = new AbortController();
+  const timeoutId = globalThis.setTimeout(() => controller.abort(), DEFAULT_TIMEOUT_MS);
+  let response: Response;
+  try {
+    response = await fetch(apiUrl(path), {
+      ...init,
+      signal: controller.signal,
+      headers: {
+        authorization: `Bearer ${session.accessToken}`,
+        ...(init.body ? { "content-type": "application/json" } : {}),
+        ...(init.headers ?? {}),
+      },
+    });
+  } catch (error) {
+    if (error instanceof DOMException && error.name === "AbortError") {
+      throw new ExtensionHttpError(408, "request_timeout");
+    }
+    throw new ExtensionHttpError(0, "network_unavailable");
+  } finally {
+    globalThis.clearTimeout(timeoutId);
+  }
+
   const text = await response.text();
   const body = text ? (JSON.parse(text) as T & { message?: string }) : (null as T);
   if (response.status === 401) {

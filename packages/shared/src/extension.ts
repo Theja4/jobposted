@@ -29,6 +29,15 @@ export interface MasterProfileWorkAuth {
   country?: string | null;
 }
 
+export interface MasterProfileCompensation {
+  currentMin?: number | null;
+  currentMax?: number | null;
+  currentCurrency?: string | null;
+  expectedMin?: number | null;
+  expectedMax?: number | null;
+  currency?: string | null;
+}
+
 export interface MasterProfileDemographics {
   gender?: string | null;
   race?: string[];
@@ -72,6 +81,7 @@ export interface MasterProfile {
   location: MasterProfileLocation;
   links: MasterProfileLinks;
   workAuth: MasterProfileWorkAuth;
+  compensation?: MasterProfileCompensation;
   demographics?: MasterProfileDemographics;
   experience: MasterProfileExperience[];
   education: MasterProfileEducation[];
@@ -107,6 +117,10 @@ export type CanonicalFieldKey =
   | "workAuth.authorizedToWork"
   | "workAuth.requiresSponsorship"
   | "workAuth.country"
+  | "compensation.current"
+  | "compensation.currentCurrency"
+  | "compensation.expected"
+  | "compensation.expectedCurrency"
   | "demographics.gender"
   | "demographics.race"
   | "demographics.veteranStatus"
@@ -187,6 +201,16 @@ export interface ExtensionApplicationResponse {
   ok: true;
   applicationId: string | null;
   jobId: string | null;
+  queued?: boolean;
+  attempts?: number;
+  queuedAt?: string | null;
+}
+
+export interface ExtensionSyncQueueStatus {
+  pending: number;
+  lastError?: string | null;
+  lastAttemptAt?: string | null;
+  nextRetryAt?: string | null;
 }
 
 export interface ExtensionSettings {
@@ -228,6 +252,8 @@ export type ExtensionMessage =
   | { type: "RESUME_GET"; jobId?: string | null }
   | { type: "FIELD_MAP"; field: ExtensionFieldContext; profile: MasterProfile }
   | { type: "APPLICATION_SYNC"; payload: ExtensionApplicationUpsert }
+  | { type: "APPLICATION_SYNC_RETRY" }
+  | { type: "SYNC_QUEUE_STATUS" }
   | { type: "ANSWER_SAVE"; answer: ReusableAnswer }
   | { type: "SETTINGS_GET" }
   | { type: "SETTINGS_SET"; settings: Partial<ExtensionSettings> }
@@ -241,6 +267,8 @@ export type ExtensionMessageResponse =
   | { ok: true; type: "RESUME_GET"; resume: ExtensionResumeResponse }
   | { ok: true; type: "FIELD_MAP"; mapping: ExtensionFieldMapping }
   | { ok: true; type: "APPLICATION_SYNC"; result: ExtensionApplicationResponse }
+  | { ok: true; type: "APPLICATION_SYNC_RETRY"; status: ExtensionSyncQueueStatus }
+  | { ok: true; type: "SYNC_QUEUE_STATUS"; status: ExtensionSyncQueueStatus }
   | { ok: true; type: "ANSWER_SAVE" }
   | { ok: true; type: "SETTINGS_GET"; settings: ExtensionSettings }
   | { ok: true; type: "SETTINGS_SET"; settings: ExtensionSettings }

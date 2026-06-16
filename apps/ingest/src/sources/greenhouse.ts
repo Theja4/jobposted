@@ -10,7 +10,7 @@ import {
   type FormQuestionType,
   type RawJob,
 } from "@jobposted/shared";
-import { fetchJson, humanizeSlug, mapLimit } from "../util.js";
+import { fetchJson, humanizeSlug, mapLimit } from "../util";
 
 const BASE = "https://boards-api.greenhouse.io/v1/boards";
 

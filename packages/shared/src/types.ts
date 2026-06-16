@@ -64,18 +64,22 @@ export type WorkAuthorization =
  * offer) are tracked once the apply engine and applications page land.
  */
 export type ApplicationStatus =
+  | "saved"
   | "queued"
   | "tailoring"
   | "filled"
   | "ready_for_review"
   | "submitting"
+  | "applied"
   | "submitted"
+  | "viewed"
   | "failed"
   | "rejected"
-  | "interview";
+  | "interview"
+  | "offer";
 
 /** Which path submitted the application (design doc §2, §8). */
-export type ApplyPath = "server" | "extension";
+export type ApplyPath = "server" | "extension" | "manual" | "job_board";
 
 /** Paid plans — no free tier (design doc §12). */
 export type Plan = "starter_20" | "pro_50";
@@ -189,6 +193,9 @@ export interface Profile {
   salaryExpectationMin: number | null;
   salaryExpectationMax: number | null;
   salaryCurrency: string | null;
+  currentSalaryMin: number | null;
+  currentSalaryMax: number | null;
+  currentSalaryCurrency: string | null;
   noticePeriodDays: number | null;
   createdAt?: string;
 }

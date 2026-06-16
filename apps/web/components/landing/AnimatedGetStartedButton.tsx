@@ -1,8 +1,8 @@
 "use client";
 
-import Link, { type LinkProps } from "next/link";
+import Link from "next/link";
 import { ArrowRight } from "lucide-react";
-import type { ReactNode } from "react";
+import type { ComponentProps, ReactNode } from "react";
 import { cn } from "@/lib/cn";
 
 const SIZES = {
@@ -17,7 +17,7 @@ export function AnimatedGetStartedButton({
   className,
   size = "lg",
 }: {
-  href: LinkProps["href"];
+  href: ComponentProps<typeof Link>["href"];
   children?: ReactNode;
   className?: string;
   size?: keyof typeof SIZES;

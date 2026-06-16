@@ -5,6 +5,7 @@
  */
 
 export type ApplicationStatus =
+  | "queued"
   | "filled"
   | "submitted"
   | "applied"
@@ -21,6 +22,8 @@ export interface JobApplication {
   appliedOn: string; // ISO date
   appliedAt?: string; // time-of-day label, e.g. "09:14"
   status: ApplicationStatus;
+  rawStatus?: string | null;
+  applyPath?: string | null;
   matchScore: number; // 0–100
   resumeName: string;
   resumeUrl: string;
@@ -30,6 +33,7 @@ export const STATUS_META: Record<
   ApplicationStatus,
   { label: string; className: string }
 > = {
+  queued: { label: "Queued", className: "bg-sky-50 text-sky-700 ring-sky-200/70" },
   filled: { label: "Filled", className: "bg-amber-50 text-amber-700 ring-amber-200/70" },
   submitted: { label: "Submitted", className: "bg-brand-50 text-brand-700 ring-brand-200/70" },
   applied: { label: "Applied", className: "bg-brand-50 text-brand-700 ring-brand-200/70" },
@@ -138,17 +142,8 @@ export const DASHBOARD_STATS = {
 };
 
 /* ── Daily auto-apply queue ─────────────────────────────────────────────────
-   JobPosted applies automatically each day. To keep the worker running, the
-   user logs in and acknowledges the day's sent applications; tomorrow's batch
-   is held until they do. */
-
-export interface QueuedJob {
-  id: string;
-  role: string;
-  company: string;
-  location: string;
-  matchScore: number;
-}
+   JobPosted applies automatically each day. The user logs in and reviews the
+   applications JobPosted prepared for the current worker run. */
 
 /** Applications JobPosted already sent today, on the user's behalf. */
 export const QUEUE_TODAY: JobApplication[] = [
@@ -160,20 +155,10 @@ export const QUEUE_TODAY: JobApplication[] = [
   { id: "td_06", role: "Design Systems Engineer", company: "Shopify", location: "Hybrid · Toronto", appliedOn: "2026-06-12", appliedAt: "11:02", status: "applied", matchScore: 81, resumeName: "Resume · Shopify Design Systems.pdf", resumeUrl: "#" },
 ];
 
-/** Roles already matched and tailored, scheduled to send tomorrow once acknowledged. */
-export const QUEUE_TOMORROW: QueuedJob[] = [
-  { id: "tm_01", role: "Staff Product Designer", company: "Figma", location: "San Francisco, CA", matchScore: 92 },
-  { id: "tm_02", role: "Design Lead", company: "Vercel", location: "Remote", matchScore: 94 },
-  { id: "tm_03", role: "Lead Product Designer", company: "Anthropic", location: "Remote · US", matchScore: 89 },
-  { id: "tm_04", role: "Senior UX Researcher", company: "Airbnb", location: "Remote · US", matchScore: 83 },
-  { id: "tm_05", role: "Product Designer", company: "Ramp", location: "New York, NY", matchScore: 84 },
-  { id: "tm_06", role: "Brand & Marketing Designer", company: "Notion", location: "Remote", matchScore: 78 },
-];
-
 /* ── Job board ──────────────────────────────────────────────────────────── */
 
 export type Workplace = "Remote" | "Hybrid" | "On-site";
-export type JobType = "Full-time" | "Contract" | "Part-time";
+export type JobType = "Full-time" | "Contract" | "Part-time" | "Internship";
 
 export interface JobListing {
   id: string;
@@ -188,6 +173,10 @@ export interface JobListing {
   postedOn: string; // ISO date
   matchScore: number; // 0–100 fit for the user
   description: string;
+  applyUrl?: string | null;
+  atsType?: string | null;
+  source?: string | null;
+  canSaveTailoredResume?: boolean;
   featured?: boolean;
 }
 
@@ -407,7 +396,7 @@ export const JOBS: JobListing[] = [
   },
 ];
 
-/** Master profile used to auto-fill applications (the "My information" page). */
+/** Master profile used to auto-fill applications from Setup. */
 export const MASTER_PROFILE = {
   fullName: "Your Name",
   headline: "Senior Product Designer",

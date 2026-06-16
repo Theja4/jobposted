@@ -1,8 +1,13 @@
 import { createHash } from "node:crypto";
 import { NextResponse } from "next/server";
 import type { ExtensionApplicationUpsert } from "@jobposted/shared";
+import { getUsageStatus, usageLimitMessage } from "@/lib/billing/limits";
 import { getServiceRoleClient } from "@/lib/supabase/service-role";
 import { authErrorResponse, extensionError, getExtensionAuthContext } from "@/lib/extension/auth";
+import {
+  buildExtensionApplicationRow,
+  type ExistingExtensionApplicationRow,
+} from "@/lib/extension/application-sync";
 
 export const runtime = "nodejs";
 
@@ -10,8 +15,85 @@ function asString(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
 }
 
-function sourceJobId(jobUrl: string) {
-  return createHash("sha256").update(jobUrl).digest("hex").slice(0, 32);
+function normalizeJobUrl(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed) return "";
+  try {
+    const url = new URL(trimmed);
+    url.hash = "";
+    return url.toString();
+  } catch {
+    return trimmed;
+  }
+}
+
+function uniqueStrings(values: string[]) {
+  return Array.from(new Set(values.map((value) => value.trim()).filter(Boolean)));
+}
+
+function jobUrlCandidates(jobUrl: string) {
+  return uniqueStrings([normalizeJobUrl(jobUrl), jobUrl]);
+}
+
+function sourceJobId(jobUrl: string, fallback: string) {
+  return createHash("sha256").update(jobUrl || fallback).digest("hex").slice(0, 32);
+}
+
+type SchemaScopedClient = { from: (table: string) => any };
+
+async function findExistingJobId(client: SchemaScopedClient, userId: string, jobUrl: string) {
+  const candidates = jobUrlCandidates(jobUrl);
+  if (candidates.length === 0) return null;
+
+  const { data: jobs, error: jobsError } = await client
+    .from("jobs")
+    .select("id,apply_url,source")
+    .in("apply_url", candidates)
+    .limit(20);
+  if (jobsError) {
+    console.error("extension job lookup failed", jobsError);
+    return null;
+  }
+  const jobIds = Array.isArray(jobs)
+    ? jobs.map((job) => asString((job as Record<string, unknown>).id)).filter(Boolean)
+    : [];
+  if (jobIds.length === 0) return null;
+
+  const { data: applications, error: applicationsError } = await client
+    .from("applications")
+    .select("job_id,resume_doc_id,rendered_pdf_path,created_at")
+    .eq("user_id", userId)
+    .in("job_id", jobIds)
+    .order("created_at", { ascending: false })
+    .limit(20);
+  if (applicationsError) {
+    console.error("extension application lookup failed", applicationsError);
+    return jobIds[0] ?? null;
+  }
+
+  const rows = Array.isArray(applications) ? applications : [];
+  const withResume = rows.find((row) => {
+    const record = row as Record<string, unknown>;
+    return Boolean(asString(record.resume_doc_id) || asString(record.rendered_pdf_path));
+  });
+  const matchedApplication = withResume ?? rows[0];
+  return matchedApplication ? asString((matchedApplication as Record<string, unknown>).job_id) || null : jobIds[0] ?? null;
+}
+
+async function findExistingApplication(client: SchemaScopedClient, userId: string, jobId: string) {
+  const { data, error } = await client
+    .from("applications")
+    .select(
+      "id,job_id,status,resume_doc_id,cover_letter_doc_id,field_map,screenshot_path,base_version_id,resume_variant_id,tailoring_delta,rendered_pdf_path,submitted_at",
+    )
+    .eq("user_id", userId)
+    .eq("job_id", jobId)
+    .maybeSingle();
+  if (error) {
+    console.error("extension existing application lookup failed", error);
+    return null;
+  }
+  return (data as ExistingExtensionApplicationRow | null) ?? null;
 }
 
 function validPayload(value: unknown): value is ExtensionApplicationUpsert {
@@ -39,10 +121,28 @@ export async function POST(request: Request) {
 
     const writeClient = getServiceRoleClient();
     const supabase = writeClient ?? auth.supabase;
-    const jobUrl = asString(payload.jobUrl);
+    const jobUrl = normalizeJobUrl(asString(payload.jobUrl));
     const company = asString(payload.company) || "Unknown company";
     const role = asString(payload.role) || "Unknown role";
     let jobId = asString(payload.jobId) || null;
+    const { data: profile } = await auth.supabase
+      .from("profiles")
+      .select("active_resume_version_id")
+      .eq("id", auth.user.id)
+      .maybeSingle();
+    const activeResumeVersionId =
+      typeof profile?.active_resume_version_id === "string" ? profile.active_resume_version_id : null;
+
+    if (payload.status === "submitted") {
+      const usage = await getUsageStatus(auth.supabase, auth.user.id);
+      if (!usage.canSubmit) {
+        return extensionError(usageLimitMessage(usage), 402);
+      }
+    }
+
+    if (!jobId) {
+      jobId = await findExistingJobId(supabase, auth.user.id, jobUrl);
+    }
 
     if (!jobId && writeClient) {
       const { data: job, error: jobError } = await writeClient
@@ -50,7 +150,7 @@ export async function POST(request: Request) {
         .upsert(
           {
             source: "extension",
-            source_job_id: sourceJobId(jobUrl),
+            source_job_id: sourceJobId(jobUrl, `${payload.platform}:${company}:${role}`),
             ats_type: payload.platform,
             company,
             title: role,
@@ -64,6 +164,8 @@ export async function POST(request: Request) {
             salary_currency: null,
             visa_sponsorship: null,
             posted_at: null,
+            last_seen_at: new Date().toISOString(),
+            closed_at: null,
           },
           { onConflict: "source,source_job_id" },
         )
@@ -76,38 +178,20 @@ export async function POST(request: Request) {
       jobId = job?.id ?? null;
     }
 
-    const applicationRow = {
-      user_id: auth.user.id,
-      job_id: jobId,
-      status: payload.status,
-      apply_path: "extension",
-      resume_doc_id: null,
-      cover_letter_doc_id: null,
-      field_map: {
-        source: "extension",
-        platform: payload.platform,
-        company,
-        role,
-        jobUrl,
-        resumeUsed: payload.resumeUsed ?? null,
-        genericResumeUsed: Boolean(payload.genericResumeUsed),
-        fieldsFilled: payload.fieldsFilled,
-      },
-      screenshot_path: payload.screenshotUrl ?? null,
-      failure_reason: null,
-      base_version_id: null,
-      resume_variant_id: null,
-      tailoring_delta: payload.genericResumeUsed ? { genericResumeUsed: true } : null,
-      rendered_pdf_path: payload.resumeUsed ?? null,
-      submitted_at: payload.appliedAt,
-    };
+    const existingApplication = jobId ? await findExistingApplication(supabase, auth.user.id, jobId) : null;
+    const applicationRow = buildExtensionApplicationRow({
+      userId: auth.user.id,
+      jobId,
+      payload,
+      jobUrl,
+      company,
+      role,
+      activeResumeVersionId,
+      existingApplication,
+    });
 
-    const query = jobId
-      ? supabase
-          .from("applications")
-          .upsert(applicationRow, { onConflict: "user_id,job_id" })
-          .select("id,job_id")
-          .single()
+    const query = existingApplication
+      ? supabase.from("applications").update(applicationRow).eq("id", existingApplication.id).select("id,job_id").single()
       : supabase.from("applications").insert(applicationRow).select("id,job_id").single();
 
     const { data: application, error: applicationError } = await query;

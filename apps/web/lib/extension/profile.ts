@@ -22,6 +22,11 @@ function asStringArray(value: unknown): string[] {
   return value.map(asString).filter(Boolean);
 }
 
+function moneyOf(value: unknown): number | null {
+  const n = typeof value === "number" ? value : typeof value === "string" ? Number(value) : NaN;
+  return Number.isFinite(n) && n >= 0 ? Math.round(n) : null;
+}
+
 function splitName(fullName: string | null | undefined, email: string | null | undefined) {
   const fallback = email?.split("@")[0]?.replace(/[._-]+/g, " ") ?? "";
   const usable = (fullName || fallback).trim();
@@ -153,6 +158,14 @@ export function buildMasterProfile(args: {
       authorizedToWork,
       requiresSponsorship: needsSponsorship,
       country: asString(content.workAuthCountry) || location.country,
+    },
+    compensation: {
+      currentMin: moneyOf(row.current_salary_min),
+      currentMax: moneyOf(row.current_salary_max),
+      currentCurrency: asString(row.current_salary_currency) || null,
+      expectedMin: moneyOf(row.salary_expectation_min),
+      expectedMax: moneyOf(row.salary_expectation_max),
+      currency: asString(row.salary_currency) || null,
     },
     demographics: {},
     experience: normalizeExperience(content.experience ?? content.workExperience),

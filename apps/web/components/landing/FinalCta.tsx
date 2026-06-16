@@ -19,11 +19,11 @@ export function FinalCta() {
           <div className="relative z-10 grid items-center gap-12 lg:grid-cols-[1.05fr_0.95fr]">
             <div>
               <h2 className="max-w-xl text-4xl font-extrabold tracking-[-0.035em] text-balance sm:text-5xl">
-                More interviews. None of the busywork.
+                More interviews. None of the pointless work.
               </h2>
               <p className="mt-5 max-w-md text-base leading-7 text-pretty text-white/80 sm:text-lg">
-                Create your account, set your preferences, and JobPosted starts sending tailored
-                applications for you. Then log in once a day to see what went out.
+                Create your account, set your preferences, and JobPosted starts preparing tailored
+                applications for review. Then log in to decide what gets submitted.
               </p>
               <div className="mt-8 flex">
                 <Link

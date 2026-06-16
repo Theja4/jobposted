@@ -8,6 +8,12 @@ type DocumentRow = {
   created_at: string | null;
 };
 
+type ResumeVersionRow = {
+  id: string;
+  storage_path: string | null;
+  created_at: string | null;
+};
+
 export function isProbablyUrl(value: string) {
   return /^https?:\/\//i.test(value);
 }
@@ -46,14 +52,55 @@ export async function findResumeDocuments(args: {
     tailored = data ?? null;
   }
 
-  const { data: base } = await supabase
-    .from("documents")
-    .select("id,storage_path,type,job_id,created_at")
-    .eq("user_id", userId)
-    .eq("type", "base_resume")
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle<DocumentRow>();
+  let base: DocumentRow | null = null;
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("active_resume_version_id")
+    .eq("id", userId)
+    .maybeSingle();
+  const activeResumeVersionId =
+    typeof (profile as Record<string, unknown> | null)?.active_resume_version_id === "string"
+      ? ((profile as Record<string, unknown>).active_resume_version_id as string)
+      : "";
+
+  if (activeResumeVersionId) {
+    const { data: version } = await supabase
+      .from("resume_base_versions")
+      .select("id,storage_path,created_at")
+      .eq("user_id", userId)
+      .eq("id", activeResumeVersionId)
+      .maybeSingle<ResumeVersionRow>();
+    if (version?.storage_path) {
+      const { data: document } = await supabase
+        .from("documents")
+        .select("id,storage_path,type,job_id,created_at")
+        .eq("user_id", userId)
+        .eq("storage_path", version.storage_path)
+        .eq("type", "base_resume")
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle<DocumentRow>();
+      base = document ?? {
+        id: version.id,
+        storage_path: version.storage_path,
+        type: "base_resume",
+        job_id: null,
+        created_at: version.created_at,
+      };
+    }
+  }
+
+  if (!base) {
+    const { data } = await supabase
+      .from("documents")
+      .select("id,storage_path,type,job_id,created_at")
+      .eq("user_id", userId)
+      .eq("type", "base_resume")
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle<DocumentRow>();
+    base = data ?? null;
+  }
 
   const { data: coverLetter } = await supabase
     .from("documents")

@@ -4,7 +4,7 @@
   "private": true,
   "description": "JobPosted Supabase migrations (schema `jobposted`).",
   "scripts": {
-    "print": "cat migrations/0001_schema.sql migrations/0002_rls.sql migrations/0003_storage.sql migrations/0004_indexes.sql",
-    "apply:local": "supabase db execute --file <(pnpm -s print)"
+    "print": "find migrations -maxdepth 1 -type f -name '*.sql' | sort | xargs cat",
+    "apply:local": "bash -lc 'supabase db execute --file <(pnpm -s print)'"
   }
 }

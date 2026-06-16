@@ -9,25 +9,36 @@ export async function GET(request: Request) {
   try {
     const { supabase, user } = await getExtensionAuthContext(request);
 
-    const [
-      { data: profileRow, error: profileError },
-      { data: resumeBase },
-      { data: answerRows },
-    ] = await Promise.all([
+    const [{ data: profileRow, error: profileError }, { data: answerRows }] = await Promise.all([
       supabase.from("profiles").select("*").eq("id", user.id).maybeSingle(),
-      supabase
-        .from("resume_base_versions")
-        .select("content,created_at")
-        .eq("user_id", user.id)
-        .order("created_at", { ascending: false })
-        .limit(1)
-        .maybeSingle(),
       supabase
         .from("profile_answers")
         .select("key,prompt,value")
         .eq("user_id", user.id)
         .order("updated_at", { ascending: false }),
     ]);
+
+    const activeResumeVersionId =
+      profileRow &&
+      typeof profileRow === "object" &&
+      "active_resume_version_id" in profileRow &&
+      typeof profileRow.active_resume_version_id === "string"
+        ? profileRow.active_resume_version_id
+        : "";
+    const { data: resumeBase } = await (activeResumeVersionId
+      ? supabase
+        .from("resume_base_versions")
+        .select("content,created_at")
+        .eq("user_id", user.id)
+        .eq("id", activeResumeVersionId)
+        .maybeSingle()
+      : supabase
+          .from("resume_base_versions")
+          .select("content,created_at")
+          .eq("user_id", user.id)
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle());
 
     if (profileError) {
       console.error("extension profile fetch failed", profileError);

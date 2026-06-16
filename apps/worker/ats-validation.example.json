@@ -1,0 +1,19 @@
+{
+  "targets": [
+    {
+      "label": "Example Greenhouse role",
+      "platform": "greenhouse",
+      "jobUrl": "https://boards.greenhouse.io/example/jobs/123"
+    },
+    {
+      "label": "Example Lever role",
+      "platform": "lever",
+      "jobUrl": "https://jobs.lever.co/example/123"
+    },
+    {
+      "label": "Example Ashby role",
+      "platform": "ashby",
+      "jobUrl": "https://jobs.ashbyhq.com/example/123/application"
+    }
+  ]
+}

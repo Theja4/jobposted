@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { motion, useReducedMotion, useScroll, useTransform } from "framer-motion";
 
 /**
@@ -14,14 +14,24 @@ export function BigWord() {
     target: ref,
     offset: ["start end", "end start"],
   });
+  const isTablet = useMediaQuery("(min-width: 640px)");
+  const isDesktop = useMediaQuery("(min-width: 1024px)");
+  const isUltraWide = useMediaQuery("(min-width: 1800px)");
 
-  const x = useTransform(p, [0, 1], ["12vw", "-10vw"]);
-  const wordX = useTransform(p, [0, 1], ["0.42em", "-0.42em"]);
+  const travel = isUltraWide
+    ? ["0vw", "-58vw"]
+    : isDesktop
+      ? ["0vw", "-54vw"]
+      : isTablet
+        ? ["0vw", "-42vw"]
+        : ["0vw", "0vw"];
+  const x = useTransform(p, [0, 0.28, 1], [travel[0], travel[0], travel[1]]);
+  const wordX = useTransform(p, [0, 1], ["0.22em", "-0.22em"]);
   const planeY = useTransform(p, [0, 1], [40, -60]);
   const planeRotate = useTransform(p, [0, 1], [-16, 4]);
 
   return (
-    <section ref={ref} className="relative overflow-x-clip py-28 sm:py-36">
+    <section ref={ref} className="relative overflow-x-clip px-4 py-24 sm:py-32 lg:py-36">
       <motion.div
         aria-hidden
         style={reduce ? undefined : { y: planeY, rotate: planeRotate }}
@@ -31,19 +41,22 @@ export function BigWord() {
       </motion.div>
 
       <motion.div
-        style={reduce ? undefined : { x }}
-        className="flex items-center gap-[0.22em] px-5 text-[clamp(3.2rem,10.5vw,9rem)] leading-none font-extrabold tracking-[-0.05em] whitespace-nowrap text-ink"
+        style={{
+          ...(reduce ? undefined : { x }),
+          fontSize: "clamp(4rem, min(9vw, calc((100vw - 5rem) / 10.8)), 9rem)",
+        }}
+        className="mx-auto flex flex-wrap items-center justify-center gap-x-[0.22em] gap-y-[0.16em] leading-none font-extrabold tracking-[-0.04em] text-ink sm:flex-nowrap sm:whitespace-nowrap"
       >
         <span>Applied</span>
-        <span className="relative inline-flex h-[1.18em] w-[2.9em] items-center overflow-hidden rounded-[0.32em] bg-[linear-gradient(150deg,#ffd98a_0%,#f8b84e_100%)] shadow-[inset_0_2px_2px_rgba(255,255,255,0.7),inset_0_-2px_4px_rgba(154,98,8,0.25),0_18px_46px_rgba(248,184,78,0.4)]">
+        <span>Auto</span>
+        <span className="relative inline-flex h-[1.18em] w-[5.25em] shrink-0 items-center overflow-hidden rounded-[0.32em] bg-[linear-gradient(150deg,#ffd98a_0%,#f8b84e_100%)] shadow-[inset_0_2px_2px_rgba(255,255,255,0.7),inset_0_-2px_4px_rgba(154,98,8,0.25),0_18px_46px_rgba(248,184,78,0.4)]">
           <motion.span
             style={reduce ? undefined : { x: wordX }}
-            className="px-[0.18em] text-[#3d2c05]"
+            className="px-[0.2em] text-[#3d2c05]"
           >
-            daily
+            Magically
           </motion.span>
         </span>
-        <span>.</span>
       </motion.div>
 
       <p className="mt-10 px-5 text-center text-base font-semibold text-muted sm:text-lg">
@@ -51,6 +64,21 @@ export function BigWord() {
       </p>
     </section>
   );
+}
+
+function useMediaQuery(query: string) {
+  const [matches, setMatches] = useState(false);
+
+  useEffect(() => {
+    const media = window.matchMedia(query);
+    const handleChange = () => setMatches(media.matches);
+
+    handleChange();
+    media.addEventListener("change", handleChange);
+    return () => media.removeEventListener("change", handleChange);
+  }, [query]);
+
+  return matches;
 }
 
 function PaperPlane() {

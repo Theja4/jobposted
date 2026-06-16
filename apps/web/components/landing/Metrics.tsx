@@ -25,8 +25,8 @@ const RANGES = ["1 week", "1 month"] as const;
 type Range = (typeof RANGES)[number];
 
 /**
- * Applications JobPosted sent automatically over each window. Volume tracks a
- * real cadence of ~15–20 sends a day (≈17 avg), all on autopilot.
+ * Applications JobPosted prepared over each window. Volume tracks a real cadence
+ * of roughly 15 to 20 review-ready applications a day.
  */
 const RANGE_DATA: Record<Range, { sent: number; fit: number; lowDay: number; highDay: number }> = {
   "1 week": { sent: 119, fit: 95, lowDay: 16, highDay: 20 },
@@ -238,7 +238,7 @@ const CURVES: Record<Range, { d: string; area: string; markers: { x: number; y: 
 };
 
 /** Right card: range selector, benefit tiles, and an animated sends-per-day
- *  curve showing the steady 15–20/day cadence JobPosted sends on autopilot. */
+ *  curve showing the steady 15 to 20/day cadence JobPosted prepares for review. */
 function QueuePerformanceCard() {
   const reduce = useReducedMotion();
   const [range, setRange] = useState<Range>("1 week");
@@ -274,12 +274,12 @@ function QueuePerformanceCard() {
       <div className="mt-6 grid flex-1 gap-4 sm:grid-cols-[11.5rem_1fr]">
         <div className="grid grid-cols-2 gap-4 sm:grid-cols-1">
           <div className="rounded-3xl bg-[linear-gradient(150deg,#ffd98a,#f8b84e)] p-4 text-[#3d2c05] shadow-[0_16px_36px_rgba(248,184,78,0.35)]">
-            <p className="text-[11px] font-black tracking-[0.08em] uppercase">Sent this {range}</p>
+            <p className="text-[11px] font-black tracking-[0.08em] uppercase">Prepared this {range}</p>
             <p className="mt-2 text-4xl font-extrabold tracking-[-0.04em]">
               <CountUp key={`sent-${range}`} to={data.sent} />
             </p>
             <p className="mt-1 text-xs font-bold text-[#3d2c05]/70">
-              avg {data.lowDay} to {data.highDay} a day, all sent automatically
+              avg {data.lowDay} to {data.highDay} a day, ready for review
             </p>
           </div>
           <div className="rounded-3xl bg-[linear-gradient(150deg,#2f7df4,#1f50c0)] p-4 text-white shadow-[0_16px_36px_rgba(31,100,224,0.35)]">

@@ -2,7 +2,10 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { SignOutButton } from "@/components/dashboard/SignOutButton";
-import { Mail, ShieldCheck, ExternalLink } from "lucide-react";
+import { ModeToggle } from "@/components/dashboard/ModeToggle";
+import { getApplicationMode } from "@/lib/dashboard/applications";
+import { SUPPORT_EMAIL } from "@/lib/site";
+import { Mail, ShieldCheck, ExternalLink, ReceiptText } from "lucide-react";
 
 export const metadata: Metadata = { title: "Account" };
 
@@ -18,6 +21,7 @@ export default async function AccountPage() {
   } = await supabase.auth.getUser();
 
   const provider = user?.app_metadata?.provider ?? "email";
+  const mode = await getApplicationMode();
 
   return (
     <div className="space-y-6">
@@ -25,8 +29,8 @@ export default async function AccountPage() {
         <h1 className="text-3xl font-extrabold tracking-[-0.03em] text-ink">Account</h1>
         <p className="mt-1 text-sm font-semibold text-muted">
           Your login and security. Looking for your resume data?{" "}
-          <Link href={{ pathname: "/dashboard/information" }} className="font-bold text-brand-700 hover:text-brand-800">
-            Go to My information
+          <Link href={{ pathname: "/dashboard/onboarding" }} className="font-bold text-brand-700 hover:text-brand-800">
+            Update it in Setup
           </Link>
           .
         </p>
@@ -62,6 +66,15 @@ export default async function AccountPage() {
       </section>
 
       <section className="liquid-glass rounded-[1.75rem] p-6 sm:p-7">
+        <h2 className="text-lg font-extrabold tracking-[-0.02em] text-ink">How JobPosted applies</h2>
+        <p className="mt-1.5 mb-4 text-sm leading-6 text-muted">
+          Choose whether JobPosted prepares a daily queue for your review, or waits for you to
+          handle applications manually.
+        </p>
+        <ModeToggle mode={mode} />
+      </section>
+
+      <section className="liquid-glass rounded-[1.75rem] p-6 sm:p-7">
         <h2 className="text-lg font-extrabold tracking-[-0.02em] text-ink">Connected to Rezoomed</h2>
         <p className="mt-1.5 text-sm leading-6 text-muted">
           Your tailored resumes and match scores are powered by Rezoomed. Manage your resume
@@ -75,6 +88,30 @@ export default async function AccountPage() {
         >
           Open Rezoomed <ExternalLink className="size-3.5" />
         </a>
+      </section>
+
+      <section className="liquid-glass rounded-[1.75rem] p-6 sm:p-7">
+        <h2 className="text-lg font-extrabold tracking-[-0.02em] text-ink">Billing and support</h2>
+        <p className="mt-1.5 text-sm leading-6 text-muted">
+          For subscription, cancellation, refund, or account questions, contact JobPosted support.
+          You can also manage billing from the Creem customer portal link sent after purchase.
+        </p>
+        <div className="mt-4 flex flex-wrap gap-2">
+          <a
+            href={`mailto:${SUPPORT_EMAIL}`}
+            className="inline-flex items-center gap-1.5 rounded-full bg-white/70 px-4 py-2 text-sm font-bold text-brand-700 ring-1 ring-inset ring-brand-200/70 transition-colors hover:bg-brand-50"
+          >
+            <Mail className="size-3.5" />
+            {SUPPORT_EMAIL}
+          </a>
+          <a
+            href="/refund"
+            className="inline-flex items-center gap-1.5 rounded-full bg-white/70 px-4 py-2 text-sm font-bold text-ink ring-1 ring-inset ring-zinc-200 transition-colors hover:bg-white"
+          >
+            <ReceiptText className="size-3.5" />
+            Refund policy
+          </a>
+        </div>
       </section>
 
       <section className="rounded-[1.75rem] bg-white/70 p-6 ring-1 ring-inset ring-white sm:p-7">
