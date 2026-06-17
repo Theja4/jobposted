@@ -1,0 +1,10 @@
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "Dockerfile.worker"
+
+[deploy]
+startCommand = "pnpm --filter @jobposted/worker run cron:run"
+cronSchedule = "*/15 * * * *"
+healthcheckPath = null
+healthcheckTimeout = null
+restartPolicyType = "NEVER"

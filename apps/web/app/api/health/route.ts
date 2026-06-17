@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { gatewayConfigured } from "@/lib/ai/gateway";
+import { hasTenureCreemProduct } from "@/lib/billing/creem";
 import { getServiceRoleClient } from "@/lib/supabase/service-role";
 
 export const runtime = "nodejs";
@@ -20,13 +21,12 @@ export async function GET() {
     supabaseAnonKey: Boolean(process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY),
     serviceRole: Boolean(process.env.SUPABASE_SERVICE_ROLE_KEY),
     workerCronProtected: Boolean(process.env.WORKER_CRON_SECRET),
-    ingestCronProtected: Boolean(process.env.INGEST_CRON_SECRET || process.env.WORKER_CRON_SECRET),
+    ingestCronProtected: Boolean(process.env.CRON_SECRET || process.env.INGEST_CRON_SECRET || process.env.WORKER_CRON_SECRET),
     billingWebhookSecret: Boolean(process.env.BILLING_WEBHOOK_SECRET || process.env.CREEM_WEBHOOK_SECRET),
     creemApiKey: Boolean(process.env.CREEM_API_KEY),
-    creemStarterProduct: Boolean(process.env.CREEM_STARTER_20_PRODUCT_ID),
-    creemProProduct: Boolean(process.env.CREEM_PRO_50_PRODUCT_ID),
-    checkoutStarter: Boolean(process.env.CHECKOUT_STARTER_20_URL),
-    checkoutPro: Boolean(process.env.CHECKOUT_PRO_50_URL),
+    creemMonthlyProduct: hasTenureCreemProduct("monthly"),
+    creemQuarterlyProduct: hasTenureCreemProduct("quarterly"),
+    aiProvider: gatewayConfigured(),
     aiGateway: gatewayConfigured(),
     database: await databaseStatus(),
   };
@@ -42,11 +42,9 @@ export async function GET() {
     ok &&
     checks.billingWebhookSecret &&
     checks.creemApiKey &&
-    checks.creemStarterProduct &&
-    checks.creemProProduct &&
-    checks.checkoutStarter &&
-    checks.checkoutPro &&
-    checks.aiGateway;
+    checks.creemMonthlyProduct &&
+    checks.creemQuarterlyProduct &&
+    checks.aiProvider;
 
   return NextResponse.json(
     {

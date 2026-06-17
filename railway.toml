@@ -7,3 +7,9 @@ healthcheckPath = "/health"
 healthcheckTimeout = 300
 restartPolicyType = "ON_FAILURE"
 restartPolicyMaxRetries = 10
+
+# Persistent worker service:
+#   start command: pnpm --filter @jobposted/worker start
+#
+# Railway scheduled service:
+#   use config file path /railway.cron.toml

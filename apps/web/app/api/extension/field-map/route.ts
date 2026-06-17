@@ -5,12 +5,13 @@ import type {
   ExtensionFieldMapping,
   MasterProfile,
 } from "@jobposted/shared";
+import { callGatewayJSON, GatewayError, gatewayConfigured } from "@/lib/ai/gateway";
 import { authErrorResponse, extensionError, getExtensionAuthContext } from "@/lib/extension/auth";
 
 export const runtime = "nodejs";
 
 function gatewayTimeoutMs() {
-  const value = Number(process.env.AI_GATEWAY_TIMEOUT_MS ?? 12_000);
+  const value = Number(process.env.OPENROUTER_TIMEOUT_MS ?? process.env.AI_GATEWAY_TIMEOUT_MS ?? 12_000);
   return Number.isFinite(value) && value > 0 ? Math.min(30_000, Math.floor(value)) : 12_000;
 }
 
@@ -50,7 +51,7 @@ function localFallback(field: ExtensionFieldContext, profile: MasterProfile): Ex
     value: null,
     confidence: 0,
     source: "skip",
-    reason: "No cached mapping or AI Gateway response was available.",
+    reason: "No cached mapping or AI response was available.",
   };
 }
 
@@ -68,93 +69,51 @@ function profileSummary(profile: MasterProfile) {
 }
 
 async function callGateway(field: ExtensionFieldContext, profile: MasterProfile) {
-  const apiKey = process.env.AI_GATEWAY_API_KEY || process.env.VERCEL_OIDC_TOKEN;
-  if (!apiKey) return null;
-  const baseUrl = process.env.AI_GATEWAY_BASE_URL || "https://ai-gateway.vercel.sh/v1";
-  const model = process.env.AI_GATEWAY_MODEL || "openai/gpt-5-mini";
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), gatewayTimeoutMs());
-
-  let response: Response;
+  if (!gatewayConfigured()) return null;
   try {
-    response = await fetch(`${baseUrl.replace(/\/$/, "")}/chat/completions`, {
-      method: "POST",
-      signal: controller.signal,
-      headers: {
-        authorization: `Bearer ${apiKey}`,
-        "content-type": "application/json",
-      },
-      body: JSON.stringify({
-        model,
-        stream: false,
-        response_format: { type: "json_object" },
-        messages: [
-          {
-            role: "system",
-            content:
-              "Map a job-application form field to the best JobPosted profile key. Return strict JSON: {\"canonicalKey\": string, \"value\": string|boolean|string[]|null, \"confidence\": number, \"reason\": string}. Use unknown/null when not safe.",
-          },
-          {
-            role: "user",
-            content: JSON.stringify({
-              field,
-              allowedKeys: [
-                "identity.fullName",
-                "identity.firstName",
-                "identity.lastName",
-                "identity.preferredName",
-                "identity.email",
-                "identity.phone",
-                "location.street",
-                "location.city",
-                "location.state",
-                "location.postalCode",
-                "location.country",
-                "links.portfolio",
-                "links.linkedin",
-                "links.github",
-                "workAuth.authorizedToWork",
-                "workAuth.requiresSponsorship",
-                "workAuth.country",
-                "compensation.current",
-                "compensation.currentCurrency",
-                "compensation.expected",
-                "compensation.expectedCurrency",
-                "demographics.gender",
-                "demographics.race",
-                "demographics.veteranStatus",
-                "demographics.disabilityStatus",
-                "demographics.hispanicLatino",
-                "experience",
-                "education",
-                "skills",
-                "unknown",
-                "answers.<key>",
-              ],
-              profile: profileSummary(profile),
-            }),
-          },
+    const parsed = await callGatewayJSON<Record<string, unknown>>({
+      timeoutMs: gatewayTimeoutMs(),
+      maxTokens: 700,
+      system:
+        'Map a job-application form field to the best JobPosted profile key. Return strict JSON: {"canonicalKey": string, "value": string|boolean|string[]|null, "confidence": number, "reason": string}. Use unknown/null when not safe.',
+      user: JSON.stringify({
+        field,
+        allowedKeys: [
+          "identity.fullName",
+          "identity.firstName",
+          "identity.lastName",
+          "identity.preferredName",
+          "identity.email",
+          "identity.phone",
+          "location.street",
+          "location.city",
+          "location.state",
+          "location.postalCode",
+          "location.country",
+          "links.portfolio",
+          "links.linkedin",
+          "links.github",
+          "workAuth.authorizedToWork",
+          "workAuth.requiresSponsorship",
+          "workAuth.country",
+          "compensation.current",
+          "compensation.currentCurrency",
+          "compensation.expected",
+          "compensation.expectedCurrency",
+          "demographics.gender",
+          "demographics.race",
+          "demographics.veteranStatus",
+          "demographics.disabilityStatus",
+          "demographics.hispanicLatino",
+          "experience",
+          "education",
+          "skills",
+          "unknown",
+          "answers.<key>",
         ],
+        profile: profileSummary(profile),
       }),
     });
-  } catch (error) {
-    console.error("AI Gateway field map request failed", error);
-    return null;
-  } finally {
-    clearTimeout(timeoutId);
-  }
-
-  if (!response.ok) {
-    console.error("AI Gateway field map failed", response.status, await response.text());
-    return null;
-  }
-  const json = (await response.json()) as {
-    choices?: Array<{ message?: { content?: string } }>;
-  };
-  const content = json.choices?.[0]?.message?.content;
-  if (!content) return null;
-  try {
-    const parsed = JSON.parse(content) as Record<string, unknown>;
     const canonicalKey = asString(parsed.canonicalKey) as CanonicalFieldKey;
     const confidence =
       typeof parsed.confidence === "number" ? Math.max(0, Math.min(1, parsed.confidence)) : 0;
@@ -164,9 +123,11 @@ async function callGateway(field: ExtensionFieldContext, profile: MasterProfile)
       value: parsed.value as ExtensionFieldMapping["value"],
       confidence,
       source: "llm" as const,
-      reason: asString(parsed.reason) || "AI Gateway mapping.",
+      reason: asString(parsed.reason) || "AI mapping.",
     };
-  } catch {
+  } catch (error) {
+    if (error instanceof GatewayError) console.error("AI field map failed", error.message);
+    else console.error("AI field map request failed", error);
     return null;
   }
 }

@@ -1,6 +1,7 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { NextResponse } from "next/server";
 import { getServiceRoleClient } from "@/lib/supabase/service-role";
+import { creemPlanIdForProductId } from "@/lib/billing/creem";
 import {
   BILLING_PLANS,
   normalizeBillingStatus,
@@ -26,12 +27,39 @@ function idFrom(value: unknown) {
   return str(record.id);
 }
 
+function parsedRequest(value: unknown) {
+  const requestId = str(value);
+  const parts = requestId.split(":");
+  if (parts.length < 4 || parts[0] !== "jobposted") {
+    return { userId: "", plan: null as BillingPlanId | null };
+  }
+  return { userId: parts[1] || "", plan: parsePlan(parts[2]) };
+}
+
+function statusFromEvent(eventType: string, value: unknown): ReturnType<typeof normalizeBillingStatus> {
+  if (eventType === "subscription.past_due") return "past_due";
+  if (
+    eventType === "subscription.canceled" ||
+    eventType === "subscription.expired" ||
+    eventType === "subscription.paused"
+  ) {
+    return "canceled";
+  }
+  if (eventType === "subscription.trialing") return "trialing";
+  if (
+    eventType === "subscription.active" ||
+    eventType === "subscription.paid" ||
+    eventType === "subscription.update" ||
+    eventType === "subscription.scheduled_cancel" ||
+    eventType === "checkout.completed"
+  ) {
+    return "active";
+  }
+  return normalizeBillingStatus(value ?? eventType);
+}
+
 function planFromCreemProduct(value: unknown): BillingPlanId | null {
-  const productId = idFrom(value);
-  if (!productId) return null;
-  if (productId === process.env.CREEM_STARTER_20_PRODUCT_ID) return "starter_20";
-  if (productId === process.env.CREEM_PRO_50_PRODUCT_ID) return "pro_50";
-  return null;
+  return creemPlanIdForProductId(idFrom(value));
 }
 
 function verifySignature(rawBody: string, signature: string | null): { ok: true } | { ok: false; error: string; status: number } {
@@ -55,12 +83,13 @@ function normalizedEvent(payload: unknown) {
   const data = rec(root.object ?? root.data ?? root.subscription ?? root);
   const subscription = rec(data.subscription);
   const order = rec(data.order);
-  const product = data.product ?? subscription.product;
+  const product = data.product ?? subscription.product ?? order.product;
   const metadata = {
     ...rec(root.metadata),
     ...rec(data.metadata),
     ...rec(subscription.metadata),
   };
+  const request = parsedRequest(data.request_id ?? root.request_id ?? metadata.request_id);
   const plan =
     parsePlan(data.plan) ??
     parsePlan(data.plan_id) ??
@@ -68,6 +97,7 @@ function normalizedEvent(payload: unknown) {
     parsePlan(subscription.plan_id) ??
     parsePlan(metadata.plan) ??
     parsePlan(metadata.plan_id) ??
+    request.plan ??
     planFromCreemProduct(product);
   const userId =
     str(data.user_id) ||
@@ -79,12 +109,10 @@ function normalizedEvent(payload: unknown) {
     str(metadata.client_reference_id) ||
     str(metadata.clientReferenceId) ||
     str(metadata.referenceId) ||
-    str(metadata.internal_customer_id);
+    str(metadata.internal_customer_id) ||
+    request.userId;
   const eventType = str(root.eventType) || str(root.type);
-  const status =
-    eventType === "subscription.canceled" || eventType === "subscription.expired"
-      ? "canceled"
-      : normalizeBillingStatus(data.status ?? subscription.status ?? order.status ?? eventType);
+  const status = statusFromEvent(eventType, data.status ?? subscription.status ?? order.status);
   const customer = data.customer ?? subscription.customer ?? order.customer;
   const subscriptionId = data.subscription ?? subscription;
 

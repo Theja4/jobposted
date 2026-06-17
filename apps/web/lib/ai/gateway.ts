@@ -1,12 +1,52 @@
 /**
- * Thin Vercel AI Gateway JSON client. Server-only — the key never reaches the
- * browser or the extension. Used for field mapping and resume tailoring.
+ * Thin OpenAI-compatible JSON client. Server-only — keys never reach the browser
+ * or extension. OpenRouter is the primary provider; Vercel AI Gateway remains a
+ * backward-compatible fallback for older deployments.
  */
 
 export class GatewayError extends Error {}
 
+const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
+const VERCEL_GATEWAY_BASE_URL = "https://ai-gateway.vercel.sh/v1";
+const DEFAULT_OPENROUTER_MODEL = "deepseek/deepseek-chat";
+const DEFAULT_VERCEL_MODEL = "openai/gpt-5-mini";
+
+type ProviderConfig = {
+  name: string;
+  apiKey: string | undefined;
+  baseUrl: string;
+  model: string;
+  headers: Record<string, string>;
+};
+
 export function gatewayConfigured(): boolean {
-  return Boolean(process.env.AI_GATEWAY_API_KEY || process.env.VERCEL_OIDC_TOKEN);
+  return Boolean(process.env.OPENROUTER_API_KEY || process.env.AI_GATEWAY_API_KEY || process.env.VERCEL_OIDC_TOKEN);
+}
+
+function providerConfig(modelOverride?: string): ProviderConfig {
+  const openRouterKey = process.env.OPENROUTER_API_KEY;
+  if (openRouterKey) {
+    const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "https://jobposted.app";
+    return {
+      name: "OpenRouter",
+      apiKey: openRouterKey,
+      baseUrl: (process.env.OPENROUTER_BASE_URL || OPENROUTER_BASE_URL).replace(/\/$/, ""),
+      model: modelOverride || process.env.OPENROUTER_MODEL || process.env.AI_GATEWAY_MODEL || DEFAULT_OPENROUTER_MODEL,
+      headers: {
+        "HTTP-Referer": siteUrl,
+        "X-OpenRouter-Title": "JobPosted",
+      },
+    };
+  }
+
+  const apiKey = process.env.AI_GATEWAY_API_KEY || process.env.VERCEL_OIDC_TOKEN;
+  return {
+    name: "AI Gateway",
+    apiKey,
+    baseUrl: (process.env.AI_GATEWAY_BASE_URL || VERCEL_GATEWAY_BASE_URL).replace(/\/$/, ""),
+    model: modelOverride || process.env.AI_GATEWAY_MODEL || DEFAULT_VERCEL_MODEL,
+    headers: {},
+  };
 }
 
 export async function callGatewayJSON<T>(args: {
@@ -16,21 +56,22 @@ export async function callGatewayJSON<T>(args: {
   model?: string;
   timeoutMs?: number;
 }): Promise<T> {
-  const apiKey = process.env.AI_GATEWAY_API_KEY || process.env.VERCEL_OIDC_TOKEN;
-  if (!apiKey) throw new GatewayError("AI Gateway is not configured.");
-
-  const baseUrl = (process.env.AI_GATEWAY_BASE_URL || "https://ai-gateway.vercel.sh/v1").replace(/\/$/, "");
-  const model = args.model || process.env.AI_GATEWAY_MODEL || "openai/gpt-5-mini";
+  const provider = providerConfig(args.model);
+  if (!provider.apiKey) throw new GatewayError("AI provider is not configured.");
 
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), args.timeoutMs ?? 60_000);
   try {
-    const response = await fetch(`${baseUrl}/chat/completions`, {
+    const response = await fetch(`${provider.baseUrl}/chat/completions`, {
       method: "POST",
-      headers: { authorization: `Bearer ${apiKey}`, "content-type": "application/json" },
+      headers: {
+        authorization: `Bearer ${provider.apiKey}`,
+        "content-type": "application/json",
+        ...provider.headers,
+      },
       signal: controller.signal,
       body: JSON.stringify({
-        model,
+        model: provider.model,
         stream: false,
         max_tokens: args.maxTokens ?? 4096,
         response_format: { type: "json_object" },
@@ -42,15 +83,15 @@ export async function callGatewayJSON<T>(args: {
     });
 
     if (!response.ok) {
-      throw new GatewayError(`AI Gateway responded ${response.status}: ${await response.text()}`);
+      throw new GatewayError(`${provider.name} responded ${response.status}: ${await response.text()}`);
     }
     const json = (await response.json()) as { choices?: Array<{ message?: { content?: string } }> };
     const content = json.choices?.[0]?.message?.content;
-    if (!content) throw new GatewayError("AI Gateway returned an empty response.");
+    if (!content) throw new GatewayError(`${provider.name} returned an empty response.`);
     try {
       return JSON.parse(content) as T;
     } catch {
-      throw new GatewayError("AI Gateway returned invalid JSON.");
+      throw new GatewayError(`${provider.name} returned invalid JSON.`);
     }
   } finally {
     clearTimeout(timeout);

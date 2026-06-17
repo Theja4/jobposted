@@ -55,7 +55,7 @@ APPLY_MAX_ATTEMPTS=3            # retries before a transient failure becomes 'fa
 APPLY_DAILY_LIMIT_DEFAULT=20    # fallback when a subscription has no daily_limit
 ```
 
-## Auto pipeline (`POST /cron/run`)
+## Auto pipeline (`POST /cron/run` or `cron:run`)
 
 A single scheduled cron hit runs the whole auto path in order:
 
@@ -77,7 +77,8 @@ APPLY_RUNNER_ON_CRON=1          # 0 to skip the apply step in /cron/run
 ```
 
 Each stage is independent: a render or apply failure is captured in the response (and error
-reporting) without failing the others. Point the Railway cron at `POST /cron/run`.
+reporting) without failing the others. Use `POST /cron/run` for a persistent HTTP worker run, or
+use `pnpm --filter @jobposted/worker run cron:run` as a one-shot Railway Cron start command.
 
 ## Adapter validation (`POST /runner/validate`)
 
@@ -111,13 +112,33 @@ unsupported flow. Use `--no-fail` for exploratory reports where you do not want 
 
 ## Railway
 
-- Build command: `pnpm --filter @jobposted/worker build`
+The repo includes `Dockerfile.worker` and `railway.toml` for the persistent worker service.
+
+Persistent worker service:
+
+- Builder: Dockerfile (`Dockerfile.worker`)
 - Start command: `pnpm --filter @jobposted/worker start`
 - Health check path: `/health`
-- Cron path: `POST /cron/run`
-- Cron auth: `Authorization: Bearer $WORKER_CRON_SECRET`
-- Cron behavior: calls `POST $JOBPOSTED_WEB_URL/api/queue/prepare` and creates `server`
-  application rows from ingested jobs that match completed onboarding profiles
+- Manual/full run: `POST /cron/run` with `Authorization: Bearer $WORKER_CRON_SECRET`
+- Cleanup only: `POST /cron/cleanup`
+- Runner only: `POST /runner/run`
+- Adapter validation: `POST /runner/validate`
+
+Railway Cron service:
+
+- Create a second Railway service from the same repo if you want Railway to schedule the pipeline.
+- Set its config file path to `/railway.cron.toml`; this avoids inheriting the persistent
+  worker's `/health` check.
+- The included cron config uses `Dockerfile.worker`, runs
+  `pnpm --filter @jobposted/worker run cron:run`, and schedules `*/15 * * * *`.
+- Adjust `cronSchedule` in `railway.cron.toml` if you want a different cadence.
+- Do not use the always-on `start` command for a scheduled service; Railway Cron expects the
+  process to complete and exit after the task is done.
+- Use `pnpm --filter @jobposted/worker run cron:cleanup` for a cleanup-only scheduled service.
+
+Cron behavior: calls `POST $JOBPOSTED_WEB_URL/api/queue/prepare` and creates `server`
+application rows from ingested jobs that match completed onboarding profiles, then runs render,
+apply, and cleanup according to the env gates below.
 
 Required env:
 

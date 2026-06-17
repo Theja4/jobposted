@@ -1,19 +1,8 @@
 import { NextResponse } from "next/server";
+import { creemApiBase, readCreemUrl } from "@/lib/billing/creem";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
-
-function creemApiBase() {
-  if (process.env.CREEM_API_BASE_URL) return process.env.CREEM_API_BASE_URL.replace(/\/+$/, "");
-  return process.env.CREEM_TEST_MODE === "true" ? "https://test-api.creem.io" : "https://api.creem.io";
-}
-
-function readPortalLink(payload: unknown) {
-  if (!payload || typeof payload !== "object" || Array.isArray(payload)) return "";
-  const record = payload as Record<string, unknown>;
-  const link = record.customer_portal_link ?? record.customerPortalLink ?? record.url;
-  return typeof link === "string" ? link.trim() : "";
-}
 
 export async function POST() {
   const apiKey = process.env.CREEM_API_KEY;
@@ -78,7 +67,7 @@ export async function POST() {
     );
   }
 
-  const url = readPortalLink(payload);
+  const url = readCreemUrl(payload);
   if (!url) {
     return NextResponse.json({ ok: false, error: "portal_url_missing" }, { status: 502 });
   }

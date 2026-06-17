@@ -6,7 +6,7 @@ This app has two production surfaces:
 2. **Worker** — Railway Playwright worker for prepare -> render -> apply -> cleanup.
 
 The worker can run while the web app is local only, but `JOBPOSTED_WEB_URL` must point to an
-HTTP-reachable web app for `/cron/run` to prepare and render queues.
+HTTP-reachable web app for queue preparation and resume rendering.
 
 ## Web
 
@@ -37,14 +37,31 @@ INGEST_BOARDS_FILE=
 
 Railway config is in `railway.toml`; the image is built from `Dockerfile.worker`.
 
+Use one persistent worker service for health checks/manual runs, and optionally one scheduled
+Railway Cron service from the same repo for the timed pipeline.
+
+Persistent worker service:
+
 - Private Railway URL for this worker: `http://jobpostedworker-copy.railway.internal:8080`
   assuming `WORKER_PORT=8080`. Use this only from another Railway service in the same project
   environment. Local machines, browsers, and Vercel cannot reach `.railway.internal` directly.
+- Start command: `pnpm --filter @jobposted/worker start`
+- Health check path: `/health`
 - Health: `GET /health`
 - Full pipeline: `POST /cron/run`
 - Cleanup only: `POST /cron/cleanup`
 - Runner only: `POST /runner/run`
 - Adapter validation: `POST /runner/validate`
+
+Scheduled Railway Cron service:
+
+- Create a second Railway service from this repo.
+- Set the Railway config file path to `/railway.cron.toml`.
+- The cron config uses `Dockerfile.worker`, runs
+  `pnpm --filter @jobposted/worker run cron:run`, disables the health check, and schedules
+  `*/15 * * * *`.
+- Edit `cronSchedule` in `railway.cron.toml` if you want a different cadence.
+- Railway evaluates cron schedules in UTC and expects the process to finish and exit.
 
 Required worker env:
 
@@ -99,4 +116,7 @@ curl -fsS -X POST "$WORKER_URL/cron/run" \
   -H "Authorization: Bearer $WORKER_CRON_SECRET" \
   -H "content-type: application/json" \
   -d '{}'
+
+pnpm --filter @jobposted/worker build
+pnpm --filter @jobposted/worker run cron:run
 ```

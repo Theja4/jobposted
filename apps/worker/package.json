@@ -6,6 +6,8 @@
   "description": "Railway worker shell for JobPosted server-side apply jobs.",
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
+    "cron:cleanup": "node dist/cron-cli.js cleanup",
+    "cron:run": "node dist/cron-cli.js run",
     "start": "node dist/index.js",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",

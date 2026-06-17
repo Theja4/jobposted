@@ -81,7 +81,7 @@ export type ApplicationStatus =
 /** Which path submitted the application (design doc §2, §8). */
 export type ApplyPath = "server" | "extension" | "manual" | "job_board";
 
-/** Paid plans — no free tier (design doc §12). */
+/** Paid entitlement plans. starter_20 is legacy; pro_50 backs the current JobPosted plan. */
 export type Plan = "starter_20" | "pro_50";
 
 /** Subscription lifecycle (design doc §8, §12). */
@@ -293,7 +293,7 @@ export interface WaitlistEntry {
   createdAt?: string;
 }
 
-// ── Plan catalogue (single source for pricing copy + daily limits) ───────────
+// ── Plan catalogue (entitlement limits; web pricing adds billing tenure/region) ─
 
 export interface PlanInfo {
   id: Plan;
@@ -306,7 +306,7 @@ export interface PlanInfo {
 /** Honest "up to" daily caps (design doc §7.1, §12). */
 export const PLANS: Record<Plan, PlanInfo> = {
   starter_20: { id: "starter_20", name: "Starter", priceUsd: 19, dailyLimit: 20 },
-  pro_50: { id: "pro_50", name: "Pro", priceUsd: 49, dailyLimit: 50 },
+  pro_50: { id: "pro_50", name: "JobPosted", priceUsd: 19.99, dailyLimit: 50 },
 };
 
 /** Applications a user gets free before the card is charged (design doc §12, §23.7). */

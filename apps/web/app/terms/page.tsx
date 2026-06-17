@@ -97,8 +97,9 @@ export default function TermsPage() {
         </Clause>
 
         <Clause title="9. Billing, taxes, and subscriptions">
-          Prices and plan limits are shown on the pricing page before checkout. Paid plans renew
-          until canceled unless checkout states otherwise. Creem processes payments as our
+          Price, billing tenure, region, and usage limits are shown on the pricing page before
+          checkout. Paid subscriptions renew until canceled unless checkout states otherwise.
+          Creem processes payments as our
           merchant-of-record/payment provider and may calculate taxes, issue receipts or invoices,
           manage the customer portal, and process refunds. You are responsible for providing accurate
           billing and tax information at checkout.

@@ -47,9 +47,9 @@ packages/
 - ✅ `apps/web` — operating mode selection for **Fully automatic** and **Review queue**. The
   UI stores the selected mode and the queue is filtered so manual/extension rows are not counted
   as JobPosted worker applications
-- ✅ `apps/web` — **resume tailoring** implemented natively in `lib/tailor` (AI Gateway),
+- ✅ `apps/web` — **resume tailoring** implemented natively in `lib/tailor` (OpenRouter-first AI client),
   exposed at `POST /api/tailor`; stores per-job tailored resumes in `documents`
-- ✅ `apps/extension` — MV3 autofill engine (Workday + open-ATS + generic adapters), AI-Gateway
+- ✅ `apps/extension` — MV3 autofill engine (Workday + open-ATS + generic adapters), AI-assisted
   field mapping with a learning cache, web↔extension session bridge, local-first localhost
   builds, durable application-sync retry queue, and popup visibility for pending syncs
 - ✅ `apps/ingest` — Lever + Greenhouse + Ashby fetchers, dedupe, embed (key-optional),
@@ -63,11 +63,11 @@ packages/
 - ✅ `apps/web` — production health endpoint at `GET /api/health`, plus timeout-capped
   extension field mapping
 - ✅ `apps/worker` — Railway worker is wired (`/health`, protected `/cron/run`,
-  `/runner/run`, `/runner/validate`, `/cron/cleanup`) with Playwright open-ATS runner,
+  `/runner/run`, `/runner/validate`, `/cron/cleanup`, and one-shot `cron:run`) with Playwright open-ATS runner,
   screenshot capture, retry/failure transitions, retention cleanup, and live selector
   validation tooling. It is **dry-run by default**; live submit requires `APPLY_DRY_RUN=0`
   after real-form validation.
-- ✅ Deploy scaffolding — worker Dockerfile, Railway config, Vercel ingest cron config, and
+- ✅ Deploy scaffolding — worker Dockerfile, Railway persistent/cron configs, Vercel ingest cron config, and
   production runbook in `deploy/production.md`
 - ⏳ Payments (Phase 4) and broader server-side apply support beyond the open-ATS worker are
   not yet built
@@ -90,8 +90,8 @@ Built today:
    or server source.
 9. In **Review queue** mode, the Queue page can release today's prepared applications to
    `queued` with one action.
-10. Railway can call `/cron/run`, which prepares, renders, applies via the worker runner, and
-   prunes old transient documents using `WORKER_CRON_SECRET`.
+10. Railway can run the one-shot `cron:run` command (or an HTTP scheduler can call `/cron/run`),
+   which prepares, renders, applies via the worker runner, and prunes old transient documents.
 11. The worker supports Greenhouse, Lever, and Ashby as server-safe open ATS adapters, and routes
    many common login-gated/fragile ATS providers to review-only instead of submitting headlessly.
 
@@ -136,8 +136,9 @@ embedding key. Copy into `apps/web/.env.local` / `apps/ingest/.env` as needed.
 - **Supabase** — shares the Rezoomed project. JobPosted tables live in a dedicated
   `jobposted` Postgres schema to avoid colliding with Rezoomed's `public.profiles` /
   `public.jobs` / `public.referrals`. See [`packages/db/README.md`](./packages/db/README.md).
-- **Tailoring** — implemented **natively in JobPosted** (`apps/web/lib/tailor`, via the Vercel
-  AI Gateway), adapted from Rezoomed's tailoring approach rather than calling a Rezoomed API.
+- **Tailoring** — implemented **natively in JobPosted** (`apps/web/lib/tailor`, via OpenRouter
+  with a legacy Vercel AI Gateway fallback), adapted from Rezoomed's tailoring approach rather
+  than calling a Rezoomed API.
 - **Payments** — uses Creem-hosted checkout links, Creem webhooks, and the Creem customer portal.
 - **Extension** — built on the WXT/MV3 pattern from Rezoomed's LinkedIn extension.
 

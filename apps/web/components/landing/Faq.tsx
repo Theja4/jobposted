@@ -35,7 +35,7 @@ const FAQS = [
   },
   {
     q: "Can I cancel or get a refund?",
-    a: `Plans can be canceled from Billing and support in your account, from the Creem customer portal link sent after purchase, or by emailing ${SUPPORT_EMAIL}. Refund requests are only considered within 48 hours after your first paid subscription payment; accidental charges are not refundable.`,
+    a: `Your subscription can be canceled from Billing and support in your account, from the Creem customer portal link sent after purchase, or by emailing ${SUPPORT_EMAIL}. Refund requests are only considered within 48 hours after your first paid subscription payment; accidental charges are not refundable.`,
   },
 ];
 
