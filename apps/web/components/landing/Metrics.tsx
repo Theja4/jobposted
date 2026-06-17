@@ -28,9 +28,9 @@ type Range = (typeof RANGES)[number];
  * Applications JobPosted prepared over each window. Volume tracks a real cadence
  * of roughly 15 to 20 review-ready applications a day.
  */
-const RANGE_DATA: Record<Range, { sent: number; fit: number; lowDay: number; highDay: number }> = {
-  "1 week": { sent: 119, fit: 95, lowDay: 16, highDay: 20 },
-  "1 month": { sent: 512, fit: 94, lowDay: 15, highDay: 19 },
+const RANGE_DATA: Record<Range, { prepared: number; fit: number; lowDay: number; highDay: number }> = {
+  "1 week": { prepared: 119, fit: 95, lowDay: 16, highDay: 20 },
+  "1 month": { prepared: 512, fit: 94, lowDay: 15, highDay: 19 },
 };
 
 export function Metrics() {
@@ -39,14 +39,14 @@ export function Metrics() {
       <div className="mx-auto w-full max-w-6xl">
         <Reveal className="mx-auto max-w-3xl text-center">
           <p className="text-sm font-extrabold tracking-[0.2em] text-brand-700 uppercase">
-            Results
+            Queue quality
           </p>
           <h2 className="mt-4 text-4xl font-extrabold tracking-[-0.035em] text-balance text-ink sm:text-5xl lg:text-6xl">
-            Fewer applications. Better outcomes.
+            Fewer, better-matched applications.
           </h2>
           <p className="mx-auto mt-5 max-w-2xl text-base leading-7 text-pretty text-muted sm:text-lg">
-            The queue optimizes for fit and interviews, not volume. Every number below is
-            visible inside your own dashboard.
+            The queue optimizes for fit and review-ready quality, not raw volume. These are the
+            kinds of numbers you can monitor inside your own dashboard.
           </p>
         </Reveal>
 
@@ -208,7 +208,7 @@ function TimeToReadyChart({ reduce }: { reduce: boolean }) {
         4 min 12s
       </motion.span>
       <span className="absolute bottom-1 left-1 text-xs font-bold text-muted">
-        from match to sent
+        from match to ready
       </span>
     </div>
   );
@@ -237,7 +237,7 @@ const CURVES: Record<Range, { d: string; area: string; markers: { x: number; y: 
   },
 };
 
-/** Right card: range selector, benefit tiles, and an animated sends-per-day
+/** Right card: range selector, benefit tiles, and an animated ready-per-day
  *  curve showing the steady 15 to 20/day cadence JobPosted prepares for review. */
 function QueuePerformanceCard() {
   const reduce = useReducedMotion();
@@ -249,7 +249,7 @@ function QueuePerformanceCard() {
     <article className="liquid-glass flex h-full flex-col rounded-[2rem] p-6 sm:p-7">
       <div className="flex flex-wrap items-center justify-between gap-4">
         <h3 className="text-2xl font-extrabold tracking-[-0.03em] text-ink">
-          What JobPosted handled
+          What the queue tracks
         </h3>
         <div className="glass-chip flex flex-wrap gap-1 rounded-full p-1">
           {RANGES.map((option) => (
@@ -276,7 +276,7 @@ function QueuePerformanceCard() {
           <div className="rounded-3xl bg-[linear-gradient(150deg,#ffd98a,#f8b84e)] p-4 text-[#3d2c05] shadow-[0_16px_36px_rgba(248,184,78,0.35)]">
             <p className="text-[11px] font-black tracking-[0.08em] uppercase">Prepared this {range}</p>
             <p className="mt-2 text-4xl font-extrabold tracking-[-0.04em]">
-              <CountUp key={`sent-${range}`} to={data.sent} />
+              <CountUp key={`prepared-${range}`} to={data.prepared} />
             </p>
             <p className="mt-1 text-xs font-bold text-[#3d2c05]/70">
               avg {data.lowDay} to {data.highDay} a day, ready for review
@@ -378,7 +378,7 @@ function QueuePerformanceCard() {
           ))}
 
           <span className="absolute bottom-2 left-4 text-xs font-bold text-muted">
-            applications prepared &amp; sent per day
+            applications prepared for review per day
           </span>
         </div>
       </div>

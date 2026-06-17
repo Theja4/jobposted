@@ -9,6 +9,7 @@ import {
   type OnboardingExperience,
   type WorkLocationPreference,
 } from "./model";
+import { TOP_SPOKEN_LANGUAGES } from "./languages";
 
 export type ParsedResumeProfile = {
   search?: Partial<OnboardingConfig["search"]>;
@@ -73,30 +74,7 @@ const COUNTRY_CURRENCY_PATTERNS: Array<{ currency: string; patterns: RegExp[] }>
   { currency: "BRL", patterns: [/\b(?:brazil|sao paulo|rio de janeiro)\b/i] },
   { currency: "MXN", patterns: [/\b(?:mexico|mexico city)\b/i] },
 ];
-const KNOWN_LANGUAGES = [
-  "English",
-  "Hindi",
-  "Spanish",
-  "French",
-  "German",
-  "Japanese",
-  "Tamil",
-  "Telugu",
-  "Kannada",
-  "Malayalam",
-  "Marathi",
-  "Gujarati",
-  "Bengali",
-  "Punjabi",
-  "Urdu",
-  "Arabic",
-  "Mandarin",
-  "Cantonese",
-  "Korean",
-  "Portuguese",
-  "Italian",
-  "Dutch",
-];
+const KNOWN_LANGUAGES = [...TOP_SPOKEN_LANGUAGES];
 
 function cleanText(text: string) {
   return text
@@ -435,6 +413,7 @@ function profileFromResumeData(data: ResumeData, sourceText = ""): ParsedResumeP
         field: asString(item.field),
         startDate: asString(item.startDate),
         endDate: asString(item.endDate || item.graduationDate),
+        gpa: asString(item.gpa),
       }))
       .filter((item) => item.school || item.degree)
       .slice(0, 6),

@@ -47,7 +47,7 @@ export function BigWord() {
         }}
         className="mx-auto flex flex-wrap items-center justify-center gap-x-[0.22em] gap-y-[0.16em] leading-none font-extrabold tracking-[-0.04em] text-ink sm:flex-nowrap sm:whitespace-nowrap"
       >
-        <span>Applied</span>
+        <span>Prepared</span>
         <span>Auto</span>
         <span className="relative inline-flex h-[1.18em] w-[5.25em] shrink-0 items-center overflow-hidden rounded-[0.32em] bg-[linear-gradient(150deg,#ffd98a_0%,#f8b84e_100%)] shadow-[inset_0_2px_2px_rgba(255,255,255,0.7),inset_0_-2px_4px_rgba(154,98,8,0.25),0_18px_46px_rgba(248,184,78,0.4)]">
           <motion.span
@@ -60,7 +60,7 @@ export function BigWord() {
       </motion.div>
 
       <p className="mt-10 px-5 text-center text-base font-semibold text-muted sm:text-lg">
-        No send button to press. JobPosted applies for you, you just check in once a day.
+        JobPosted prepares the queue for you. You review the details and decide what gets submitted.
       </p>
     </section>
   );

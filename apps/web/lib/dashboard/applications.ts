@@ -158,6 +158,7 @@ function mapRow(row: ApplicationRow): JobApplication {
   const applied = row.submitted_at ?? row.created_at ?? new Date().toISOString();
   const date = new Date(applied);
   const resumeUsed = asString(fieldMap.resumeUsed) || row.rendered_pdf_path || "#";
+  const resumeDisplayName = asString(fieldMap.resumeName);
   const company = (row.jobs?.company ?? row.job_company ?? asString(fieldMap.company)) || "Unknown company";
   const companyDomain = (row.jobs?.company_domain ?? row.job_company_domain ?? asString(fieldMap.companyDomain)) || null;
   const companyLogoUrl = (row.jobs?.company_logo_url ?? row.job_company_logo_url ?? asString(fieldMap.companyLogoUrl)) || null;
@@ -177,9 +178,10 @@ function mapRow(row: ApplicationRow): JobApplication {
     applyPath: row.apply_path,
     matchScore: scoreFromFieldMap(row.field_map),
     resumeName:
-      resumeUsed === "#"
+      resumeDisplayName ||
+      (resumeUsed === "#"
         ? `Resume · ${company} ${role}.pdf`
-        : decodeURIComponent(resumeUsed.split("/").pop() || "Resume.pdf"),
+        : decodeURIComponent(resumeUsed.split("/").pop() || "Resume.pdf")),
     resumeUrl: resumeUsed,
   };
 }

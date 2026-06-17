@@ -10,7 +10,6 @@ alter table jobposted.profiles            enable row level security;
 alter table jobposted.documents           enable row level security;
 alter table jobposted.applications        enable row level security;
 alter table jobposted.subscriptions       enable row level security;
-alter table jobposted.sensitive_self_id   enable row level security;
 alter table jobposted.resume_base_versions enable row level security;
 alter table jobposted.resume_variants     enable row level security;
 alter table jobposted.jobs                enable row level security;
@@ -35,10 +34,6 @@ create policy "own_resume_base_versions" on jobposted.resume_base_versions
 
 drop policy if exists "own_resume_variants" on jobposted.resume_variants;
 create policy "own_resume_variants" on jobposted.resume_variants
-  for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
-
-drop policy if exists "own_sensitive" on jobposted.sensitive_self_id;
-create policy "own_sensitive" on jobposted.sensitive_self_id
   for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
 
 -- subscriptions: owner may read; writes happen via webhooks using the service role (§12).

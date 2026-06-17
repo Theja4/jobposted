@@ -9,13 +9,18 @@ export async function GET(request: Request) {
   try {
     const { supabase, user } = await getExtensionAuthContext(request);
 
-    const [{ data: profileRow, error: profileError }, { data: answerRows }] = await Promise.all([
+    const [
+      { data: profileRow, error: profileError },
+      { data: answerRows },
+      { data: onboardingRow, error: onboardingError },
+    ] = await Promise.all([
       supabase.from("profiles").select("*").eq("id", user.id).maybeSingle(),
       supabase
         .from("profile_answers")
         .select("key,prompt,value")
         .eq("user_id", user.id)
         .order("updated_at", { ascending: false }),
+      supabase.from("onboarding_configurations").select("data").eq("user_id", user.id).maybeSingle(),
     ]);
 
     const activeResumeVersionId =
@@ -44,6 +49,9 @@ export async function GET(request: Request) {
       console.error("extension profile fetch failed", profileError);
       return extensionError("Could not load your JobPosted profile.", 500);
     }
+    if (onboardingError) {
+      console.error("extension onboarding profile fetch failed", onboardingError);
+    }
 
     const docs = await findResumeDocuments({ supabase, userId: user.id });
     const [resumeUrl, coverLetterUrl] = await Promise.all([
@@ -59,6 +67,10 @@ export async function GET(request: Request) {
           ? resumeBase.content
           : null,
       answers: Array.isArray(answerRows) ? answerRows : [],
+      onboardingData:
+        onboardingRow && typeof onboardingRow === "object" && "data" in onboardingRow
+          ? onboardingRow.data
+          : null,
       resumeUrl,
       coverLetterUrl,
     });

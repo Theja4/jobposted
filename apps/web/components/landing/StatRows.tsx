@@ -9,7 +9,7 @@ export function StatRows() {
       <div className="mx-auto w-full max-w-5xl">
         <Reveal className="max-w-2xl">
           <p className="text-sm font-extrabold tracking-[0.2em] text-brand-700 uppercase">
-            The honest numbers
+            The operating model
           </p>
           <h2 className="mt-4 text-4xl font-extrabold tracking-[-0.035em] text-balance text-ink sm:text-5xl">
             Built for fewer, better applications.

@@ -5,6 +5,7 @@ import {
   sanitizeOnboardingConfig,
   type OnboardingConfig,
 } from "@/lib/onboarding/model";
+import type { SourceDocument } from "@/lib/profile/resume-version";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 export const metadata: Metadata = { title: "Onboarding" };
@@ -21,10 +22,37 @@ const money = (value: unknown) => {
   return Number.isFinite(n) && n >= 0 ? Math.round(n) : null;
 };
 
-function applyExistingProfile(config: OnboardingConfig, args: { profile: unknown; content: unknown; docPath: string }) {
+function sourceDocumentFrom(value: unknown): SourceDocument | null {
+  const row = rec(value);
+  const name = str(row.name);
+  const storagePath = str(row.storagePath);
+  if (!name || !storagePath) return null;
+  return {
+    name,
+    storagePath,
+    contentType: str(row.contentType) || "application/octet-stream",
+    size: typeof row.size === "number" && Number.isFinite(row.size) ? row.size : 0,
+    uploadedAt: str(row.uploadedAt) || new Date().toISOString(),
+    contentHash: str(row.contentHash) || undefined,
+  };
+}
+
+function fallbackNameFromPath(path: string) {
+  return path ? decodeURIComponent(path.split("/").pop() || "Resume") : null;
+}
+
+function applyExistingProfile(
+  config: OnboardingConfig,
+  args: { profile: unknown; content: unknown; docPath: string; sourceDocument: unknown },
+) {
   const row = rec(args.profile);
   const content = rec(args.content);
   const links = rec(content.links);
+  const sourceDocument =
+    sourceDocumentFrom(args.sourceDocument) ||
+    sourceDocumentFrom(content.sourceDocument) ||
+    config.profile.resumeSource;
+  const resumeName = sourceDocument?.name || config.profile.resumeName || fallbackNameFromPath(args.docPath);
   return sanitizeOnboardingConfig({
     ...config,
     profile: {
@@ -76,9 +104,8 @@ function applyExistingProfile(config: OnboardingConfig, args: { profile: unknown
         config.profile.experience.length > 0 ? config.profile.experience : recArray(content.experience),
       education:
         config.profile.education.length > 0 ? config.profile.education : educationArray(content.education),
-      resumeName:
-        config.profile.resumeName ||
-        (args.docPath ? decodeURIComponent(args.docPath.split("/").pop() || "Resume") : null),
+      resumeName,
+      resumeSource: sourceDocument,
     },
   });
 }
@@ -109,6 +136,7 @@ function educationArray(value: unknown) {
       field: str(row.field),
       startDate: str(row.startDate),
       endDate: str(row.endDate),
+      gpa: str(row.gpa),
     };
   });
 }
@@ -133,13 +161,13 @@ export default async function OnboardingPage() {
     activeResumeVersionId
       ? supabase
           .from("resume_base_versions")
-          .select("content,storage_path,created_at")
+          .select("content,storage_path,source_document,created_at")
           .eq("user_id", user.id)
           .eq("id", activeResumeVersionId)
           .maybeSingle()
       : supabase
           .from("resume_base_versions")
-          .select("content,storage_path,created_at")
+          .select("content,storage_path,source_document,created_at")
           .eq("user_id", user.id)
           .order("created_at", { ascending: false })
           .limit(1)
@@ -159,6 +187,7 @@ export default async function OnboardingPage() {
     profile,
     content: rec(version).content,
     docPath: str(rec(version).storage_path) || str(rec(doc).storage_path),
+    sourceDocument: rec(version).source_document,
   });
 
   return <OnboardingWizard initialConfig={initial} completedAt={str(rec(configRow).completed_at) || null} />;

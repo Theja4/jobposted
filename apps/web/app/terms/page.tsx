@@ -90,7 +90,7 @@ export default function TermsPage() {
         </Clause>
 
         <Clause title="8. Third-party services">
-          JobPosted depends on third-party services, including applicant tracking systems, job boards,
+          JobPosted depends on third-party services, including applicant tracking systems, career sites,
           Rezoomed, Supabase, AI model providers, analytics providers, and payment providers. We do
           not control third-party websites or employer decisions, and their terms and availability may
           affect what JobPosted can do.
@@ -105,8 +105,8 @@ export default function TermsPage() {
         </Clause>
 
         <Clause title="10. Cancellation and refunds">
-          You can cancel a subscription from the Creem customer portal link sent after purchase, or
-          by contacting{" "}
+          You can cancel a subscription from Billing and support in your account, from the Creem
+          customer portal link sent after purchase, or by contacting{" "}
           <a className="font-bold text-brand-700 hover:text-brand-800" href={`mailto:${SUPPORT_EMAIL}`}>
             {SUPPORT_EMAIL}
           </a>

@@ -63,12 +63,11 @@ work even before you flip this — but the authenticated portal (Phase 2) will n
   client.** Bypasses RLS. Used by the ingest upserts, the apply worker, and the waitlist
   endpoint. Leaking it leaks every user's data.
 
-## Sensitive data (design doc §8.2)
+## Voluntary identity answers (design doc §8.2)
 
-`sensitive_self_id` holds **optional, consented** EEO demographics as an **encrypted blob**
-(`data_encrypted bytea`), never plaintext columns, and is never used for matching/filtering.
-Encrypt with **Supabase Vault** (or application-level encryption) before writing. Criminal
-background is **never persisted** — capture it at fill time per application only.
+Optional identity answers live in `onboarding_configurations.data` with the rest of a user's
+onboarding preferences. They are not used for matching or filtering. Criminal background is
+**never persisted** — capture it at fill time per application only.
 
 ## Storage signed URLs (design doc §14)
 

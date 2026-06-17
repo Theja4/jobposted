@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import {
@@ -26,6 +27,8 @@ import {
 import { cn } from "@/lib/cn";
 import {
   defaultOnboardingConfig,
+  GENDER_IDENTITY_OPTIONS,
+  genderIdentityFieldsFrom,
   onboardingCompletion,
   sanitizeOnboardingConfig,
   type ApplicationModePreference,
@@ -37,8 +40,8 @@ import {
   type WorkLocationPreference,
 } from "@/lib/onboarding/model";
 import { POPULAR_JOB_TITLE_QUICK_PICKS, POPULAR_JOB_TITLES } from "@/lib/onboarding/job-titles";
+import { LANGUAGE_QUICK_PICKS, TOP_SPOKEN_LANGUAGES } from "@/lib/onboarding/languages";
 import type { SourceDocument } from "@/lib/profile/resume-version";
-import { DashboardSelect } from "./DashboardSelect";
 
 type WizardStep = 0 | 1 | 2 | 3;
 type SaveIntent = "save";
@@ -98,9 +101,6 @@ const JOB_TYPES: Array<{ value: JobTypePreference; label: string }> = [
 const SENIORITY = ["Entry Level", "Associate Level", "Mid-to-Senior Level", "Director Level and above"];
 const TIME_ZONES = ["US overlap", "Europe overlap", "India", "APAC", "Fully async"];
 const INDUSTRIES = ["SaaS", "Fintech", "Healthcare", "Consumer", "AI", "Developer tools", "E-commerce"];
-const LANGUAGES = ["English", "Hindi", "Spanish", "French", "German", "Japanese"];
-const COMMON_LANGUAGES = ["English", "Hindi", "Spanish", "French", "German", "Tamil"];
-const DRIVING_LICENSES = ["I don't have a driving license", "Car", "Motorcycle", "Commercial"];
 const CURRENCIES = [
   "USD",
   "EUR",
@@ -128,6 +128,31 @@ const SPONSORSHIP_OPTIONS = [
   { value: "", label: "Prefer not to say" },
   { value: "no", label: "Authorized, no sponsorship needed" },
   { value: "yes", label: "Needs visa sponsorship" },
+];
+const RACIAL_ETHNIC_BACKGROUND_OPTIONS = [
+  "American Indian or Alaska Native",
+  "Asian",
+  "Black or African American",
+  "East Asian",
+  "South Asian",
+  "Southeast Asian",
+  "Central Asian",
+  "Hispanic, Latino, Latina, or Latinx",
+  "Middle Eastern or North African",
+  "Native Hawaiian or Other Pacific Islander",
+  "Pacific Islander",
+  "White",
+  "African",
+  "Caribbean",
+  "Arab",
+  "Indigenous",
+  "Native American",
+  "Aboriginal or Torres Strait Islander",
+  "Roma",
+  "Multiracial",
+  "Two or more races",
+  "Prefer not to say",
+  "Other",
 ];
 
 const EASE = [0.22, 1, 0.36, 1] as const;
@@ -173,7 +198,6 @@ function isCommonScreeningComplete(config: OnboardingConfig) {
   const screening = config.profile.screening;
   return Boolean(
     hasText(screening.hybridPreference) &&
-      screening.travelOk !== null &&
       screening.relocationOk !== null &&
       screening.spokenLanguages.length > 0,
   );
@@ -183,9 +207,6 @@ function hasLessCommonScreening(config: OnboardingConfig) {
   const screening = config.profile.screening;
   return Boolean(
     hasText(screening.dateOfBirth) ||
-      hasText(screening.gpa) ||
-      screening.over18 !== null ||
-      screening.drivingLicenses.length > 0 ||
       hasText(screening.securityClearance),
   );
 }
@@ -285,7 +306,10 @@ function mergeParsed(config: OnboardingConfig, parsed: ParsedResumeProfile): Onb
         gpa: parsedScreening.gpa || config.profile.screening.gpa,
         over18:
           typeof parsedScreening.over18 === "boolean" ? parsedScreening.over18 : config.profile.screening.over18,
-        genderIdentity: parsedScreening.genderIdentity || config.profile.screening.genderIdentity,
+        ...genderIdentityFieldsFrom(
+          parsedScreening.genderIdentity || config.profile.screening.genderIdentity,
+          config.profile.screening.genderIdentityDetail,
+        ),
         disabilityStatus: parsedScreening.disabilityStatus || config.profile.screening.disabilityStatus,
         veteranStatus: parsedScreening.veteranStatus || config.profile.screening.veteranStatus,
         raceEthnicity: parsedScreening.raceEthnicity || config.profile.screening.raceEthnicity,
@@ -367,7 +391,7 @@ function emptyExperience(): OnboardingExperience {
 }
 
 function emptyEducation(): OnboardingEducation {
-  return { school: "", degree: "", field: "", startDate: "", endDate: "" };
+  return { school: "", degree: "", field: "", startDate: "", endDate: "", gpa: "" };
 }
 
 export function OnboardingWizard({
@@ -1001,7 +1025,8 @@ function StepFilters({
             label="Job description language"
             value={config.filters.languages}
             placeholder="English"
-            suggestions={LANGUAGES}
+            suggestions={[...LANGUAGE_QUICK_PICKS]}
+            autocompleteSuggestions={[...TOP_SPOKEN_LANGUAGES]}
             onChange={(languages) => patchFilters({ languages })}
           />
           <TagInput
@@ -1131,7 +1156,7 @@ function StepProfile({
               Sponsorship
               <OptionalBadge />
             </span>
-            <DashboardSelect
+            <SearchableSelect
               value={
                 config.profile.workAuth.needsSponsorship === true
                   ? "yes"
@@ -1147,7 +1172,7 @@ function StepProfile({
                 })
               }
               ariaLabel="Sponsorship"
-              buttonClassName={selectButtonCls}
+              inputClassName={selectButtonCls}
             />
           </div>
         </div>
@@ -1188,13 +1213,13 @@ function StepProfile({
                   }
                   className={inputCls}
                 />
-                <DashboardSelect
+                <SearchableSelect
                   value={config.profile.workAuth.currentSalaryCurrency}
                   options={CURRENCY_OPTIONS}
                   onChange={(currentSalaryCurrency) => patchWorkAuth({ currentSalaryCurrency })}
                   ariaLabel="Current salary currency"
-                  buttonClassName={selectButtonCls}
-                  align="right"
+                  inputClassName={selectButtonCls}
+                  maxMenuHeight={240}
                 />
               </div>
             </div>
@@ -1226,13 +1251,13 @@ function StepProfile({
                   }
                   className={inputCls}
                 />
-                <DashboardSelect
+                <SearchableSelect
                   value={config.profile.workAuth.salaryCurrency}
                   options={CURRENCY_OPTIONS}
                   onChange={(salaryCurrency) => patchWorkAuth({ salaryCurrency })}
                   ariaLabel="Expected salary currency"
-                  buttonClassName={selectButtonCls}
-                  align="right"
+                  inputClassName={selectButtonCls}
+                  maxMenuHeight={240}
                 />
               </div>
             </div>
@@ -1295,12 +1320,7 @@ function StepProfile({
             onChange={(hybridPreference) => patchScreening({ hybridPreference })}
           />
           <BooleanChoice
-            label="Comfortable travelling?"
-            value={config.profile.screening.travelOk}
-            onChange={(travelOk) => patchScreening({ travelOk })}
-          />
-          <BooleanChoice
-            label="Open to relocation?"
+            label="Comfortable relocating?"
             value={config.profile.screening.relocationOk}
             onChange={(relocationOk) => {
               patchScreening({ relocationOk });
@@ -1311,7 +1331,8 @@ function StepProfile({
             label="Fluent languages"
             max={6}
             value={config.profile.screening.spokenLanguages}
-            suggestions={COMMON_LANGUAGES}
+            suggestions={[...LANGUAGE_QUICK_PICKS]}
+            autocompleteSuggestions={[...TOP_SPOKEN_LANGUAGES]}
             placeholder="English"
             onChange={(spokenLanguages) => patchScreening({ spokenLanguages })}
           />
@@ -1333,17 +1354,11 @@ function StepProfile({
             value={config.profile.screening.dateOfBirth}
             onChange={(dateOfBirth) => patchScreening({ dateOfBirth })}
           />
-          <Field label="Latest GPA score" value={config.profile.screening.gpa} onChange={(gpa) => patchScreening({ gpa })} />
-          <BooleanChoice label="At least 18 years of age?" value={config.profile.screening.over18} onChange={(over18) => patchScreening({ over18 })} />
-          <TagInput
-            label="Driving licenses"
-            value={config.profile.screening.drivingLicenses}
-            suggestions={DRIVING_LICENSES}
-            placeholder="Car"
-            onChange={(drivingLicenses) => patchScreening({ drivingLicenses })}
-          />
           <label className="sm:col-span-2">
-            <span className={labelCls}>Security clearance</span>
+            <span className={labelCls}>
+              Security clearance
+              <OptionalBadge />
+            </span>
             <textarea
               value={config.profile.screening.securityClearance}
               onChange={(event) => patchScreening({ securityClearance: event.target.value })}
@@ -1358,14 +1373,30 @@ function StepProfile({
       <Expandable
         title="Voluntary identity questions"
         hint="Optional. These are never used for job matching or filtering."
-        status={voluntaryIdentityComplete ? "Filled" : "Sensitive"}
+        status={voluntaryIdentityComplete ? "Filled" : "Optional"}
         done={voluntaryIdentityComplete}
       >
-        <p className="mb-4 rounded-xl bg-amber-50 px-3 py-2 text-xs font-bold leading-5 text-amber-800 ring-1 ring-inset ring-amber-100">
-          These answers are sensitive. JobPosted only stores them when encryption is configured on the server.
-        </p>
         <div className="grid gap-3 sm:grid-cols-2">
-          <Field label="Gender identity" value={config.profile.screening.genderIdentity} onChange={(genderIdentity) => patchScreening({ genderIdentity })} />
+          <SelectField
+            label="Gender identity"
+            value={config.profile.screening.genderIdentity}
+            options={[...GENDER_IDENTITY_OPTIONS]}
+            onChange={(genderIdentity) =>
+              patchScreening({
+                genderIdentity,
+                genderIdentityDetail:
+                  genderIdentity === "Other" ? config.profile.screening.genderIdentityDetail : "",
+              })
+            }
+          />
+          {config.profile.screening.genderIdentity === "Other" && (
+            <Field
+              label="Mention if you would like"
+              optional
+              value={config.profile.screening.genderIdentityDetail}
+              onChange={(genderIdentityDetail) => patchScreening({ genderIdentityDetail })}
+            />
+          )}
           <ChoiceGroup
             label="Disability status"
             value={config.profile.screening.disabilityStatus}
@@ -1378,7 +1409,14 @@ function StepProfile({
             options={["Yes", "No", "Prefer not to say"]}
             onChange={(veteranStatus) => patchScreening({ veteranStatus })}
           />
-          <Field label="Racial / ethnic background" value={config.profile.screening.raceEthnicity} onChange={(raceEthnicity) => patchScreening({ raceEthnicity })} />
+          <SearchableField
+            label="Racial / ethnic background"
+            value={config.profile.screening.raceEthnicity}
+            options={RACIAL_ETHNIC_BACKGROUND_OPTIONS}
+            placeholder="Start typing or choose an option"
+            allowCustom
+            onChange={(raceEthnicity) => patchScreening({ raceEthnicity })}
+          />
         </div>
       </Expandable>
     </div>
@@ -1399,19 +1437,18 @@ function StepFinal({
       <Panel title="The Process" hint="Choose the workflow you want to start with.">
         <div className="grid gap-3 md:grid-cols-2">
           <OptionCard
-            active={config.final.applicationMode === "review"}
-            icon={<ShieldCheck className="size-4" />}
-            title="Auto-Save & Manual Review"
-            hint="Auto-fills forms, then waits for you to review and submit."
-            badge="Recommended"
-            onClick={() => patchFinal({ applicationMode: "review" })}
-          />
-          <OptionCard
             active={config.final.applicationMode === "auto"}
             icon={<BriefcaseBusiness className="size-4" />}
             title="Full Auto-Apply"
             hint="Fills and submits matched applications automatically."
             onClick={() => patchFinal({ applicationMode: "auto" })}
+          />
+          <OptionCard
+            active={config.final.applicationMode === "review"}
+            icon={<ShieldCheck className="size-4" />}
+            title="Auto-Save & Manual Review"
+            hint="Auto-fills forms, then waits for you to review and submit."
+            onClick={() => patchFinal({ applicationMode: "review" })}
           />
         </div>
       </Panel>
@@ -1419,19 +1456,18 @@ function StepFinal({
       <Panel title="Resume tailoring" hint="Choose how JobPosted prepares the resume attached to each application.">
         <div className="grid gap-3 md:grid-cols-2">
           <OptionCard
-            active={config.final.tailorResume}
-            icon={<Sparkles className="size-4" />}
-            title="Tailor each resume"
-            hint="Rewrite supported bullets and skills for the specific role."
-            badge="Recommended"
-            onClick={() => patchFinal({ tailorResume: true })}
-          />
-          <OptionCard
             active={!config.final.tailorResume}
             icon={<FileText className="size-4" />}
             title="Use my master resume"
             hint="Attach the active resume without per-job rewriting."
             onClick={() => patchFinal({ tailorResume: false })}
+          />
+          <OptionCard
+            active={config.final.tailorResume}
+            icon={<Sparkles className="size-4" />}
+            title="Tailor each resume"
+            hint="Rewrite supported bullets and skills for the specific role."
+            onClick={() => patchFinal({ tailorResume: true })}
           />
         </div>
       </Panel>
@@ -1569,10 +1605,8 @@ function Expandable({
                 "rounded-full px-2 py-0.5 text-[10px] font-black",
                 statusComplete
                   ? "bg-emerald-50 text-emerald-700 ring-1 ring-inset ring-emerald-100"
-                  : status === "Sensitive"
-                    ? "bg-amber-50 text-amber-800 ring-1 ring-inset ring-amber-100"
-                    : status === "Required"
-                      ? "bg-rose-50 text-rose-700 ring-1 ring-inset ring-rose-100"
+                  : status === "Required"
+                    ? "bg-rose-50 text-rose-700 ring-1 ring-inset ring-rose-100"
                     : "bg-brand-50 text-brand-700 ring-1 ring-inset ring-brand-100",
               )}
             >
@@ -1718,6 +1752,320 @@ function Field({
   );
 }
 
+type SearchableOption = {
+  value: string;
+  label: string;
+  description?: string;
+  disabled?: boolean;
+};
+
+type SearchMenuPosition = {
+  left: number;
+  top?: number;
+  bottom?: number;
+  width: number;
+  maxHeight: number;
+  origin: string;
+};
+
+const SEARCH_MENU_GAP = 8;
+const SEARCH_MENU_MIN_WIDTH = 184;
+
+function optionScore(option: SearchableOption, query: string) {
+  if (!query) return 0;
+  const scores = [option.label, option.value, option.description ?? ""]
+    .map((text) => titleMatchScore(text, query))
+    .filter((score) => score >= 0);
+  return scores.length > 0 ? Math.min(...scores) : -1;
+}
+
+function SearchableSelect({
+  value,
+  options,
+  onChange,
+  ariaLabel,
+  placeholder = "Select",
+  allowCustom = false,
+  className,
+  inputClassName,
+  maxMenuHeight = 280,
+}: {
+  value: string;
+  options: SearchableOption[];
+  onChange: (value: string) => void;
+  ariaLabel: string;
+  placeholder?: string;
+  allowCustom?: boolean;
+  className?: string;
+  inputClassName?: string;
+  maxMenuHeight?: number;
+}) {
+  const generatedId = useId().replace(/:/g, "");
+  const inputId = `searchable-select-${generatedId}`;
+  const listboxId = `${inputId}-listbox`;
+  const inputRef = useRef<HTMLInputElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const [mounted, setMounted] = useState(false);
+  const [open, setOpen] = useState(false);
+  const [position, setPosition] = useState<SearchMenuPosition | null>(null);
+  const [highlightedIndex, setHighlightedIndex] = useState(0);
+  const [dirtyQuery, setDirtyQuery] = useState(false);
+  const selected = useMemo(() => options.find((option) => option.value === value), [options, value]);
+  const displayValue = allowCustom ? value : selected?.label ?? "";
+  const [draft, setDraft] = useState(displayValue);
+
+  const updatePosition = useCallback(() => {
+    const input = inputRef.current;
+    if (!input) return;
+    const rect = input.getBoundingClientRect();
+    const viewportWidth = window.innerWidth;
+    const viewportHeight = window.innerHeight;
+    const width = Math.min(Math.max(rect.width, SEARCH_MENU_MIN_WIDTH), Math.max(SEARCH_MENU_MIN_WIDTH, viewportWidth - 24));
+    const maxLeft = Math.max(12, viewportWidth - width - 12);
+    const left = Math.min(Math.max(rect.left, 12), maxLeft);
+    const below = viewportHeight - rect.bottom - 12;
+    const above = rect.top - 12;
+    const opensUp = below < 180 && above > below;
+    const available = Math.max(132, Math.min(maxMenuHeight, opensUp ? above - SEARCH_MENU_GAP : below - SEARCH_MENU_GAP));
+
+    setPosition({
+      left,
+      width,
+      maxHeight: available,
+      origin: opensUp ? "bottom" : "top",
+      ...(opensUp ? { bottom: viewportHeight - rect.top + SEARCH_MENU_GAP } : { top: rect.bottom + SEARCH_MENU_GAP }),
+    });
+  }, [maxMenuHeight]);
+
+  const filteredOptions = useMemo(() => {
+    const query = normalizeTitleQuery(!allowCustom && !dirtyQuery ? "" : draft);
+    return options
+      .map((option) => ({ option, score: optionScore(option, query) }))
+      .filter(({ option, score }) => score >= 0 && !option.disabled)
+      .sort((a, b) => a.score - b.score || a.option.label.length - b.option.label.length || a.option.label.localeCompare(b.option.label))
+      .slice(0, query ? 18 : 24)
+      .map(({ option }) => option);
+  }, [allowCustom, dirtyQuery, draft, options]);
+  const showMenu = open && (filteredOptions.length > 0 || (allowCustom && draft.trim().length > 0));
+  const activeOptionId = showMenu ? `${listboxId}-option-${highlightedIndex}` : undefined;
+
+  useEffect(() => setMounted(true), []);
+
+  useEffect(() => {
+    if (!open) setDraft(displayValue);
+  }, [displayValue, open]);
+
+  useLayoutEffect(() => {
+    if (open) updatePosition();
+  }, [draft, open, updatePosition]);
+
+  useEffect(() => {
+    if (highlightedIndex >= filteredOptions.length) setHighlightedIndex(0);
+  }, [filteredOptions.length, highlightedIndex]);
+
+  useEffect(() => {
+    if (!open) return;
+
+    function onPointerDown(event: PointerEvent) {
+      const target = event.target as Node;
+      if (inputRef.current?.contains(target) || menuRef.current?.contains(target)) return;
+      setOpen(false);
+      setDirtyQuery(false);
+    }
+
+    document.addEventListener("pointerdown", onPointerDown);
+    window.addEventListener("resize", updatePosition);
+    window.addEventListener("scroll", updatePosition, true);
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown);
+      window.removeEventListener("resize", updatePosition);
+      window.removeEventListener("scroll", updatePosition, true);
+    };
+  }, [open, updatePosition]);
+
+  function choose(option: SearchableOption) {
+    if (option.disabled) return;
+    onChange(option.value);
+    setDraft(option.label);
+    setDirtyQuery(false);
+    setOpen(false);
+    window.requestAnimationFrame(() => inputRef.current?.focus());
+  }
+
+  function moveHighlight(direction: 1 | -1) {
+    if (filteredOptions.length === 0) return;
+    setHighlightedIndex((index) => (index + direction + filteredOptions.length) % filteredOptions.length);
+  }
+
+  function commitCustom() {
+    if (!allowCustom) return;
+    onChange(draft.trim());
+    setDirtyQuery(false);
+    setOpen(false);
+  }
+
+  function onInputKeyDown(event: React.KeyboardEvent<HTMLInputElement>) {
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      if (!open) {
+        setOpen(true);
+        return;
+      }
+      moveHighlight(1);
+      return;
+    }
+    if (event.key === "ArrowUp") {
+      event.preventDefault();
+      if (!open) {
+        setOpen(true);
+        return;
+      }
+      moveHighlight(-1);
+      return;
+    }
+    if (event.key === "Enter") {
+      event.preventDefault();
+      const option = filteredOptions[highlightedIndex];
+      if (option) choose(option);
+      else commitCustom();
+      return;
+    }
+    if (event.key === "Escape") {
+      event.preventDefault();
+      setDirtyQuery(false);
+      setOpen(false);
+    }
+  }
+
+  return (
+    <div className={cn("relative min-w-0", className)}>
+      <input
+        ref={inputRef}
+        id={inputId}
+        role="combobox"
+        aria-label={ariaLabel}
+        aria-autocomplete="list"
+        aria-expanded={showMenu}
+        aria-controls={showMenu ? listboxId : undefined}
+        aria-activedescendant={activeOptionId}
+        value={draft}
+        placeholder={placeholder}
+        onFocus={() => {
+          setOpen(true);
+          setDirtyQuery(false);
+          window.requestAnimationFrame(updatePosition);
+          if (!allowCustom) window.requestAnimationFrame(() => inputRef.current?.select());
+        }}
+        onChange={(event) => {
+          const next = event.target.value;
+          setDraft(next);
+          setDirtyQuery(true);
+          if (allowCustom) onChange(next);
+          setOpen(true);
+        }}
+        onKeyDown={onInputKeyDown}
+        className={cn(inputCls, inputClassName, "pr-9")}
+      />
+      <ChevronDown className={cn("pointer-events-none absolute right-3 top-1/2 size-4 -translate-y-1/2 text-muted transition-transform", open && "rotate-180 text-brand-600")} />
+
+      {mounted && showMenu && position
+        ? createPortal(
+            <div
+              ref={menuRef}
+              id={listboxId}
+              role="listbox"
+              data-lenis-prevent
+              aria-labelledby={inputId}
+              className="fixed z-[80] overflow-auto rounded-xl bg-white p-1.5 shadow-[0_24px_60px_rgba(7,26,51,0.18)] outline-none"
+              style={{
+                left: position.left,
+                width: position.width,
+                maxHeight: position.maxHeight,
+                transformOrigin: position.origin,
+                top: position.top,
+                bottom: position.bottom,
+              }}
+            >
+              {filteredOptions.length > 0 ? (
+                filteredOptions.map((option, index) => {
+                  const selectedOption = option.value === value;
+                  const highlighted = index === highlightedIndex;
+                  return (
+                    <button
+                      key={option.value}
+                      id={`${listboxId}-option-${index}`}
+                      type="button"
+                      role="option"
+                      aria-selected={selectedOption}
+                      onMouseEnter={() => setHighlightedIndex(index)}
+                      onMouseDown={(event) => {
+                        event.preventDefault();
+                        choose(option);
+                      }}
+                      className={cn(
+                        "flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm font-bold text-ink transition-colors",
+                        highlighted && "bg-brand-50 text-brand-700",
+                        selectedOption && "text-brand-700",
+                      )}
+                    >
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate">{option.label}</span>
+                        {option.description && (
+                          <span className="mt-0.5 block truncate text-[11px] font-semibold text-muted">
+                            {option.description}
+                          </span>
+                        )}
+                      </span>
+                      {selectedOption && <CheckCircle2 className="size-4 shrink-0" />}
+                    </button>
+                  );
+                })
+              ) : (
+                <div className="px-3 py-2.5 text-sm font-semibold text-muted">No matching options</div>
+              )}
+            </div>,
+            document.body,
+          )
+        : null}
+    </div>
+  );
+}
+
+function SearchableField({
+  label,
+  value,
+  options,
+  onChange,
+  placeholder,
+  optional = false,
+  allowCustom = false,
+}: {
+  label: string;
+  value: string;
+  options: string[];
+  onChange: (value: string) => void;
+  placeholder?: string;
+  optional?: boolean;
+  allowCustom?: boolean;
+}) {
+  return (
+    <label className="block">
+      <span className={labelCls}>
+        {label}
+        {optional && <OptionalBadge />}
+      </span>
+      <SearchableSelect
+        value={value}
+        options={options.map((option) => ({ value: option, label: option }))}
+        onChange={onChange}
+        ariaLabel={label}
+        placeholder={placeholder}
+        allowCustom={allowCustom}
+      />
+    </label>
+  );
+}
+
 function SelectField({
   label,
   value,
@@ -1737,12 +2085,12 @@ function SelectField({
         {label}
         {optional && <OptionalBadge />}
       </span>
-      <DashboardSelect
+      <SearchableSelect
         value={value}
         options={options.map((option) => ({ value: option, label: option }))}
         onChange={onChange}
         ariaLabel={label}
-        buttonClassName={selectButtonCls}
+        inputClassName={selectButtonCls}
       />
     </label>
   );
@@ -2137,7 +2485,9 @@ function RepeatingEducation({
             <Field label="School" value={item.school} onChange={(school) => update(index, { school })} />
             <Field label="Degree" value={item.degree} onChange={(degree) => update(index, { degree })} />
             <Field label="Field" value={item.field} onChange={(field) => update(index, { field })} />
+            <Field label="Start" value={item.startDate} onChange={(startDate) => update(index, { startDate })} />
             <Field label="End" value={item.endDate} onChange={(endDate) => update(index, { endDate })} />
+            <Field label="GPA" optional value={item.gpa} onChange={(gpa) => update(index, { gpa })} />
           </div>
         ))}
       </div>

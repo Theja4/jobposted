@@ -1,9 +1,11 @@
 import type {
   MasterProfile,
+  MasterProfileDemographics,
   MasterProfileEducation,
   MasterProfileExperience,
   ReusableAnswer,
 } from "@jobposted/shared";
+import { sanitizeOnboardingConfig } from "@/lib/onboarding/model";
 
 type UnknownRecord = Record<string, unknown>;
 
@@ -95,6 +97,30 @@ function normalizeEducation(value: unknown): MasterProfileEducation[] {
   return normalized;
 }
 
+function splitTextList(value: string): string[] {
+  return value
+    .split(/[,;]+/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function demographicsFromOnboarding(value: unknown, email: string): MasterProfileDemographics {
+  if (!value) return {};
+  const screening = sanitizeOnboardingConfig(value, email).profile.screening;
+  const demographics: MasterProfileDemographics = {};
+  if (screening.genderIdentity) {
+    demographics.gender =
+      screening.genderIdentity === "Other"
+        ? screening.genderIdentityDetail || screening.genderIdentity
+        : screening.genderIdentity;
+  }
+  if (screening.disabilityStatus) demographics.disabilityStatus = screening.disabilityStatus;
+  if (screening.veteranStatus) demographics.veteranStatus = screening.veteranStatus;
+  const race = splitTextList(screening.raceEthnicity);
+  if (race.length > 0) demographics.race = race;
+  return demographics;
+}
+
 function profileCompleteness(profile: MasterProfile): number {
   const checks = [
     profile.identity.firstName,
@@ -118,6 +144,7 @@ export function buildMasterProfile(args: {
   profileRow?: UnknownRecord | null;
   resumeContent?: unknown;
   answers?: ReusableAnswer[];
+  onboardingData?: unknown;
   resumeUrl?: string | null;
   coverLetterUrl?: string | null;
 }): MasterProfile {
@@ -167,7 +194,7 @@ export function buildMasterProfile(args: {
       expectedMax: moneyOf(row.salary_expectation_max),
       currency: asString(row.salary_currency) || null,
     },
-    demographics: {},
+    demographics: demographicsFromOnboarding(args.onboardingData, email),
     experience: normalizeExperience(content.experience ?? content.workExperience),
     education: normalizeEducation(content.education),
     skills: asStringArray(content.skills),

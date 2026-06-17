@@ -15,7 +15,7 @@ import { SUPPORT_EMAIL } from "@/lib/site";
 const FAQS = [
   {
     q: "Do applications get prepared automatically?",
-    a: "Yes. JobPosted matches roles, tailors a resume to each one, fills supported application fields, and queues the application for your review. You decide what gets submitted. Miss a check-in and the queue simply waits until you're back.",
+    a: "Yes. JobPosted matches roles, tailors a resume to each one, fills supported application fields, and queues the application for you. You decide what gets submitted. Miss a check-in and the queue simply waits until you're back.",
   },
   {
     q: "Will this get my LinkedIn or other accounts banned?",
@@ -35,7 +35,7 @@ const FAQS = [
   },
   {
     q: "Can I cancel or get a refund?",
-    a: `Plans can be canceled from the Creem customer portal link sent after purchase, or by emailing ${SUPPORT_EMAIL}. Refund eligibility is listed in the Refund Policy linked in the footer.`,
+    a: `Plans can be canceled from Billing and support in your account, from the Creem customer portal link sent after purchase, or by emailing ${SUPPORT_EMAIL}. Refund requests are only considered within 48 hours after your first paid subscription payment; accidental charges are not refundable.`,
   },
 ];
 

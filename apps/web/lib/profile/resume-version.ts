@@ -68,6 +68,7 @@ export function educationContent(value: unknown): ResumeEducation[] {
         field: str(row.field) || undefined,
         startDate: str(row.startDate) || undefined,
         endDate: str(row.endDate) || undefined,
+        gpa: str(row.gpa) || undefined,
       };
     })
     .filter((education) => education.school || education.degree);

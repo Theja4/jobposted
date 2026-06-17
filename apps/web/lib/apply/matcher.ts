@@ -940,9 +940,12 @@ export function dedupeSelect<T extends { job: { dedupe_key?: string | null } }>(
   return out;
 }
 
-function sourceDocumentStoragePath(content: unknown) {
+function sourceDocumentDetails(content: unknown) {
   const sourceDocument = asRecord(asRecord(content).sourceDocument);
-  return asString(sourceDocument.storagePath);
+  return {
+    name: asString(sourceDocument.name),
+    storagePath: asString(sourceDocument.storagePath),
+  };
 }
 
 async function mapLimit<T, R>(
@@ -1048,7 +1051,8 @@ export async function prepareDailyApplicationsForUser(
   }
 
   const targetStatus = mode === "review" ? "ready_for_review" : "queued";
-  const masterResumePath = sourceDocumentStoragePath(resume?.content);
+  const masterResume = sourceDocumentDetails(resume?.content);
+  const masterResumePath = masterResume.storagePath;
   const rows = selected.map(({ job, decision }) => ({
     user_id: userId,
     job_id: job.id,
@@ -1070,6 +1074,7 @@ export async function prepareDailyApplicationsForUser(
       preparedAt,
       tailoringEnabled: config.final.tailorResume,
       resumeUsed: config.final.tailorResume ? null : masterResumePath || null,
+      resumeName: config.final.tailorResume ? null : masterResume.name || null,
       matchScore: decision.score,
       threshold: decision.threshold,
       matchReasons: decision.reasons,

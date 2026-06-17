@@ -138,14 +138,14 @@ embedding key. Copy into `apps/web/.env.local` / `apps/ingest/.env` as needed.
   `public.jobs` / `public.referrals`. See [`packages/db/README.md`](./packages/db/README.md).
 - **Tailoring** — implemented **natively in JobPosted** (`apps/web/lib/tailor`, via the Vercel
   AI Gateway), adapted from Rezoomed's tailoring approach rather than calling a Rezoomed API.
-- **Payments** — will reuse the Polar (international) / Razorpay (India) geo split (Phase 4, TBD).
+- **Payments** — uses Creem-hosted checkout links, Creem webhooks, and the Creem customer portal.
 - **Extension** — built on the WXT/MV3 pattern from Rezoomed's LinkedIn extension.
 
 ## Build order
 
 Phase 0 foundations → Phase 1 ingestion → Phase 2 portal → apply path → Phase 4 payments →
-Phase 6 beta + launch. The product now supports two apply modes in the UI: **Fully automatic**
-and **Review queue**. The extension path works for login-gated boards, native tailoring works in
-the web app, daily server-owned queue preparation works, and the server-side Playwright runner
-exists with dry-run, screenshots, validation, and failure handling. See
+Phase 6 beta + launch. The product now supports queue preparation and user-controlled review
+before anything is submitted. The extension path works for login-gated boards, native tailoring
+works in the web app, daily server-owned queue preparation works, and the server-side Playwright
+runner exists with dry-run, screenshots, validation, and failure handling. See
 [`deploy/production.md`](./deploy/production.md) before enabling live submit.

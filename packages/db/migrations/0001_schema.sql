@@ -10,8 +10,8 @@ create extension if not exists vector;
 create schema if not exists jobposted;
 
 -- ── profiles (design doc §8) ────────────────────────────────────────────────
--- Note: EEO demographics & criminal background are deliberately NOT here (see §8.2 and the
--- separate sensitive_self_id table below).
+-- Voluntary identity answers live with onboarding preferences; criminal background is not
+-- persisted.
 create table if not exists jobposted.profiles (
   id uuid primary key references auth.users(id) on delete cascade,
   full_name text,
@@ -130,16 +130,6 @@ create table if not exists jobposted.waitlist (
   id uuid primary key default gen_random_uuid(),
   email text unique,
   created_at timestamptz default now()
-);
-
--- ── sensitive_self_id (design doc §8.2) ─────────────────────────────────────
--- EEO demographics: encrypted blob, optional, explicit per-purpose consent, never used for
--- matching/filtering. Criminal background is NEVER persisted (captured at fill time only).
-create table if not exists jobposted.sensitive_self_id (
-  user_id uuid primary key references auth.users(id) on delete cascade,
-  data_encrypted bytea,           -- encrypted blob, not plaintext columns (use Supabase Vault)
-  consent_given_at timestamptz,
-  consent_version text
 );
 
 -- ── Role grants ─────────────────────────────────────────────────────────────

@@ -83,9 +83,10 @@ export default function PrivacyPage() {
         <Clause title="6. Storage and security">
           JobPosted stores application data in Supabase Postgres and resume files in Supabase
           Storage. We use account isolation, row-level security, signed URLs for private file access,
-          and limited internal access. Sensitive self-identification data is encrypted at rest. No
-          system is perfectly secure, but we work to keep access limited to what is needed to operate
-          and support the service.
+          and limited internal access. Voluntary identity answers, when provided, are stored with
+          your onboarding configuration and are not used for job matching or filtering. No system is
+          perfectly secure, but we work to keep access limited to what is needed to operate and
+          support the service.
         </Clause>
 
         <Clause title="7. Retention and deletion">

@@ -56,7 +56,7 @@ export function OpportunityUnlock() {
       motif: <DotsMotif className="top-5 right-5" />,
     },
     {
-      title: "Major job boards in view",
+      title: "Major role sources in view",
       accent: "rgba(22,199,212,0.45)",
       rest: 1.1,
       visual: <FreshMatch reduce={Boolean(reduce)} />,
@@ -155,8 +155,8 @@ export function OpportunityUnlock() {
               transition={{ duration: 0.6, delay: 0.24, ease: EASE }}
               className="mx-auto mt-6 max-w-xl text-base leading-7 text-pretty text-white/60 sm:text-lg"
             >
-              Stop refreshing job boards. The scout sweeps fresh listings around the clock and
-              applies the moment a strong match appears.
+              Stop refreshing career sites. The scout sweeps fresh listings around the clock and
+              prepares a queue when a strong match appears.
             </motion.p>
           </div>
 
@@ -591,7 +591,7 @@ function FitGauge({ reduce }: { reduce: boolean }) {
       </div>
 
       <p className="mt-7 max-w-[11rem] text-xs leading-5 font-medium text-white/55">
-        Tight batch, ready for your review.
+        Tight batch, ready for you.
       </p>
     </div>
   );

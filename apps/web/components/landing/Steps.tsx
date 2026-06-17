@@ -39,7 +39,7 @@ const STEPS = [
   },
   {
     number: "03",
-    caption: "Prepared applications wait for your review before anything is submitted",
+    caption: "Prepared applications wait for you before anything is submitted",
     label: "Review queue",
     icon: Send,
     gradient: "from-[#143f91] via-[#102f66] to-[#071a33]",
@@ -96,7 +96,7 @@ export function Steps() {
             How it works
           </p>
           <h2 className="mt-4 text-4xl font-extrabold tracking-[-0.035em] text-balance text-ink sm:text-5xl lg:text-6xl">
-            From match to sent, you skip everything in between.
+            From match to review-ready, you skip everything in between.
           </h2>
         </Reveal>
 

@@ -21,7 +21,10 @@ export async function GET() {
     serviceRole: Boolean(process.env.SUPABASE_SERVICE_ROLE_KEY),
     workerCronProtected: Boolean(process.env.WORKER_CRON_SECRET),
     ingestCronProtected: Boolean(process.env.INGEST_CRON_SECRET || process.env.WORKER_CRON_SECRET),
-    billingWebhookSecret: Boolean(process.env.BILLING_WEBHOOK_SECRET),
+    billingWebhookSecret: Boolean(process.env.BILLING_WEBHOOK_SECRET || process.env.CREEM_WEBHOOK_SECRET),
+    creemApiKey: Boolean(process.env.CREEM_API_KEY),
+    creemStarterProduct: Boolean(process.env.CREEM_STARTER_20_PRODUCT_ID),
+    creemProProduct: Boolean(process.env.CREEM_PRO_50_PRODUCT_ID),
     checkoutStarter: Boolean(process.env.CHECKOUT_STARTER_20_URL),
     checkoutPro: Boolean(process.env.CHECKOUT_PRO_50_URL),
     aiGateway: gatewayConfigured(),
@@ -38,6 +41,9 @@ export async function GET() {
   const productionOk =
     ok &&
     checks.billingWebhookSecret &&
+    checks.creemApiKey &&
+    checks.creemStarterProduct &&
+    checks.creemProProduct &&
     checks.checkoutStarter &&
     checks.checkoutPro &&
     checks.aiGateway;

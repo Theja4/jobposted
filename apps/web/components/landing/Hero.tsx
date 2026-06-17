@@ -124,7 +124,7 @@ function HeadlineBlock() {
 
       <p className="mt-6 max-w-xl text-base leading-7 text-pretty text-muted sm:text-lg">
         JobPosted finds matching roles, tailors your resume to each one, and queues the
-        application for your review.
+        application for you.
       </p>
 
       <HeroCtas />

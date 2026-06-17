@@ -25,6 +25,7 @@ export interface ResumeEducation {
   field?: string;
   startDate?: string;
   endDate?: string;
+  gpa?: string;
 }
 
 export interface ResumeContent {

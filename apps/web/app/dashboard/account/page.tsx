@@ -3,6 +3,7 @@ import Link from "next/link";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { SignOutButton } from "@/components/dashboard/SignOutButton";
 import { ModeToggle } from "@/components/dashboard/ModeToggle";
+import { ManageBillingButton } from "@/components/dashboard/ManageBillingButton";
 import { getApplicationMode } from "@/lib/dashboard/applications";
 import { SUPPORT_EMAIL } from "@/lib/site";
 import { Mail, ShieldCheck, ExternalLink, ReceiptText } from "lucide-react";
@@ -93,10 +94,11 @@ export default async function AccountPage() {
       <section className="liquid-glass rounded-[1.75rem] p-6 sm:p-7">
         <h2 className="text-lg font-extrabold tracking-[-0.02em] text-ink">Billing and support</h2>
         <p className="mt-1.5 text-sm leading-6 text-muted">
-          For subscription, cancellation, refund, or account questions, contact JobPosted support.
-          You can also manage billing from the Creem customer portal link sent after purchase.
+          Manage invoices, payment method, and cancellation from the Creem customer portal. For
+          refund or account questions, contact JobPosted support.
         </p>
         <div className="mt-4 flex flex-wrap gap-2">
+          <ManageBillingButton supportEmail={SUPPORT_EMAIL} />
           <a
             href={`mailto:${SUPPORT_EMAIL}`}
             className="inline-flex items-center gap-1.5 rounded-full bg-white/70 px-4 py-2 text-sm font-bold text-brand-700 ring-1 ring-inset ring-brand-200/70 transition-colors hover:bg-brand-50"

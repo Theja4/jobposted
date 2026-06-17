@@ -199,6 +199,7 @@ export function mapTrackerApplicationRow(row: TrackerApplicationRow): TrackerIte
   const fieldCompanyLogoUrl = asString(fieldMap.companyLogoUrl);
   const fieldLocation = asString(fieldMap.location);
   const fieldJobUrl = asString(fieldMap.jobUrl);
+  const fieldResumeName = asString(fieldMap.resumeName);
   const role = ((manualEditable && fieldRole) || job?.title || fieldRole) || "Unknown role";
   const company = ((manualEditable && fieldCompany) || job?.company || fieldCompany) || "Unknown company";
   const location = ((manualEditable && fieldLocation) || job?.location || fieldLocation) || "Remote or unknown";
@@ -223,7 +224,7 @@ export function mapTrackerApplicationRow(row: TrackerApplicationRow): TrackerIte
     appliedOn: new Date(date).toISOString().slice(0, 10),
     updatedAt: date,
     matchScore: scoreFromFieldMap(row.field_map),
-    resumeName: fileName(resumePath || null),
+    resumeName: fieldResumeName || fileName(resumePath || null),
     resumeUrl: resumePath || "#",
     fieldsFilled: counts.filled,
     totalFields: counts.total,

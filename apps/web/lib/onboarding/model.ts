@@ -5,6 +5,8 @@ export type JobTypePreference = "fulltime" | "part_time" | "contract" | "interns
 export type MatchPreference = "high" | "higher" | "highest";
 export type ApplicationModePreference = "review" | "auto";
 
+export const GENDER_IDENTITY_OPTIONS = ["Male", "Female", "Other"] as const;
+
 export type OnboardingExperience = {
   company: string;
   title: string;
@@ -21,6 +23,7 @@ export type OnboardingEducation = {
   field: string;
   startDate: string;
   endDate: string;
+  gpa: string;
 };
 
 export type OnboardingConfig = {
@@ -79,6 +82,7 @@ export type OnboardingConfig = {
       gpa: string;
       over18: boolean | null;
       genderIdentity: string;
+      genderIdentityDetail: string;
       disabilityStatus: string;
       veteranStatus: string;
       raceEthnicity: string;
@@ -190,6 +194,7 @@ export function defaultOnboardingConfig(email = ""): OnboardingConfig {
         gpa: "",
         over18: null,
         genderIdentity: "",
+        genderIdentityDetail: "",
         disabilityStatus: "",
         veteranStatus: "",
         raceEthnicity: "",
@@ -198,8 +203,8 @@ export function defaultOnboardingConfig(email = ""): OnboardingConfig {
       },
     },
     final: {
-      applicationMode: "review",
-      tailorResume: true,
+      applicationMode: "auto",
+      tailorResume: false,
       writingStyle: {
         sentenceLength: "Balanced mix",
         tone: "Neutral-casual",
@@ -239,6 +244,7 @@ function educationFrom(value: unknown): OnboardingEducation[] {
         field: asString(row.field),
         startDate: asString(row.startDate),
         endDate: asString(row.endDate),
+        gpa: asString(row.gpa),
       };
     })
     .filter((item) => item.school || item.degree)
@@ -260,6 +266,23 @@ function sourceDocumentFrom(value: unknown): SourceDocument | null {
   };
 }
 
+export function genderIdentityFieldsFrom(value: unknown, detailValue: unknown = "") {
+  const raw = asString(value);
+  const detail = asString(detailValue);
+  const normalized = raw.toLowerCase();
+  if (!raw) return { genderIdentity: "", genderIdentityDetail: detail };
+  if (normalized === "female" || normalized === "woman" || normalized === "women") {
+    return { genderIdentity: "Female", genderIdentityDetail: "" };
+  }
+  if (normalized === "male" || normalized === "man" || normalized === "men") {
+    return { genderIdentity: "Male", genderIdentityDetail: "" };
+  }
+  if (normalized === "other" || normalized === "others") {
+    return { genderIdentity: "Other", genderIdentityDetail: detail };
+  }
+  return { genderIdentity: "Other", genderIdentityDetail: detail || raw };
+}
+
 export function sanitizeOnboardingConfig(value: unknown, email = ""): OnboardingConfig {
   const base = defaultOnboardingConfig(email);
   const row = rec(value);
@@ -270,6 +293,7 @@ export function sanitizeOnboardingConfig(value: unknown, email = ""): Onboarding
   const links = rec(profile.links);
   const workAuth = rec(profile.workAuth);
   const screening = rec(profile.screening);
+  const genderIdentity = genderIdentityFieldsFrom(screening.genderIdentity, screening.genderIdentityDetail);
   const final = rec(row.final);
   const writingStyle = rec(final.writingStyle);
 
@@ -337,7 +361,7 @@ export function sanitizeOnboardingConfig(value: unknown, email = ""): Onboarding
         dateOfBirth: asString(screening.dateOfBirth),
         gpa: asString(screening.gpa),
         over18: asBool(screening.over18),
-        genderIdentity: asString(screening.genderIdentity),
+        ...genderIdentity,
         disabilityStatus: asString(screening.disabilityStatus),
         veteranStatus: asString(screening.veteranStatus),
         raceEthnicity: asString(screening.raceEthnicity),
@@ -391,28 +415,13 @@ export function reusableAnswersFromOnboarding(config: OnboardingConfig): Reusabl
     },
     {
       key: "screening.relocation_open",
-      prompt: "Are you open to relocation?",
+      prompt: "Are you comfortable relocating?",
       value: yesNo(s.relocationOk),
     },
     {
       key: "screening.languages",
       prompt: "Which languages do you speak fluently?",
       value: s.spokenLanguages.join(", "),
-    },
-    {
-      key: "screening.gpa",
-      prompt: "What is your latest GPA score?",
-      value: s.gpa,
-    },
-    {
-      key: "screening.over_18",
-      prompt: "Are you at least 18 years of age?",
-      value: yesNo(s.over18),
-    },
-    {
-      key: "screening.driving_licenses",
-      prompt: "Which driving licenses do you have?",
-      value: s.drivingLicenses.join(", "),
     },
     {
       key: "screening.security_clearance",
@@ -422,18 +431,6 @@ export function reusableAnswersFromOnboarding(config: OnboardingConfig): Reusabl
   ];
 
   return answers.filter((answer) => answer.value);
-}
-
-export function sensitiveSelfIdFromOnboarding(config: OnboardingConfig) {
-  const s = config.profile.screening;
-  const data = {
-    dateOfBirth: s.dateOfBirth,
-    genderIdentity: s.genderIdentity,
-    disabilityStatus: s.disabilityStatus,
-    veteranStatus: s.veteranStatus,
-    raceEthnicity: s.raceEthnicity,
-  };
-  return Object.fromEntries(Object.entries(data).filter(([, value]) => Boolean(value)));
 }
 
 export function onboardingCompletion(config: OnboardingConfig) {

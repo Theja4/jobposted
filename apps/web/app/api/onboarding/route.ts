@@ -1,10 +1,8 @@
-import { createCipheriv, createHash, randomBytes } from "node:crypto";
 import { NextResponse } from "next/server";
 import {
   onboardingToProfilePayload,
   reusableAnswersFromOnboarding,
   sanitizeOnboardingConfig,
-  sensitiveSelfIdFromOnboarding,
 } from "@/lib/onboarding/model";
 import { embedResumeContent, vectorToSql } from "@/lib/ai/embeddings";
 import { reportError } from "@/lib/observability/report";
@@ -18,21 +16,6 @@ import {
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
-
-function encryptedSensitivePayload(data: Record<string, unknown>) {
-  if (Object.keys(data).length === 0) return null;
-  const secret = process.env.SENSITIVE_SELF_ID_SECRET;
-  if (!secret) return null;
-  const iv = randomBytes(12);
-  const key = createHash("sha256").update(secret).digest();
-  const cipher = createCipheriv("aes-256-gcm", key, iv);
-  const encrypted = Buffer.concat([
-    cipher.update(JSON.stringify(data), "utf8"),
-    cipher.final(),
-  ]);
-  const tag = cipher.getAuthTag();
-  return `\\x${Buffer.concat([iv, tag, encrypted]).toString("hex")}`;
-}
 
 function isMissingApplicationModeColumn(error: unknown) {
   const record = rec(error);
@@ -178,23 +161,6 @@ export async function POST(request: Request) {
     }
   }
 
-  const sensitive = sensitiveSelfIdFromOnboarding(config);
-  const encrypted = encryptedSensitivePayload(sensitive);
-  if (encrypted) {
-    const { error: sensitiveError } = await supabase.from("sensitive_self_id").upsert(
-      {
-        user_id: user.id,
-        data_encrypted: encrypted,
-        consent_given_at: now,
-        consent_version: "jobposted-onboarding-2026-06",
-      },
-      { onConflict: "user_id" },
-    );
-    if (sensitiveError) {
-      await reportError("onboarding sensitive self id upsert failed", sensitiveError, { userId: user.id });
-    }
-  }
-
   const { error: configError } = await supabase.from("onboarding_configurations").upsert(
     {
       user_id: user.id,
@@ -212,6 +178,5 @@ export async function POST(request: Request) {
   return NextResponse.json({
     ok: true,
     completedAt: now,
-    sensitiveStored: Boolean(encrypted),
   });
 }

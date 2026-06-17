@@ -19,7 +19,7 @@ export function FinalCta() {
           <div className="relative z-10 grid items-center gap-12 lg:grid-cols-[1.05fr_0.95fr]">
             <div>
               <h2 className="max-w-xl text-4xl font-extrabold tracking-[-0.035em] text-balance sm:text-5xl">
-                More interviews. None of the pointless work.
+                Better-matched applications. Less pointless work.
               </h2>
               <p className="mt-5 max-w-md text-base leading-7 text-pretty text-white/80 sm:text-lg">
                 Create your account, set your preferences, and JobPosted starts preparing tailored
@@ -66,7 +66,7 @@ function CtaIllustration() {
           <span className="block h-2 w-10/12 rounded-full bg-brand-200" />
         </div>
         <div className="mt-5 flex items-center justify-between rounded-full bg-ink px-4 py-2.5 text-white">
-          <span className="text-xs font-extrabold">Sent for you</span>
+          <span className="text-xs font-extrabold">Ready for you</span>
           <span className="grid size-6 place-items-center rounded-full bg-white text-[11px] font-black text-brand-700">
             ✓
           </span>
@@ -77,7 +77,7 @@ function CtaIllustration() {
         <p className="text-[10px] font-black tracking-[0.12em] text-white/70 uppercase">
           Today&apos;s batch
         </p>
-        <p className="mt-1 text-sm font-extrabold text-white">16 applications sent</p>
+        <p className="mt-1 text-sm font-extrabold text-white">16 applications ready</p>
       </div>
     </div>
   );

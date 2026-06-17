@@ -27,14 +27,14 @@ export default function RefundPage() {
         <section className="mt-8 rounded-2xl bg-brand-50 p-5 ring-1 ring-inset ring-brand-100">
           <h2 className="text-base font-extrabold text-ink">Our policy in one sentence</h2>
           <p className="mt-3 text-sm leading-6 text-muted">
-            You can cancel anytime, and we will review fair refund requests for first purchases,
-            recent renewals, duplicate charges, billing errors, and service failures.
+            You can cancel anytime, and refund requests are only considered within 48 hours after
+            your first paid subscription payment; accidental charges are not refundable.
           </p>
         </section>
 
         <Clause title="1. Subscription cancellation">
-          You can cancel your subscription at any time from the Creem customer portal link sent after
-          purchase, or by emailing{" "}
+          You can cancel your subscription at any time from Billing and support in your account, from
+          the Creem customer portal link sent after purchase, or by emailing{" "}
           <a className="font-bold text-brand-700 hover:text-brand-800" href={`mailto:${SUPPORT_EMAIL}`}>
             {SUPPORT_EMAIL}
           </a>
@@ -42,34 +42,34 @@ export default function RefundPage() {
           policy, cancellation does not automatically refund charges already paid.
         </Clause>
 
-        <Clause title="2. First-charge refund window">
-          If JobPosted is not the right fit, you may request a refund within 14 calendar days of your
-          first paid subscription charge. We may deny or reduce a refund if the account shows heavy
-          completed usage, abuse, fraud, or violation of our{" "}
+        <Clause title="2. First-payment refund window">
+          If JobPosted is not the right fit, you may request a refund within 48 hours after your
+          first paid subscription payment. This first-payment window applies once per user, account,
+          or customer. We may deny or reduce a refund if the account shows heavy completed usage,
+          abuse, fraud, or violation of our{" "}
           <Link className="font-bold text-brand-700 hover:text-brand-800" href="/terms">
             Terms of Service
           </Link>
           .
         </Clause>
 
-        <Clause title="3. Renewal refunds">
-          Renewal charges may be refunded if you contact us within 7 calendar days of the renewal and
-          there has been no material paid usage after the renewal date. Material usage includes
-          preparing, tailoring, filling, or submitting a meaningful batch of applications after the
-          renewal.
+        <Clause title="3. Renewals and accidental charges">
+          Renewal charges, accidental purchases, accidental renewals, forgetting to cancel, unused
+          time, or changes in your job-search plans are not refundable unless required by law.
         </Clause>
 
-        <Clause title="4. Billing errors and duplicate charges">
-          Duplicate charges, accidental overcharges, or clear billing mistakes are eligible for a
-          refund once verified. Please include the account email, receipt email, order ID if
-          available, and a short description of the issue.
+        <Clause title="4. Payment processing errors">
+          If you believe a payment processor or card-network error created an incorrect duplicate
+          charge, contact us so we can investigate with Creem. Please include the account email,
+          receipt email, order ID if available, and a short description of the issue. This does not
+          include accidental purchases or renewal charges.
         </Clause>
 
         <Clause title="5. Service failures">
           If a paid account cannot access core paid features because of a JobPosted-side outage or
           account error, contact us. Depending on the issue, we may provide a refund, partial refund,
           account credit, or service extension. This does not cover outages or policy changes caused
-          by third-party job boards, applicant tracking systems, browser-session platforms, AI
+          by third-party career sites, applicant tracking systems, browser-session platforms, AI
           providers, or payment providers.
         </Clause>
 

@@ -1361,7 +1361,7 @@ export function JobTrackerBoard({ initialPage }: { initialPage: TrackerPage }) {
 
   return (
     <div className="w-full space-y-5">
-      <section className="liquid-glass rounded-2xl px-4 py-3 sm:px-5">
+      <section className={cn("rounded-2xl p-4 sm:p-5", TRACKER_PANEL_CLASS)}>
         <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
           <div className="flex min-w-0 flex-col gap-1.5 sm:flex-row sm:items-baseline sm:gap-3">
             <h1 className="shrink-0 text-2xl font-extrabold tracking-[-0.03em] text-ink">Job tracker</h1>
@@ -1413,32 +1413,8 @@ export function JobTrackerBoard({ initialPage }: { initialPage: TrackerPage }) {
             </button>
           </div>
         </div>
-      </section>
 
-      <AddColumnPanel
-        open={columnPanelOpen}
-        onClose={() => setColumnPanelOpen(false)}
-        columns={activeCustomColumns}
-        onAddColumn={addCustomColumn}
-        onRemoveColumn={removeCustomColumn}
-      />
-
-      <ManualAddPanel
-        open={manualOpen || Boolean(editingItem)}
-        onClose={closeEditor}
-        onSave={upsertItem}
-        editingItem={editingItem}
-        stageOptions={stageOptions}
-      />
-
-      {mutationError && (
-        <p className="rounded-xl bg-red-50 px-4 py-3 text-sm font-bold text-red-600 shadow-[0_12px_24px_-20px_rgba(220,38,38,0.35)]">
-          {mutationError}
-        </p>
-      )}
-
-      <section className={cn("rounded-2xl p-4", TRACKER_PANEL_CLASS)}>
-        <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
+        <div className="mt-4 flex flex-col gap-3 lg:flex-row lg:items-center">
           <label
             className={cn(
               "flex h-11 flex-1 items-center gap-2 rounded-xl px-3 transition-[background-color,box-shadow]",
@@ -1509,6 +1485,28 @@ export function JobTrackerBoard({ initialPage }: { initialPage: TrackerPage }) {
           </div>
         </div>
       </section>
+
+      <AddColumnPanel
+        open={columnPanelOpen}
+        onClose={() => setColumnPanelOpen(false)}
+        columns={activeCustomColumns}
+        onAddColumn={addCustomColumn}
+        onRemoveColumn={removeCustomColumn}
+      />
+
+      <ManualAddPanel
+        open={manualOpen || Boolean(editingItem)}
+        onClose={closeEditor}
+        onSave={upsertItem}
+        editingItem={editingItem}
+        stageOptions={stageOptions}
+      />
+
+      {mutationError && (
+        <p className="rounded-xl bg-red-50 px-4 py-3 text-sm font-bold text-red-600 shadow-[0_12px_24px_-20px_rgba(220,38,38,0.35)]">
+          {mutationError}
+        </p>
+      )}
 
       {summary.tracked === 0 ? (
         <section className={cn("rounded-2xl p-8 text-center", TRACKER_PANEL_CLASS)}>

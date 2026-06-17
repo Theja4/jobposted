@@ -1,24 +1,21 @@
-import { Quote, Star } from "lucide-react";
+import { Eye, FileCheck2, ShieldCheck } from "lucide-react";
 import { Reveal } from "@/components/ui/Reveal";
 
-const REVIEWS = [
+const CONTROL_POINTS = [
   {
-    quote:
-      "JobPosted turned my weekly application block into a 10-minute review. The best part is seeing exactly what is ready before anything goes out.",
-    name: "Aisha Raman",
-    role: "Product Operations Lead",
+    title: "Nothing leaves without you",
+    body: "Prepared applications wait in your queue so you can review the resume, answers, and employer requirements before submitting.",
+    icon: ShieldCheck,
   },
   {
-    quote:
-      "It caught roles I would have missed on smaller Greenhouse and Lever boards, then tailored each resume without making it sound generic.",
-    name: "Daniel Cho",
-    role: "Senior Frontend Engineer",
+    title: "Tailoring stays inspectable",
+    body: "You can see which resume is attached and make edits before using it on an employer form.",
+    icon: FileCheck2,
   },
   {
-    quote:
-      "The daily acknowledgement gives me confidence. I get the leverage of automation without feeling like I handed over my whole job search.",
-    name: "Maya Patel",
-    role: "Data Analyst",
+    title: "Your tracker stays current",
+    body: "Queued, manual, and extension-assisted applications are logged so you know what happened and what still needs attention.",
+    icon: Eye,
   },
 ] as const;
 
@@ -27,23 +24,23 @@ export function Reviews() {
     <section className="relative isolate bg-transparent px-5 pt-20 pb-10 sm:pt-24 sm:pb-12">
       <div className="mx-auto w-full max-w-6xl">
         <Reveal className="mx-auto max-w-3xl text-center">
-          <p className="text-sm font-bold text-brand-700">Trusted by job seekers</p>
+          <p className="text-sm font-bold text-brand-700">Built for control</p>
           <h2 className="mt-4 text-4xl font-extrabold tracking-[-0.035em] text-balance text-ink sm:text-5xl lg:text-6xl">
-            Less Application Grind More Interviews
+            Automation you can inspect before it counts.
           </h2>
         </Reveal>
 
         <div className="mt-12 grid gap-5 lg:grid-cols-[1.08fr_1fr] lg:items-stretch">
           <Reveal delay={0.04} className="h-full">
-            <ReviewCard review={REVIEWS[0]} featured />
+            <ControlCard point={CONTROL_POINTS[0]} featured />
           </Reveal>
 
           <div className="grid gap-5">
             <Reveal delay={0.16}>
-              <ReviewCard review={REVIEWS[1]} compact />
+              <ControlCard point={CONTROL_POINTS[1]} compact />
             </Reveal>
             <Reveal delay={0.22}>
-              <ReviewCard review={REVIEWS[2]} compact />
+              <ControlCard point={CONTROL_POINTS[2]} compact />
             </Reveal>
           </div>
         </div>
@@ -52,15 +49,17 @@ export function Reviews() {
   );
 }
 
-function ReviewCard({
-  review,
+function ControlCard({
+  point,
   compact = false,
   featured = false,
 }: {
-  review: (typeof REVIEWS)[number];
+  point: (typeof CONTROL_POINTS)[number];
   compact?: boolean;
   featured?: boolean;
 }) {
+  const Icon = point.icon;
+
   return (
     <article
       className={
@@ -86,33 +85,22 @@ function ReviewCard({
               : "grid size-10 place-items-center rounded-2xl bg-brand-50 text-brand-700 ring-1 ring-inset ring-brand-100"
           }
         >
-          <Quote className="size-5" />
-        </span>
-        <span className="flex text-sun" aria-label="Five star review signal">
-          {Array.from({ length: 5 }).map((_, index) => (
-            <Star key={index} className="size-3.5 fill-current" />
-          ))}
+          <Icon className="size-5" />
         </span>
       </div>
 
-      <p
+      <h3
         className={
           featured
             ? "text-pretty text-xl leading-8 font-extrabold text-white sm:text-2xl sm:leading-9"
-            : "text-base leading-7 font-semibold text-pretty text-ink/84"
+            : "text-xl leading-7 font-extrabold text-pretty text-ink"
         }
       >
-        &ldquo;{review.quote}&rdquo;
+        {point.title}
+      </h3>
+      <p className={featured ? "mt-4 text-sm leading-7 text-white/76" : "mt-4 text-sm leading-7 text-muted"}>
+        {point.body}
       </p>
-
-      <div className="mt-auto pt-7">
-        <p className={featured ? "font-extrabold text-white" : "font-extrabold text-ink"}>
-          {review.name}
-        </p>
-        <p className={featured ? "mt-1 text-sm font-semibold text-white/72" : "mt-1 text-sm font-semibold text-muted"}>
-          {review.role}
-        </p>
-      </div>
     </article>
   );
 }
