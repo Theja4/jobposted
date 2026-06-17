@@ -1,4 +1,4 @@
-import type { ExtensionApplicationUpsert } from "@jobposted/shared";
+import type { CompanyAssets, ExtensionApplicationUpsert } from "@jobposted/shared";
 
 function asString(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
@@ -29,6 +29,7 @@ export function buildExtensionApplicationRow(args: {
   payload: ExtensionApplicationUpsert;
   jobUrl: string;
   company: string;
+  companyAssets?: CompanyAssets;
   role: string;
   activeResumeVersionId: string | null;
   existingApplication: ExistingExtensionApplicationRow | null;
@@ -39,6 +40,7 @@ export function buildExtensionApplicationRow(args: {
     payload,
     jobUrl,
     company,
+    companyAssets,
     role,
     activeResumeVersionId,
     existingApplication,
@@ -64,6 +66,8 @@ export function buildExtensionApplicationRow(args: {
       source: "extension",
       platform: payload.platform,
       company,
+      companyDomain: companyAssets?.companyDomain ?? existingFieldMap.companyDomain ?? null,
+      companyLogoUrl: companyAssets?.companyLogoUrl ?? existingFieldMap.companyLogoUrl ?? null,
       role,
       jobUrl,
       resumeUsed,

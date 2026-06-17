@@ -6,7 +6,6 @@ import {
   ArrowUpRight,
   ArrowDownWideNarrow,
   BriefcaseBusiness,
-  CheckCircle2,
   CircleOff,
   Clock3,
   Download,
@@ -40,6 +39,8 @@ import {
   type TrackerSource,
   type TrackerStage,
 } from "@/lib/dashboard/tracker-model";
+import { CompanyAvatar } from "./CompanyAvatar";
+import { DashboardSelect } from "./DashboardSelect";
 
 type SourceFilter = "all" | TrackerSource;
 type StageFilter = "all" | TrackerStage;
@@ -72,10 +73,10 @@ const STAGE_ICONS: Record<string, typeof Clock3> = {
 };
 
 const SOURCE_CLASSES: Record<TrackerSource, string> = {
-  extension: "bg-brand-50 text-brand-700 ring-brand-100",
-  job_board: "bg-sky-50 text-sky-700 ring-sky-100",
-  server: "bg-emerald-50 text-emerald-700 ring-emerald-100",
-  manual: "bg-zinc-100 text-zinc-700 ring-zinc-200",
+  extension: "bg-brand-50 text-brand-700 shadow-[0_8px_16px_-14px_rgba(31,100,224,0.5)]",
+  job_board: "bg-sky-50 text-sky-700 shadow-[0_8px_16px_-14px_rgba(2,132,199,0.5)]",
+  server: "bg-emerald-50 text-emerald-700 shadow-[0_8px_16px_-14px_rgba(5,150,105,0.5)]",
+  manual: "bg-zinc-100 text-zinc-700 shadow-[0_8px_16px_-14px_rgba(15,23,42,0.42)]",
 };
 
 const EMPTY_FORM: ManualTrackerInput = {
@@ -87,20 +88,35 @@ const EMPTY_FORM: ManualTrackerInput = {
   notes: "",
 };
 
+const TRACKER_PANEL_CLASS =
+  "bg-white/88 shadow-[0_18px_42px_-32px_rgba(15,23,42,0.48),0_8px_18px_-18px_rgba(15,23,42,0.2)]";
+const TRACKER_CARD_CLASS =
+  "bg-white shadow-[0_18px_38px_-30px_rgba(15,23,42,0.5),0_8px_18px_-18px_rgba(15,23,42,0.22)]";
+const TRACKER_CONTROL_CLASS =
+  "bg-white shadow-[0_12px_26px_-22px_rgba(15,23,42,0.48),0_3px_10px_-9px_rgba(15,23,42,0.18)]";
+const TRACKER_CONTROL_FOCUS_CLASS =
+  "focus:shadow-[0_0_0_3px_rgba(31,100,224,0.18),0_12px_26px_-22px_rgba(15,23,42,0.48),0_3px_10px_-9px_rgba(15,23,42,0.18)]";
+const TRACKER_CONTROL_FOCUS_WITHIN_CLASS =
+  "focus-within:shadow-[0_0_0_3px_rgba(31,100,224,0.18),0_12px_26px_-22px_rgba(15,23,42,0.48),0_3px_10px_-9px_rgba(15,23,42,0.18)]";
+const TRACKER_INPUT_CLASS = cn(
+  "h-11 w-full rounded-xl px-3 text-sm font-semibold text-ink outline-none transition-[background-color,box-shadow] placeholder:text-zinc-500 disabled:opacity-60",
+  TRACKER_CONTROL_CLASS,
+  TRACKER_CONTROL_FOCUS_CLASS,
+);
+const TRACKER_BUTTON_CLASS =
+  "bg-white text-ink shadow-[0_12px_26px_-22px_rgba(15,23,42,0.48),0_3px_10px_-9px_rgba(15,23,42,0.18)] transition-[background-color,color,box-shadow] hover:bg-brand-50 hover:text-brand-700 hover:shadow-[0_16px_30px_-22px_rgba(31,100,224,0.36),0_5px_12px_-10px_rgba(31,100,224,0.24)]";
+const TRACKER_PRIMARY_BUTTON_CLASS =
+  "bg-brand-600 text-white shadow-[0_14px_30px_-18px_rgba(31,100,224,0.7),0_4px_12px_-10px_rgba(15,23,42,0.25)] transition-[background-color,box-shadow] hover:bg-brand-700 hover:shadow-[0_18px_34px_-18px_rgba(31,100,224,0.75),0_6px_16px_-12px_rgba(15,23,42,0.3)]";
+const TRACKER_ICON_BUTTON_CLASS =
+  "bg-white text-muted shadow-[0_10px_20px_-17px_rgba(15,23,42,0.45),0_2px_8px_-7px_rgba(15,23,42,0.16)] transition-[background-color,color,box-shadow]";
+const TRACKER_CHIP_SHADOW_CLASS = "shadow-[0_8px_16px_-14px_rgba(15,23,42,0.4)]";
+
 function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 
 function stageCount(items: TrackerItem[], stage: TrackerStage) {
   return items.filter((item) => item.stage === stage).length;
-}
-
-function sourceLabel(source: SourceFilter) {
-  return source === "all" ? "All sources" : TRACKER_SOURCE_LABELS[source];
-}
-
-function stageLabel(stage: StageFilter) {
-  return stage === "all" ? "All stages" : labelForTrackerStage(stage);
 }
 
 function trackerStageLabel(stage: TrackerStage) {
@@ -275,25 +291,22 @@ function downloadTrackerCsv(items: TrackerItem[]) {
 }
 
 function TrackerSummary({ summary }: { summary: TrackerSummaryCounts }) {
+  const stats = [
+    { label: "tracked", value: summary.tracked },
+    { label: "review", value: summary.needsReview },
+    { label: "active", value: summary.activePipeline },
+  ];
+
   return (
-    <div className="grid gap-3 sm:grid-cols-3">
-      {[
-        { label: "Tracked roles", value: summary.tracked, Icon: BriefcaseBusiness },
-        { label: "Needs review", value: summary.needsReview, Icon: Clock3 },
-        { label: "Active pipeline", value: summary.activePipeline, Icon: CheckCircle2 },
-      ].map(({ label, value, Icon }) => (
-        <div
-          key={label}
-          className="rounded-2xl bg-white/76 px-4 py-3 ring-1 ring-inset ring-white"
-        >
-          <div className="flex items-center justify-between gap-3">
-            <p className="text-xs font-bold text-muted">{label}</p>
-            <Icon className="size-4 text-brand-600" />
-          </div>
-          <p className="mt-2 text-2xl font-extrabold tracking-[-0.03em] text-ink">{value}</p>
-        </div>
+    <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm font-bold text-muted">
+      {stats.map(({ label, value }, index) => (
+        <span key={label} className="inline-flex items-baseline gap-1">
+          {index > 0 && <span className="text-zinc-300">/</span>}
+          <span className="font-black text-ink">{value}</span>
+          <span>{label}</span>
+        </span>
       ))}
-    </div>
+    </p>
   );
 }
 
@@ -367,7 +380,7 @@ function ManualAddPanel({
           animate={{ opacity: 1, y: 0 }}
           exit={reduce ? undefined : { opacity: 0, y: -8 }}
           transition={{ duration: 0.18, ease: [0.22, 1, 0.36, 1] }}
-          className="rounded-2xl bg-white/82 p-5 ring-1 ring-inset ring-white"
+          className={cn("rounded-2xl p-5", TRACKER_PANEL_CLASS)}
         >
           <div className="mb-4 flex items-center justify-between gap-3">
             <div>
@@ -384,7 +397,10 @@ function ManualAddPanel({
               type="button"
               onClick={onClose}
               aria-label={isEditing ? "Close edit role" : "Close manual add"}
-              className="grid size-9 shrink-0 place-items-center rounded-xl text-muted transition-colors hover:bg-zinc-100 hover:text-ink"
+              className={cn(
+                "grid size-9 shrink-0 place-items-center rounded-xl hover:bg-zinc-50 hover:text-ink",
+                TRACKER_ICON_BUTTON_CLASS,
+              )}
             >
               <X className="size-4" />
             </button>
@@ -397,7 +413,7 @@ function ManualAddPanel({
                 required
                 value={form.role}
                 onChange={(e) => setForm((next) => ({ ...next, role: e.target.value }))}
-                className="h-11 w-full rounded-xl bg-white px-3 text-sm font-semibold text-ink ring-1 ring-inset ring-zinc-200 outline-none placeholder:text-zinc-500 focus:ring-2 focus:ring-brand-500"
+                className={TRACKER_INPUT_CLASS}
                 placeholder="Product Manager"
               />
             </label>
@@ -407,7 +423,7 @@ function ManualAddPanel({
                 required
                 value={form.company}
                 onChange={(e) => setForm((next) => ({ ...next, company: e.target.value }))}
-                className="h-11 w-full rounded-xl bg-white px-3 text-sm font-semibold text-ink ring-1 ring-inset ring-zinc-200 outline-none placeholder:text-zinc-500 focus:ring-2 focus:ring-brand-500"
+                className={TRACKER_INPUT_CLASS}
                 placeholder="Acme"
               />
             </label>
@@ -416,23 +432,19 @@ function ManualAddPanel({
               <input
                 value={form.location}
                 onChange={(e) => setForm((next) => ({ ...next, location: e.target.value }))}
-                className="h-11 w-full rounded-xl bg-white px-3 text-sm font-semibold text-ink ring-1 ring-inset ring-zinc-200 outline-none placeholder:text-zinc-500 focus:ring-2 focus:ring-brand-500"
+                className={TRACKER_INPUT_CLASS}
                 placeholder="Remote"
               />
             </label>
             <label>
               <span className="mb-1.5 block text-xs font-bold text-ink">Stage</span>
-              <select
+              <DashboardSelect
                 value={form.stage}
-                onChange={(e) => setForm((next) => ({ ...next, stage: e.target.value as TrackerStage }))}
-                className="h-11 w-full rounded-xl bg-white px-3 text-sm font-semibold text-ink ring-1 ring-inset ring-zinc-200 outline-none focus:ring-2 focus:ring-brand-500"
-              >
-                {stageOptions.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
+                options={stageOptions}
+                onChange={(stage) => setForm((next) => ({ ...next, stage }))}
+                ariaLabel="Stage"
+                buttonClassName={TRACKER_INPUT_CLASS}
+              />
             </label>
             <label className="lg:col-span-3">
               <span className="mb-1.5 block text-xs font-bold text-ink">Job URL</span>
@@ -440,7 +452,7 @@ function ManualAddPanel({
                 type="url"
                 value={form.jobUrl}
                 onChange={(e) => setForm((next) => ({ ...next, jobUrl: e.target.value }))}
-                className="h-11 w-full rounded-xl bg-white px-3 text-sm font-semibold text-ink ring-1 ring-inset ring-zinc-200 outline-none placeholder:text-zinc-500 focus:ring-2 focus:ring-brand-500"
+                className={TRACKER_INPUT_CLASS}
                 placeholder="https://"
               />
             </label>
@@ -449,7 +461,7 @@ function ManualAddPanel({
               <input
                 value={form.notes}
                 onChange={(e) => setForm((next) => ({ ...next, notes: e.target.value }))}
-                className="h-11 w-full rounded-xl bg-white px-3 text-sm font-semibold text-ink ring-1 ring-inset ring-zinc-200 outline-none placeholder:text-zinc-500 focus:ring-2 focus:ring-brand-500"
+                className={TRACKER_INPUT_CLASS}
                 placeholder="Recruiter, referral, follow-up"
               />
             </label>
@@ -457,7 +469,10 @@ function ManualAddPanel({
               <button
                 type="submit"
                 disabled={pending}
-                className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-brand-600 px-4 text-sm font-black text-white transition-colors hover:bg-brand-700 disabled:pointer-events-none disabled:opacity-60"
+                className={cn(
+                  "inline-flex h-11 w-full items-center justify-center gap-2 rounded-xl px-4 text-sm font-black disabled:pointer-events-none disabled:opacity-60",
+                  TRACKER_PRIMARY_BUTTON_CLASS,
+                )}
               >
                 {pending ? <Loader2 className="size-4 animate-spin" /> : <Plus className="size-4" />}
                 {isEditing ? "Save" : "Add"}
@@ -524,12 +539,12 @@ function AddColumnPanel({
           animate={{ opacity: 1, y: 0 }}
           exit={reduce ? undefined : { opacity: 0, y: -8 }}
           transition={{ duration: 0.18, ease: [0.22, 1, 0.36, 1] }}
-          className="rounded-2xl bg-white/82 p-5 ring-1 ring-inset ring-white"
+          className={cn("rounded-2xl p-5", TRACKER_PANEL_CLASS)}
         >
           <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
             <div>
               <div className="flex items-center gap-2">
-                <span className="grid size-9 place-items-center rounded-xl bg-brand-50 text-brand-700 ring-1 ring-inset ring-brand-100">
+                <span className={cn("grid size-9 place-items-center rounded-xl bg-brand-50 text-brand-700", TRACKER_CHIP_SHADOW_CLASS)}>
                   <ListChecks className="size-4" />
                 </span>
                 <div>
@@ -546,7 +561,10 @@ function AddColumnPanel({
                   {columns.map((column) => (
                     <span
                       key={column.id}
-                      className="inline-flex items-center gap-1 rounded-full bg-brand-50 pl-2.5 pr-1 py-1 text-xs font-black text-brand-700 ring-1 ring-inset ring-brand-100"
+                      className={cn(
+                        "inline-flex items-center gap-1 rounded-full bg-brand-50 pl-2.5 pr-1 py-1 text-xs font-black text-brand-700",
+                        TRACKER_CHIP_SHADOW_CLASS,
+                      )}
                     >
                       {column.label}
                       <button
@@ -567,7 +585,10 @@ function AddColumnPanel({
               type="button"
               onClick={onClose}
               aria-label="Close add column"
-              className="grid size-9 shrink-0 place-items-center self-start rounded-xl text-muted transition-colors hover:bg-zinc-100 hover:text-ink lg:self-auto"
+              className={cn(
+                "grid size-9 shrink-0 place-items-center self-start rounded-xl hover:bg-zinc-50 hover:text-ink lg:self-auto",
+                TRACKER_ICON_BUTTON_CLASS,
+              )}
             >
               <X className="size-4" />
             </button>
@@ -583,7 +604,7 @@ function AddColumnPanel({
                     type="button"
                     disabled={selected || (full && !selected)}
                     onClick={() => addColumn(preset)}
-                    className="flex min-h-14 items-center justify-between gap-3 rounded-xl bg-brand-50/70 px-3 text-left ring-1 ring-inset ring-brand-100 transition-colors hover:bg-brand-100 disabled:pointer-events-none disabled:opacity-55"
+                    className="flex min-h-14 items-center justify-between gap-3 rounded-xl bg-brand-50/80 px-3 text-left shadow-[0_12px_24px_-20px_rgba(31,100,224,0.38),0_3px_10px_-9px_rgba(31,100,224,0.16)] transition-[background-color,box-shadow] hover:bg-brand-100 hover:shadow-[0_16px_30px_-22px_rgba(31,100,224,0.45),0_5px_12px_-10px_rgba(31,100,224,0.22)] disabled:pointer-events-none disabled:opacity-55"
                   >
                     <span>
                       <span className="block text-sm font-black text-brand-900">{preset.label}</span>
@@ -603,14 +624,17 @@ function AddColumnPanel({
                   disabled={full}
                   maxLength={24}
                   onChange={(e) => setName(e.target.value)}
-                  className="h-11 w-full rounded-xl bg-white px-3 text-sm font-semibold text-ink ring-1 ring-inset ring-zinc-200 outline-none placeholder:text-zinc-500 focus:ring-2 focus:ring-brand-500 disabled:opacity-60"
+                  className={TRACKER_INPUT_CLASS}
                   placeholder={full ? "Custom limit reached" : "Followed up"}
                 />
               </label>
               <button
                 type="submit"
                 disabled={full}
-                className="inline-flex h-11 items-center justify-center gap-2 self-end rounded-xl bg-brand-600 px-4 text-sm font-black text-white transition-colors hover:bg-brand-700 disabled:pointer-events-none disabled:opacity-55"
+                className={cn(
+                  "inline-flex h-11 items-center justify-center gap-2 self-end rounded-xl px-4 text-sm font-black disabled:pointer-events-none disabled:opacity-55",
+                  TRACKER_PRIMARY_BUTTON_CLASS,
+                )}
               >
                 <Plus className="size-4" />
                 Add
@@ -677,82 +701,99 @@ function TrackerCard({
         onPointerMove={onCardPointerMove}
         onPointerUp={onCardPointerUp}
         className={cn(
-          "cursor-grab touch-none rounded-2xl bg-white p-4 ring-1 ring-inset ring-zinc-200/80 transition-colors hover:bg-brand-50/55 active:cursor-grabbing",
-          dragging && "ring-brand-300",
+          "cursor-grab touch-none rounded-2xl p-4 transition-[background-color,box-shadow] hover:bg-brand-50/55 active:cursor-grabbing",
+          dragging
+            ? "bg-brand-50/80 shadow-[0_0_0_3px_rgba(31,100,224,0.18),0_18px_38px_-26px_rgba(31,100,224,0.48),0_8px_18px_-16px_rgba(15,23,42,0.2)]"
+            : TRACKER_CARD_CLASS,
           busy && "cursor-default",
         )}
       >
-      <div className="flex items-start gap-3">
-        <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-brand-600 text-sm font-black text-white">
-          {item.company.slice(0, 1).toUpperCase()}
-        </span>
-        <div className="min-w-0 flex-1">
-          <h3 className="line-clamp-2 text-sm font-extrabold leading-5 text-ink">{item.role}</h3>
-          <p className="mt-0.5 truncate text-xs font-bold text-muted">{item.company}</p>
+        <div className="flex items-start gap-3">
+          <CompanyAvatar
+            company={item.company}
+            logoUrl={item.companyLogoUrl}
+            colorSeed={item.source === "manual" ? item.id : undefined}
+          />
+          <div className="min-w-0 flex-1">
+            <h3 className="line-clamp-2 text-sm font-extrabold leading-5 text-ink">{item.role}</h3>
+            <p className="mt-0.5 truncate text-xs font-bold text-muted">{item.company}</p>
+          </div>
+          {item.jobUrl && (
+            <a
+              href={item.jobUrl}
+              target="_blank"
+              rel="noreferrer"
+              aria-label={`Open ${item.role} at ${item.company}`}
+              className={cn(
+                "grid size-8 shrink-0 place-items-center rounded-lg hover:bg-brand-50 hover:text-brand-700",
+                TRACKER_ICON_BUTTON_CLASS,
+              )}
+            >
+              <ExternalLink className="size-4" />
+            </a>
+          )}
         </div>
-        {item.jobUrl && (
-          <a
-            href={item.jobUrl}
-            target="_blank"
-            rel="noreferrer"
-            aria-label={`Open ${item.role} at ${item.company}`}
-            className="grid size-8 shrink-0 place-items-center rounded-lg text-muted transition-colors hover:bg-white hover:text-brand-700"
-          >
-            <ExternalLink className="size-4" />
-          </a>
-        )}
-      </div>
 
       <div className="mt-3 flex flex-wrap gap-1.5">
         <span
           className={cn(
-            "inline-flex items-center gap-1 rounded-full px-2 py-1 text-[11px] font-black ring-1 ring-inset",
+            "inline-flex items-center gap-1 rounded-full px-2 py-1 text-[11px] font-black",
             SOURCE_CLASSES[item.source],
           )}
         >
           {item.sourceLabel}
         </span>
-        <span className="inline-flex items-center gap-1 rounded-full bg-white px-2 py-1 text-[11px] font-black text-brand-700 ring-1 ring-inset ring-brand-100">
+        <span
+          className={cn(
+            "inline-flex items-center gap-1 rounded-full bg-white px-2 py-1 text-[11px] font-black text-brand-700",
+            TRACKER_CHIP_SHADOW_CLASS,
+          )}
+        >
           <Icon className="size-3" />
           {fieldText}
         </span>
         {item.matchScore > 0 && (
-          <span className="inline-flex rounded-full bg-emerald-50 px-2 py-1 text-[11px] font-black text-emerald-700 ring-1 ring-inset ring-emerald-100">
+          <span className="inline-flex rounded-full bg-emerald-50 px-2 py-1 text-[11px] font-black text-emerald-700 shadow-[0_8px_16px_-14px_rgba(5,150,105,0.5)]">
             {item.matchScore}% fit
           </span>
         )}
       </div>
 
-      <div className="mt-3 flex items-center justify-between gap-3 border-t border-zinc-100 pt-3">
+      <div className="mt-3 flex items-center justify-between gap-3 rounded-xl bg-zinc-50/80 px-3 py-2 shadow-[0_9px_18px_-16px_rgba(15,23,42,0.34)]">
         <p className="truncate text-xs font-bold text-muted">{item.location}</p>
         <time className="shrink-0 text-xs font-black text-ink">{formatDate(item.updatedAt)}</time>
       </div>
 
       {item.notes && <p className="mt-2 line-clamp-2 text-xs leading-5 text-ink/70">{item.notes}</p>}
 
-      <div className="mt-3 flex items-center gap-2 border-t border-zinc-100 pt-3">
-        <label className="sr-only" htmlFor={`tracker-stage-${item.id}`}>
+      <div className="mt-3 flex items-center gap-2 rounded-xl bg-zinc-50/75 p-2 shadow-[0_9px_18px_-16px_rgba(15,23,42,0.34)]">
+        <span className="sr-only" id={`tracker-stage-label-${item.id}`}>
           Move tracker item
-        </label>
-        <select
+        </span>
+        <DashboardSelect
           id={`tracker-stage-${item.id}`}
           value={item.stage}
           disabled={busy}
-          onChange={(event) => onStageChange(item, event.target.value as TrackerStage)}
-          className="h-9 min-w-0 flex-1 rounded-lg bg-zinc-50 px-2.5 text-xs font-black text-ink ring-1 ring-inset ring-zinc-200 outline-none transition-colors focus:ring-2 focus:ring-brand-500 disabled:opacity-60"
-        >
-          {stageOptions.map((option) => (
-            <option key={option.value} value={option.value}>
-              {option.label}
-            </option>
-          ))}
-        </select>
+          options={stageOptions}
+          onChange={(stage) => onStageChange(item, stage)}
+          ariaLabel={`Move ${item.role} at ${item.company}`}
+          className="min-w-0 flex-1"
+          buttonClassName={cn(
+            "h-9 min-w-0 flex-1 rounded-lg px-2.5 text-xs font-black text-ink outline-none transition-[background-color,box-shadow] disabled:opacity-60",
+            TRACKER_CONTROL_CLASS,
+            TRACKER_CONTROL_FOCUS_CLASS,
+          )}
+          maxMenuHeight={240}
+        />
         <button
           type="button"
           onClick={() => onEdit(item)}
           disabled={busy}
           aria-label={`Edit ${item.role} at ${item.company}`}
-          className="grid size-9 shrink-0 place-items-center rounded-lg text-muted transition-colors hover:bg-brand-50 hover:text-brand-700 disabled:pointer-events-none disabled:opacity-60"
+          className={cn(
+            "grid size-9 shrink-0 place-items-center rounded-lg hover:bg-brand-50 hover:text-brand-700 disabled:pointer-events-none disabled:opacity-60",
+            TRACKER_ICON_BUTTON_CLASS,
+          )}
         >
           <Pencil className="size-4" />
         </button>
@@ -761,7 +802,10 @@ function TrackerCard({
           onClick={() => onDelete(item)}
           disabled={busy}
           aria-label={`Delete ${item.role} at ${item.company}`}
-          className="grid size-9 shrink-0 place-items-center rounded-lg text-muted transition-colors hover:bg-red-50 hover:text-red-600 disabled:pointer-events-none disabled:opacity-60"
+          className={cn(
+            "grid size-9 shrink-0 place-items-center rounded-lg hover:bg-red-50 hover:text-red-600 disabled:pointer-events-none disabled:opacity-60",
+            TRACKER_ICON_BUTTON_CLASS,
+          )}
         >
           <Trash2 className="size-4" />
         </button>
@@ -822,13 +866,15 @@ function TrackerColumn({
       onDragLeave={(event) => onColumnDragLeave(column.id, event)}
       onDrop={(event) => onColumnDrop(column.id, event)}
       className={cn(
-        "flex min-h-[24rem] min-w-0 flex-col rounded-2xl bg-white/58 p-3 ring-1 ring-inset ring-white transition-colors",
-        draggingOver && "bg-brand-50/80 ring-brand-300",
+        "flex min-h-[24rem] min-w-0 flex-col rounded-2xl p-3 transition-[background-color,box-shadow]",
+        draggingOver
+          ? "bg-brand-50/80 shadow-[0_0_0_3px_rgba(31,100,224,0.18),0_18px_42px_-28px_rgba(31,100,224,0.45),0_8px_18px_-18px_rgba(15,23,42,0.18)]"
+          : TRACKER_PANEL_CLASS,
       )}
     >
       <div className="mb-3 flex items-center justify-between gap-3 px-1">
         <div className="flex items-center gap-2">
-          <span className="grid size-8 place-items-center rounded-xl bg-brand-50 text-brand-700 ring-1 ring-inset ring-brand-100">
+          <span className={cn("grid size-8 place-items-center rounded-xl bg-brand-50 text-brand-700", TRACKER_CHIP_SHADOW_CLASS)}>
             <Icon className="size-4" />
           </span>
           <div>
@@ -842,12 +888,15 @@ function TrackerColumn({
               type="button"
               onClick={() => onRemoveColumn(column)}
               aria-label={`Remove ${column.label} column`}
-              className="grid size-8 place-items-center rounded-xl text-muted transition-colors hover:bg-red-50 hover:text-red-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600"
+              className={cn(
+                "grid size-8 place-items-center rounded-xl hover:bg-red-50 hover:text-red-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600",
+                TRACKER_ICON_BUTTON_CLASS,
+              )}
             >
               <Trash2 className="size-4" />
             </button>
           )}
-          <span className="rounded-full bg-white px-2.5 py-1 text-xs font-black text-ink ring-1 ring-inset ring-zinc-200">
+          <span className={cn("rounded-full bg-white px-2.5 py-1 text-xs font-black text-ink", TRACKER_CHIP_SHADOW_CLASS)}>
             {items.length}
           </span>
         </div>
@@ -879,8 +928,9 @@ function TrackerColumn({
       {items.length === 0 && (
         <div
           className={cn(
-            "mt-1 flex flex-1 items-center justify-center rounded-xl border border-dashed border-zinc-200 bg-white/42 px-4 py-8 text-center transition-colors",
-            draggingOver && "border-brand-300 bg-white/70",
+            "mt-1 flex flex-1 items-center justify-center rounded-xl bg-white/62 px-4 py-8 text-center shadow-[0_10px_22px_-19px_rgba(15,23,42,0.34)] transition-[background-color,box-shadow]",
+            draggingOver &&
+              "bg-white/85 shadow-[0_0_0_3px_rgba(31,100,224,0.16),0_14px_28px_-22px_rgba(31,100,224,0.4)]",
           )}
         >
           <p className="text-xs font-bold leading-5 text-muted">
@@ -1013,6 +1063,14 @@ export function JobTrackerBoard({ initialPage }: { initialPage: TrackerPage }) {
 
   const stageOptions = useMemo(
     () => trackerColumns.map((column) => ({ value: column.id, label: column.label })),
+    [trackerColumns],
+  );
+
+  const stageFilterOptions = useMemo(
+    () => [
+      { value: "all" as StageFilter, label: "All stages" },
+      ...trackerColumns.map((column) => ({ value: column.id, label: column.label })),
+    ],
     [trackerColumns],
   );
 
@@ -1303,20 +1361,21 @@ export function JobTrackerBoard({ initialPage }: { initialPage: TrackerPage }) {
 
   return (
     <div className="w-full space-y-5">
-      <section className="liquid-glass rounded-2xl p-5 sm:p-6">
-        <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
-          <div className="max-w-2xl">
-            <h1 className="text-3xl font-extrabold tracking-[-0.03em] text-ink">Job tracker</h1>
-            <p className="mt-1 text-sm font-semibold leading-6 text-muted">
-              Applications from the extension, JobPosted sends, and manual entries in one board.
-            </p>
+      <section className="liquid-glass rounded-2xl px-4 py-3 sm:px-5">
+        <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+          <div className="flex min-w-0 flex-col gap-1.5 sm:flex-row sm:items-baseline sm:gap-3">
+            <h1 className="shrink-0 text-2xl font-extrabold tracking-[-0.03em] text-ink">Job tracker</h1>
+            <TrackerSummary summary={summary} />
           </div>
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
             <button
               type="button"
               onClick={exportCsv}
               disabled={total === 0 || exporting}
-              className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-white px-4 text-sm font-black text-ink ring-1 ring-inset ring-zinc-200 transition-colors hover:bg-brand-50 hover:text-brand-700 disabled:pointer-events-none disabled:opacity-50"
+              className={cn(
+                "inline-flex h-11 items-center justify-center gap-2 rounded-xl px-4 text-sm font-black disabled:pointer-events-none disabled:opacity-50",
+                TRACKER_BUTTON_CLASS,
+              )}
             >
               {exporting ? <Loader2 className="size-4 animate-spin" /> : <Download className="size-4" />}
               Download CSV
@@ -1329,7 +1388,10 @@ export function JobTrackerBoard({ initialPage }: { initialPage: TrackerPage }) {
                 setEditingItem(null);
                 setColumnPanelOpen((open) => !open);
               }}
-              className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-white px-4 text-sm font-black text-ink ring-1 ring-inset ring-zinc-200 transition-colors hover:bg-brand-50 hover:text-brand-700"
+              className={cn(
+                "inline-flex h-11 items-center justify-center gap-2 rounded-xl px-4 text-sm font-black",
+                TRACKER_BUTTON_CLASS,
+              )}
             >
               <ListChecks className="size-4" />
               Add column
@@ -1341,16 +1403,15 @@ export function JobTrackerBoard({ initialPage }: { initialPage: TrackerPage }) {
                 setEditingItem(null);
                 setManualOpen((open) => (editingItem ? true : !open));
               }}
-              className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-brand-600 px-4 text-sm font-black text-white transition-colors hover:bg-brand-700"
+              className={cn(
+                "inline-flex h-11 items-center justify-center gap-2 rounded-xl px-4 text-sm font-black",
+                TRACKER_PRIMARY_BUTTON_CLASS,
+              )}
             >
               <Plus className="size-4" />
               Add role
             </button>
           </div>
-        </div>
-
-        <div className="mt-5">
-          <TrackerSummary summary={summary} />
         </div>
       </section>
 
@@ -1371,14 +1432,20 @@ export function JobTrackerBoard({ initialPage }: { initialPage: TrackerPage }) {
       />
 
       {mutationError && (
-        <p className="rounded-xl bg-red-50 px-4 py-3 text-sm font-bold text-red-600 ring-1 ring-inset ring-red-100">
+        <p className="rounded-xl bg-red-50 px-4 py-3 text-sm font-bold text-red-600 shadow-[0_12px_24px_-20px_rgba(220,38,38,0.35)]">
           {mutationError}
         </p>
       )}
 
-      <section className="rounded-2xl bg-white/72 p-4 ring-1 ring-inset ring-white">
+      <section className={cn("rounded-2xl p-4", TRACKER_PANEL_CLASS)}>
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
-          <label className="flex h-11 flex-1 items-center gap-2 rounded-xl bg-white px-3 ring-1 ring-inset ring-zinc-200 focus-within:ring-2 focus-within:ring-brand-500">
+          <label
+            className={cn(
+              "flex h-11 flex-1 items-center gap-2 rounded-xl px-3 transition-[background-color,box-shadow]",
+              TRACKER_CONTROL_CLASS,
+              TRACKER_CONTROL_FOCUS_WITHIN_CLASS,
+            )}
+          >
             <Search className="size-4 shrink-0 text-muted" />
             <input
               type="search"
@@ -1401,63 +1468,51 @@ export function JobTrackerBoard({ initialPage }: { initialPage: TrackerPage }) {
           </label>
 
           <div className="grid gap-2 sm:grid-cols-3 lg:w-[36rem]">
-            <label className="sr-only" htmlFor="tracker-source">
-              Source
-            </label>
-            <select
+            <DashboardSelect
               id="tracker-source"
               value={source}
-              onChange={(e) => setSource(e.target.value as SourceFilter)}
-              className="h-11 rounded-xl bg-white px-3 text-sm font-bold text-ink ring-1 ring-inset ring-zinc-200 outline-none focus:ring-2 focus:ring-brand-500"
-              aria-label={sourceLabel(source)}
-            >
-              {SOURCE_FILTERS.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
+              ariaLabel="Source"
+              options={SOURCE_FILTERS}
+              onChange={setSource}
+              buttonClassName={cn(
+                "h-11 rounded-xl px-3 text-sm font-bold text-ink outline-none transition-[background-color,box-shadow]",
+                TRACKER_CONTROL_CLASS,
+                TRACKER_CONTROL_FOCUS_CLASS,
+              )}
+            />
 
-            <label className="sr-only" htmlFor="tracker-stage">
-              Stage
-            </label>
-            <select
+            <DashboardSelect
               id="tracker-stage"
               value={stage}
-              onChange={(e) => setStage(e.target.value as StageFilter)}
-              className="h-11 rounded-xl bg-white px-3 text-sm font-bold text-ink ring-1 ring-inset ring-zinc-200 outline-none focus:ring-2 focus:ring-brand-500"
-              aria-label={stageLabel(stage)}
-            >
-              <option value="all">All stages</option>
-              {trackerColumns.map((column) => (
-                <option key={column.id} value={column.id}>
-                  {column.label}
-                </option>
-              ))}
-            </select>
+              ariaLabel="Stage"
+              options={stageFilterOptions}
+              onChange={setStage}
+              buttonClassName={cn(
+                "h-11 rounded-xl px-3 text-sm font-bold text-ink outline-none transition-[background-color,box-shadow]",
+                TRACKER_CONTROL_CLASS,
+                TRACKER_CONTROL_FOCUS_CLASS,
+              )}
+            />
 
-            <label className="flex h-11 items-center gap-2 rounded-xl bg-white px-3 ring-1 ring-inset ring-zinc-200 focus-within:ring-2 focus-within:ring-brand-500">
-              <ArrowDownWideNarrow className="size-4 shrink-0 text-brand-600" />
-              <span className="sr-only">Sort tracker</span>
-              <select
-                value={sort}
-                onChange={(e) => setSort(e.target.value as TrackerSort)}
-                className="min-w-0 flex-1 bg-transparent text-sm font-bold text-ink outline-none"
-              >
-                {TRACKER_SORT_OPTIONS.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-            </label>
+            <DashboardSelect
+              value={sort}
+              ariaLabel="Sort tracker"
+              options={TRACKER_SORT_OPTIONS}
+              onChange={setSort}
+              icon={<ArrowDownWideNarrow className="size-4" />}
+              buttonClassName={cn(
+                "h-11 rounded-xl px-3 text-sm font-bold text-ink outline-none transition-[background-color,box-shadow]",
+                TRACKER_CONTROL_CLASS,
+                TRACKER_CONTROL_FOCUS_CLASS,
+              )}
+            />
           </div>
         </div>
       </section>
 
       {summary.tracked === 0 ? (
-        <section className="rounded-2xl bg-white/74 p-8 text-center ring-1 ring-inset ring-white">
-          <span className="mx-auto grid size-12 place-items-center rounded-2xl bg-brand-50 text-brand-700 ring-1 ring-inset ring-brand-100">
+        <section className={cn("rounded-2xl p-8 text-center", TRACKER_PANEL_CLASS)}>
+          <span className={cn("mx-auto grid size-12 place-items-center rounded-2xl bg-brand-50 text-brand-700", TRACKER_CHIP_SHADOW_CLASS)}>
             <BriefcaseBusiness className="size-5" />
           </span>
           <h2 className="mt-4 text-lg font-extrabold tracking-[-0.02em] text-ink">No roles tracked yet</h2>
@@ -1466,8 +1521,8 @@ export function JobTrackerBoard({ initialPage }: { initialPage: TrackerPage }) {
           </p>
         </section>
       ) : total === 0 ? (
-        <section className="rounded-2xl bg-white/74 p-8 text-center ring-1 ring-inset ring-white">
-          <span className="mx-auto grid size-12 place-items-center rounded-2xl bg-zinc-100 text-muted ring-1 ring-inset ring-zinc-200">
+        <section className={cn("rounded-2xl p-8 text-center", TRACKER_PANEL_CLASS)}>
+          <span className={cn("mx-auto grid size-12 place-items-center rounded-2xl bg-zinc-100 text-muted", TRACKER_CHIP_SHADOW_CLASS)}>
             <Search className="size-5" />
           </span>
           <h2 className="mt-4 text-lg font-extrabold tracking-[-0.02em] text-ink">No matches</h2>
@@ -1517,7 +1572,7 @@ export function JobTrackerBoard({ initialPage }: { initialPage: TrackerPage }) {
       )}
 
       {summary.tracked > 0 && (
-        <div className="flex flex-col gap-3 rounded-2xl bg-brand-50/80 px-4 py-3 text-sm ring-1 ring-inset ring-brand-100 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex flex-col gap-3 rounded-2xl bg-brand-50/80 px-4 py-3 text-sm shadow-[0_14px_30px_-24px_rgba(31,100,224,0.46),0_5px_12px_-10px_rgba(31,100,224,0.18)] sm:flex-row sm:items-center sm:justify-between">
           <p className="font-bold text-brand-900">
             Showing <span className="font-black">{items.length}</span> of{" "}
             <span className="font-black">{total}</span>
@@ -1528,7 +1583,7 @@ export function JobTrackerBoard({ initialPage }: { initialPage: TrackerPage }) {
                 type="button"
                 disabled={pageLoading}
                 onClick={() => void loadPage(items.length, "append")}
-                className="inline-flex h-9 items-center justify-center gap-2 rounded-xl bg-white px-3 text-xs font-black text-brand-800 ring-1 ring-inset ring-brand-100 transition-colors hover:bg-brand-100 disabled:pointer-events-none disabled:opacity-60"
+                className="inline-flex h-9 items-center justify-center gap-2 rounded-xl bg-white px-3 text-xs font-black text-brand-800 shadow-[0_10px_20px_-17px_rgba(31,100,224,0.38)] transition-[background-color,box-shadow] hover:bg-brand-100 hover:shadow-[0_14px_26px_-19px_rgba(31,100,224,0.45)] disabled:pointer-events-none disabled:opacity-60"
               >
                 {pageLoading ? <Loader2 className="size-3.5 animate-spin" /> : <Plus className="size-3.5" />}
                 Load more

@@ -42,11 +42,11 @@ export function ViewResumeButton({ application }: { application: JobApplication 
       disabled={!available || busy}
       title={available ? application.resumeName : "Resume artifact is not available yet"}
       className={cn(
-        "inline-flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-bold ring-1 ring-inset transition-colors",
+        "inline-flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-bold shadow-[0_8px_16px_-14px_rgba(15,23,42,0.4)] transition-[background-color,color,box-shadow]",
         available
-          ? "bg-white text-brand-700 ring-brand-200/70 hover:bg-brand-50 hover:ring-brand-300"
-          : "cursor-not-allowed bg-zinc-50 text-zinc-400 ring-zinc-200/70",
-        error && "bg-red-50 text-red-600 ring-red-200",
+          ? "bg-white text-brand-700 hover:bg-brand-50 hover:shadow-[0_12px_22px_-16px_rgba(31,100,224,0.4)]"
+          : "cursor-not-allowed bg-zinc-50 text-zinc-400",
+        error && "bg-red-50 text-red-600 shadow-[0_12px_22px_-16px_rgba(220,38,38,0.4)]",
       )}
     >
       {busy ? <Loader2 className="size-3.5 animate-spin" /> : <FileText className="size-3.5" />}

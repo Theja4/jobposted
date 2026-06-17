@@ -55,6 +55,11 @@ type SubscriptionRow = {
   trial_applications_used?: number | null;
 };
 
+type UsageSnapshotRow = SubscriptionRow & {
+  total_submitted?: number | null;
+  today_submitted?: number | null;
+};
+
 type InsertedApplicationRow = {
   id: string;
   job_id: string | null;
@@ -765,6 +770,7 @@ async function countSubmitted(
     .from("applications")
     .select("id", { count: "exact", head: true })
     .eq("user_id", userId)
+    .eq("apply_path", "server")
     .not("submitted_at", "is", null);
   if (range) query = query.gte("submitted_at", range.gte).lt("submitted_at", range.lt);
   const { count, error } = await query;
@@ -776,6 +782,32 @@ async function readUsageStatus(client: SchemaScopedClient, userId: string, now: 
   const dayStart = startOfUtcDay(now);
   const nextDay = new Date(dayStart);
   nextDay.setUTCDate(nextDay.getUTCDate() + 1);
+
+  if (typeof client.rpc === "function") {
+    const { data, error } = await client
+      .rpc("application_usage_snapshot", {
+        p_user_id: userId,
+        p_usage_date: dayStart.toISOString().slice(0, 10),
+      })
+      .maybeSingle();
+
+    if (!error && data) {
+      const row = data as UsageSnapshotRow;
+      const hasSubscription = Boolean(row.plan || row.status || row.daily_limit || row.trial_applications_used);
+      return computeUsageStatus({
+        subscription: hasSubscription
+          ? {
+              plan: parsePlan(row.plan) as BillingPlanId | null,
+              status: row.status as BillingStatus | null,
+              dailyLimit: row.daily_limit ?? null,
+              trialApplicationsUsed: row.trial_applications_used ?? null,
+            }
+          : null,
+        totalSubmitted: row.total_submitted ?? 0,
+        todaySubmitted: row.today_submitted ?? 0,
+      });
+    }
+  }
 
   const [{ data: subscription }, totalSubmitted, todaySubmitted] = await Promise.all([
     client.from("subscriptions").select("*").eq("user_id", userId).maybeSingle(),

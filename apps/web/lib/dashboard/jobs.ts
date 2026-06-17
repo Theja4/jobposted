@@ -15,6 +15,8 @@ type JobRow = {
   source_job_id: string | null;
   ats_type: string | null;
   company: string | null;
+  company_domain?: string | null;
+  company_logo_url?: string | null;
   title: string | null;
   location: string | null;
   remote: string | null;
@@ -29,8 +31,13 @@ type JobRow = {
   ingested_at: string | null;
 };
 
-const BASE_JOB_SELECT =
+type JobBoardRpcRow = JobRow & {
+  total_count?: number | null;
+};
+
+const CORE_JOB_SELECT =
   "id,source,source_job_id,ats_type,company,title,location,remote,description_md,apply_url,salary_min,salary_max,salary_currency,posted_at,ingested_at";
+const BASE_JOB_SELECT = `${CORE_JOB_SELECT},company_domain,company_logo_url`;
 const JOB_SELECT = `${BASE_JOB_SELECT},job_type,seniority`;
 
 export type JobBoardSort = "recent" | "company" | "role" | "salary";
@@ -75,6 +82,8 @@ const OPTIONAL_JOB_BOARD_COLUMNS = [
   "salary_listed",
   "salary_ceiling",
   "source_family",
+  "company_domain",
+  "company_logo_url",
 ];
 
 const KEYWORD_TAGS: Array<{ tag: string; terms: string[] }> = [
@@ -338,6 +347,19 @@ async function trackedJobIds(
   return Array.from(new Set((data ?? []).map((row) => String(row.job_id)).filter(Boolean)));
 }
 
+async function userIdForTrackedExclusion(
+  supabase: Awaited<ReturnType<typeof createSupabaseServerClient>>,
+  enabled: boolean,
+) {
+  if (!enabled) return null;
+  const {
+    data: { user },
+    error,
+  } = await supabase.auth.getUser();
+  if (error || !user?.id) return null;
+  return user.id;
+}
+
 function mapJobRow(row: JobRow): JobListing {
   const title = cleanText(row.title) || "Open role";
   const company = cleanText(row.company) || "Unknown company";
@@ -349,6 +371,8 @@ function mapJobRow(row: JobRow): JobListing {
     id: row.id,
     title,
     company,
+    companyDomain: row.company_domain ?? null,
+    companyLogoUrl: row.company_logo_url ?? null,
     location: cleanText(row.location) || "Remote or unknown",
     workplace: workplaceFrom(row.remote),
     type: typeFrom(row),
@@ -374,7 +398,7 @@ async function fetchJobRows(
   to: number,
   trackedIds: string[],
 ) {
-  const select = schemaMode === "modern" ? JOB_SELECT : BASE_JOB_SELECT;
+  const select = schemaMode === "modern" ? JOB_SELECT : CORE_JOB_SELECT;
   let query = supabase
     .from("jobs")
     .select(select, { count: "exact" })
@@ -453,6 +477,53 @@ async function fetchJobRows(
   };
 }
 
+async function fetchJobRowsRpc(
+  supabase: Awaited<ReturnType<typeof createSupabaseServerClient>>,
+  filters: JobBoardFilters,
+  from: number,
+) {
+  const userId = await userIdForTrackedExclusion(supabase, filters.hideTracked);
+  const args = {
+    p_user_id: userId,
+    p_query: filters.query,
+    p_workplace: filters.workplace,
+    p_posted_after: dateCutoff(filters.datePosted),
+    p_location: filters.location,
+    p_job_type: filters.jobType,
+    p_seniority: filters.seniority,
+    p_salary_listed: filters.salaryListed,
+    p_min_salary: filters.minSalary,
+    p_company: filters.company,
+    p_exclude_companies: excludedCompanies(filters.excludeCompany),
+    p_source: filters.source,
+    p_visa_sponsorship: filters.visaSponsorship,
+    p_hide_tracked: Boolean(userId && filters.hideTracked),
+    p_sort: filters.sort,
+    p_limit: filters.pageSize,
+    p_offset: from,
+  };
+  const { data, error } = await supabase.rpc("job_board_listings_page", args);
+  const rows = Array.isArray(data) ? (data as unknown as JobBoardRpcRow[]) : [];
+  if (!error && rows.length === 0 && from > 0) {
+    const { data: countProbe } = await supabase.rpc("job_board_listings_page", {
+      ...args,
+      p_limit: 1,
+      p_offset: 0,
+    });
+    const countRows = Array.isArray(countProbe) ? (countProbe as unknown as JobBoardRpcRow[]) : [];
+    return {
+      rows: [] as JobRow[],
+      error,
+      count: Number(countRows[0]?.total_count ?? 0),
+    };
+  }
+  return {
+    rows: rows as JobRow[],
+    error,
+    count: Number(rows[0]?.total_count ?? 0),
+  };
+}
+
 export async function getJobBoardListings(
   params: Record<string, unknown> = {},
 ): Promise<JobBoardListingPage> {
@@ -460,34 +531,41 @@ export async function getJobBoardListings(
   const supabase = await createSupabaseServerClient();
   const from = (filters.page - 1) * filters.pageSize;
   const to = from + filters.pageSize - 1;
-  const trackedIds = filters.hideTracked ? await trackedJobIds(supabase) : [];
 
   let schemaMode: "modern" | "legacy" = "modern";
-  let { rows, error, count } = await fetchJobRows(supabase, filters, "modern", from, to, trackedIds);
+  const rpcResult = await fetchJobRowsRpc(supabase, filters, from);
+  let rows = rpcResult.rows;
+  let error = rpcResult.error;
+  let count: number | null = rpcResult.count;
 
-  if (error && isMissingOptionalJobBoardColumn(error)) {
-    schemaMode = "legacy";
-    const shouldClientFilter = needsLegacyClientFiltering(filters);
-    const legacyTo = shouldClientFilter
-      ? Math.min(Math.max(to, filters.pageSize - 1), LEGACY_CLIENT_FILTER_LIMIT - 1)
-      : to;
-    const legacy = await fetchJobRows(
-      supabase,
-      filters,
-      "legacy",
-      shouldClientFilter ? 0 : from,
-      legacyTo,
-      trackedIds,
-    );
+  if (error) {
+    const trackedIds = filters.hideTracked ? await trackedJobIds(supabase) : [];
+    ({ rows, error, count } = await fetchJobRows(supabase, filters, "modern", from, to, trackedIds));
 
-    rows = legacy.rows;
-    error = legacy.error;
-    count = legacy.count;
+    if (error && isMissingOptionalJobBoardColumn(error)) {
+      schemaMode = "legacy";
+      const shouldClientFilter = needsLegacyClientFiltering(filters);
+      const legacyTo = shouldClientFilter
+        ? Math.min(Math.max(to, filters.pageSize - 1), LEGACY_CLIENT_FILTER_LIMIT - 1)
+        : to;
+      const legacy = await fetchJobRows(
+        supabase,
+        filters,
+        "legacy",
+        shouldClientFilter ? 0 : from,
+        legacyTo,
+        trackedIds,
+      );
 
-    if (!error && shouldClientFilter) {
-      const filteredRows = rows.filter((row) => legacyRowMatches(row, filters));
-      rows = filteredRows.slice(from, to + 1);
-      count = filteredRows.length;
+      rows = legacy.rows;
+      error = legacy.error;
+      count = legacy.count;
+
+      if (!error && shouldClientFilter) {
+        const filteredRows = rows.filter((row) => legacyRowMatches(row, filters));
+        rows = filteredRows.slice(from, to + 1);
+        count = filteredRows.length;
+      }
     }
   }
 

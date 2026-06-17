@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { NextResponse } from "next/server";
+import { resolveCompanyAssetsFromJobUrl } from "@jobposted/shared";
 import { getServiceRoleClient } from "@/lib/supabase/service-role";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import {
@@ -189,6 +190,9 @@ export async function POST(request: Request) {
   const writeClient = getServiceRoleClient();
   const client = writeClient ?? supabase;
   let jobId: string | null = payload.jobId ?? null;
+  const companyAssets = payload.jobUrl
+    ? await resolveCompanyAssetsFromJobUrl({ applyUrl: payload.jobUrl }, { timeoutMs: 2500 })
+    : { companyDomain: null, companyLogoUrl: null, companyLogoResolvedAt: null };
   const { data: profile } = await supabase
     .from("profiles")
     .select("active_resume_version_id")
@@ -209,6 +213,17 @@ export async function POST(request: Request) {
     }
   }
 
+  if (jobId && writeClient && (companyAssets.companyDomain || companyAssets.companyLogoUrl)) {
+    const jobPatch: Record<string, unknown> = {};
+    if (companyAssets.companyDomain) jobPatch.company_domain = companyAssets.companyDomain;
+    if (companyAssets.companyLogoUrl) {
+      jobPatch.company_logo_url = companyAssets.companyLogoUrl;
+      jobPatch.company_logo_resolved_at = companyAssets.companyLogoResolvedAt ?? now;
+    }
+    const { error: logoUpdateError } = await writeClient.from("jobs").update(jobPatch).eq("id", jobId);
+    if (logoUpdateError) console.error("tracker job logo update failed", logoUpdateError);
+  }
+
   if (!jobId && writeClient) {
     const { data: job, error: jobError } = await writeClient
       .from("jobs")
@@ -226,6 +241,13 @@ export async function POST(request: Request) {
           }),
           ats_type: "other",
           company: payload.company,
+          ...(companyAssets.companyDomain ? { company_domain: companyAssets.companyDomain } : {}),
+          ...(companyAssets.companyLogoUrl
+            ? {
+                company_logo_url: companyAssets.companyLogoUrl,
+                company_logo_resolved_at: companyAssets.companyLogoResolvedAt ?? now,
+              }
+            : {}),
           title: payload.role,
           location: payload.location || null,
           remote: "unknown",
@@ -266,6 +288,8 @@ export async function POST(request: Request) {
       source: payload.source ?? "manual",
       matchScore: payload.matchScore ?? null,
       company: payload.company,
+      companyDomain: companyAssets.companyDomain,
+      companyLogoUrl: companyAssets.companyLogoUrl,
       role: payload.role,
       location: payload.location || null,
       jobUrl: payload.jobUrl || null,
@@ -283,15 +307,24 @@ export async function POST(request: Request) {
     submitted_at: payload.stage === "inbox" ? null : now,
   };
 
-  const query = jobId
-    ? client
-        .from("applications")
-        .upsert(applicationRow, { onConflict: "user_id,job_id" })
-        .select("id")
-        .single()
-    : client.from("applications").insert(applicationRow).select("id").single();
-
-  const { data: application, error: applicationError } = await query;
+  const { data: application, error: applicationError } = await client
+    .rpc("upsert_application_log", {
+      p_user_id: applicationRow.user_id,
+      p_job_id: applicationRow.job_id,
+      p_status: applicationRow.status,
+      p_apply_path: applicationRow.apply_path,
+      p_resume_doc_id: applicationRow.resume_doc_id,
+      p_cover_letter_doc_id: applicationRow.cover_letter_doc_id,
+      p_field_map: applicationRow.field_map,
+      p_screenshot_path: applicationRow.screenshot_path,
+      p_failure_reason: applicationRow.failure_reason,
+      p_base_version_id: applicationRow.base_version_id,
+      p_resume_variant_id: applicationRow.resume_variant_id,
+      p_tailoring_delta: applicationRow.tailoring_delta,
+      p_rendered_pdf_path: applicationRow.rendered_pdf_path,
+      p_submitted_at: applicationRow.submitted_at,
+    })
+    .single();
   if (applicationError) {
     console.error("manual tracker application upsert failed", applicationError);
     return NextResponse.json(
@@ -299,11 +332,18 @@ export async function POST(request: Request) {
       { status: 500 },
     );
   }
+  const savedApplication = application as { id: string; job_id: string | null } | null;
+  if (!savedApplication?.id) {
+    return NextResponse.json(
+      { ok: false, message: "Tracker item was saved, but could not be reloaded." },
+      { status: 500 },
+    );
+  }
 
   const { data: row, error: readError } = await client
     .from("applications")
     .select(TRACKER_APPLICATION_SELECT)
-    .eq("id", application.id)
+    .eq("id", savedApplication.id)
     .single();
 
   if (readError || !row) {
@@ -355,10 +395,15 @@ export async function PATCH(request: Request) {
 
   const nextFieldMap = { ...asRecord(loaded.row.field_map) };
   const manual = { ...asRecord(nextFieldMap.manual) };
+  const nextCompanyAssets = payload.jobUrl
+    ? await resolveCompanyAssetsFromJobUrl({ applyUrl: payload.jobUrl }, { timeoutMs: 2500 })
+    : null;
   if (payload.role !== undefined) nextFieldMap.role = payload.role;
   if (payload.company !== undefined) nextFieldMap.company = payload.company;
   if (payload.location !== undefined) nextFieldMap.location = payload.location || null;
   if (payload.jobUrl !== undefined) nextFieldMap.jobUrl = payload.jobUrl || null;
+  if (nextCompanyAssets?.companyDomain) nextFieldMap.companyDomain = nextCompanyAssets.companyDomain;
+  if (nextCompanyAssets?.companyLogoUrl) nextFieldMap.companyLogoUrl = nextCompanyAssets.companyLogoUrl;
   if (payload.notes !== undefined) manual.notes = payload.notes || null;
   nextFieldMap.manual = manual;
 
@@ -392,6 +437,11 @@ export async function PATCH(request: Request) {
   if (payload.company !== undefined) jobUpdate.company = payload.company;
   if (payload.location !== undefined) jobUpdate.location = payload.location || null;
   if (payload.jobUrl !== undefined) jobUpdate.apply_url = payload.jobUrl || null;
+  if (nextCompanyAssets?.companyDomain) jobUpdate.company_domain = nextCompanyAssets.companyDomain;
+  if (nextCompanyAssets?.companyLogoUrl) {
+    jobUpdate.company_logo_url = nextCompanyAssets.companyLogoUrl;
+    jobUpdate.company_logo_resolved_at = nextCompanyAssets.companyLogoResolvedAt ?? new Date().toISOString();
+  }
 
   if (writeClient && job && jobCanBeEdited && Object.keys(jobUpdate).length > 0) {
     const { error: jobUpdateError } = await writeClient

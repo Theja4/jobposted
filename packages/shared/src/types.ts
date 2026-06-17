@@ -137,6 +137,9 @@ export interface RawJob {
   sourceJobId: string;
   atsType: AtsType;
   company: string;
+  companyDomain?: string | null;
+  companyLogoUrl?: string | null;
+  companyLogoResolvedAt?: string | null;
   title: string;
   /** Free-text location as the source gave it (e.g. "San Francisco, CA / Remote"). */
   location: string | null;
@@ -159,6 +162,9 @@ export interface Job {
   sourceJobId: string;
   atsType: AtsType;
   company: string;
+  companyDomain?: string | null;
+  companyLogoUrl?: string | null;
+  companyLogoResolvedAt?: string | null;
   title: string;
   location: string | null;
   remote: RemoteType;

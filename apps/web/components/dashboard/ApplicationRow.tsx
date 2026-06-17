@@ -1,6 +1,7 @@
 import { STATUS_META, type JobApplication } from "@/lib/dashboard/sample-data";
 import { ViewResumeButton } from "./ResumeViewer";
 import { cn } from "@/lib/cn";
+import { CompanyAvatar } from "./CompanyAvatar";
 
 export function formatApplicationDate(iso: string) {
   return new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric" });
@@ -11,7 +12,7 @@ function StatusPill({ status }: { status: JobApplication["status"] }) {
   return (
     <span
       className={cn(
-        "inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-black ring-1 ring-inset",
+        "inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-black",
         meta.className,
       )}
     >
@@ -22,10 +23,11 @@ function StatusPill({ status }: { status: JobApplication["status"] }) {
 
 export function ApplicationRow({ application }: { application: JobApplication }) {
   return (
-    <div className="flex flex-wrap items-center gap-x-4 gap-y-3 rounded-2xl bg-white/70 px-4 py-3.5 ring-1 ring-inset ring-white transition-colors hover:bg-white">
-      <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-[linear-gradient(150deg,#dceaff,#9fcbff)] text-sm font-black text-brand-800">
-        {application.company.slice(0, 1)}
-      </span>
+    <div className="flex flex-wrap items-center gap-x-4 gap-y-3 rounded-2xl bg-white/88 px-4 py-3.5 shadow-[0_16px_34px_-28px_rgba(15,23,42,0.48),0_8px_18px_-18px_rgba(15,23,42,0.18)] transition-[background-color,box-shadow] hover:bg-white hover:shadow-[0_20px_40px_-30px_rgba(31,100,224,0.34),0_8px_18px_-18px_rgba(15,23,42,0.2)]">
+      <CompanyAvatar
+        company={application.company}
+        logoUrl={application.companyLogoUrl}
+      />
 
       <div className="min-w-[12rem] flex-1">
         <p className="truncate text-sm font-extrabold text-ink">{application.role}</p>

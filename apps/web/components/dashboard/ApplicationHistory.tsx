@@ -12,7 +12,7 @@ export function ApplicationHistory({
   limit?: number;
   showHeader?: boolean;
 }) {
-  const rows = limit ? applications.slice(0, limit) : applications;
+  const rows = limit ? applications.slice(0, limit) : applications.slice(0, 20);
 
   return (
     <section className="liquid-glass rounded-[1.75rem] p-6 sm:p-7">

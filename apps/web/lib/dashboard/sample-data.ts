@@ -18,6 +18,8 @@ export interface JobApplication {
   id: string;
   role: string;
   company: string;
+  companyDomain?: string | null;
+  companyLogoUrl?: string | null;
   location: string;
   appliedOn: string; // ISO date
   appliedAt?: string; // time-of-day label, e.g. "09:14"
@@ -33,14 +35,14 @@ export const STATUS_META: Record<
   ApplicationStatus,
   { label: string; className: string }
 > = {
-  queued: { label: "Queued", className: "bg-sky-50 text-sky-700 ring-sky-200/70" },
-  filled: { label: "Filled", className: "bg-amber-50 text-amber-700 ring-amber-200/70" },
-  submitted: { label: "Submitted", className: "bg-brand-50 text-brand-700 ring-brand-200/70" },
-  applied: { label: "Applied", className: "bg-brand-50 text-brand-700 ring-brand-200/70" },
-  viewed: { label: "Viewed", className: "bg-sky-50 text-sky-700 ring-sky-200/70" },
-  interview: { label: "Interview", className: "bg-[#fff4dd] text-[#9a6a09] ring-[#f8d68a]/70" },
-  offer: { label: "Offer", className: "bg-emerald-50 text-emerald-700 ring-emerald-200/70" },
-  rejected: { label: "Closed", className: "bg-zinc-100 text-zinc-500 ring-zinc-200/70" },
+  queued: { label: "Queued", className: "bg-sky-50 text-sky-700 shadow-[0_8px_16px_-14px_rgba(2,132,199,0.5)]" },
+  filled: { label: "Filled", className: "bg-amber-50 text-amber-700 shadow-[0_8px_16px_-14px_rgba(217,119,6,0.5)]" },
+  submitted: { label: "Submitted", className: "bg-brand-50 text-brand-700 shadow-[0_8px_16px_-14px_rgba(31,100,224,0.5)]" },
+  applied: { label: "Applied", className: "bg-brand-50 text-brand-700 shadow-[0_8px_16px_-14px_rgba(31,100,224,0.5)]" },
+  viewed: { label: "Viewed", className: "bg-sky-50 text-sky-700 shadow-[0_8px_16px_-14px_rgba(2,132,199,0.5)]" },
+  interview: { label: "Interview", className: "bg-[#fff4dd] text-[#9a6a09] shadow-[0_8px_16px_-14px_rgba(217,119,6,0.5)]" },
+  offer: { label: "Offer", className: "bg-emerald-50 text-emerald-700 shadow-[0_8px_16px_-14px_rgba(5,150,105,0.5)]" },
+  rejected: { label: "Closed", className: "bg-zinc-100 text-zinc-500 shadow-[0_8px_16px_-14px_rgba(15,23,42,0.42)]" },
 };
 
 export const APPLICATIONS: JobApplication[] = [
@@ -164,6 +166,8 @@ export interface JobListing {
   id: string;
   title: string;
   company: string;
+  companyDomain?: string | null;
+  companyLogoUrl?: string | null;
   location: string;
   workplace: Workplace;
   type: JobType;

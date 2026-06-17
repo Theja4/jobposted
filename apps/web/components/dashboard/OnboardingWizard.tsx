@@ -36,7 +36,9 @@ import {
   type OnboardingExperience,
   type WorkLocationPreference,
 } from "@/lib/onboarding/model";
+import { POPULAR_JOB_TITLE_QUICK_PICKS, POPULAR_JOB_TITLES } from "@/lib/onboarding/job-titles";
 import type { SourceDocument } from "@/lib/profile/resume-version";
+import { DashboardSelect } from "./DashboardSelect";
 
 type WizardStep = 0 | 1 | 2 | 3;
 type SaveIntent = "save";
@@ -121,11 +123,19 @@ const CURRENCIES = [
   "BRL",
   "MXN",
 ];
+const CURRENCY_OPTIONS = CURRENCIES.map((code) => ({ value: code, label: code }));
+const SPONSORSHIP_OPTIONS = [
+  { value: "", label: "Prefer not to say" },
+  { value: "no", label: "Authorized, no sponsorship needed" },
+  { value: "yes", label: "Needs visa sponsorship" },
+];
 
 const EASE = [0.22, 1, 0.36, 1] as const;
 const labelCls = "mb-1.5 flex items-center gap-2 text-xs font-bold text-ink/75";
 const inputCls =
   "h-11 w-full rounded-xl bg-white/80 px-3.5 text-sm font-semibold text-ink shadow-sm outline-none ring-1 ring-inset ring-zinc-200/80 transition-all placeholder:text-zinc-400 hover:ring-zinc-300 focus:bg-white focus:ring-2 focus:ring-brand-500";
+const selectButtonCls =
+  "h-11 w-full rounded-xl bg-white px-3.5 text-sm font-semibold text-ink shadow-[0_12px_26px_-22px_rgba(15,23,42,0.48),0_3px_10px_-9px_rgba(15,23,42,0.18)] outline-none transition-[background-color,color,box-shadow] hover:bg-brand-50 focus:shadow-[0_0_0_3px_rgba(31,100,224,0.18),0_12px_26px_-22px_rgba(15,23,42,0.48),0_3px_10px_-9px_rgba(15,23,42,0.18)]";
 
 function OptionalBadge() {
   return (
@@ -881,7 +891,8 @@ function StepSearch({
             value={config.search.titles}
             max={5}
             placeholder="Product Manager"
-            suggestions={["Product Manager", "Product Owner", "Product Marketing Manager", "Solutions Manager", "Category Manager"]}
+            suggestions={[...POPULAR_JOB_TITLE_QUICK_PICKS]}
+            autocompleteSuggestions={POPULAR_JOB_TITLES}
             onChange={(titles) => patchSearch({ titles })}
           />
         </Panel>
@@ -1120,7 +1131,7 @@ function StepProfile({
               Sponsorship
               <OptionalBadge />
             </span>
-            <select
+            <DashboardSelect
               value={
                 config.profile.workAuth.needsSponsorship === true
                   ? "yes"
@@ -1128,18 +1139,16 @@ function StepProfile({
                     ? "no"
                     : ""
               }
-              onChange={(event) =>
+              options={SPONSORSHIP_OPTIONS}
+              onChange={(value) =>
                 patchWorkAuth({
                   needsSponsorship:
-                    event.target.value === "yes" ? true : event.target.value === "no" ? false : null,
+                    value === "yes" ? true : value === "no" ? false : null,
                 })
               }
-              className={inputCls}
-            >
-              <option value="">Prefer not to say</option>
-              <option value="no">Authorized, no sponsorship needed</option>
-              <option value="yes">Needs visa sponsorship</option>
-            </select>
+              ariaLabel="Sponsorship"
+              buttonClassName={selectButtonCls}
+            />
           </div>
         </div>
         <div className="mt-4">
@@ -1179,18 +1188,14 @@ function StepProfile({
                   }
                   className={inputCls}
                 />
-                <select
+                <DashboardSelect
                   value={config.profile.workAuth.currentSalaryCurrency}
-                  onChange={(event) => patchWorkAuth({ currentSalaryCurrency: event.target.value })}
-                  className={inputCls}
-                  aria-label="Current salary currency"
-                >
-                  {CURRENCIES.map((code) => (
-                    <option key={code} value={code}>
-                      {code}
-                    </option>
-                  ))}
-                </select>
+                  options={CURRENCY_OPTIONS}
+                  onChange={(currentSalaryCurrency) => patchWorkAuth({ currentSalaryCurrency })}
+                  ariaLabel="Current salary currency"
+                  buttonClassName={selectButtonCls}
+                  align="right"
+                />
               </div>
             </div>
             <div>
@@ -1221,18 +1226,14 @@ function StepProfile({
                   }
                   className={inputCls}
                 />
-                <select
+                <DashboardSelect
                   value={config.profile.workAuth.salaryCurrency}
-                  onChange={(event) => patchWorkAuth({ salaryCurrency: event.target.value })}
-                  className={inputCls}
-                  aria-label="Expected salary currency"
-                >
-                  {CURRENCIES.map((code) => (
-                    <option key={code} value={code}>
-                      {code}
-                    </option>
-                  ))}
-                </select>
+                  options={CURRENCY_OPTIONS}
+                  onChange={(salaryCurrency) => patchWorkAuth({ salaryCurrency })}
+                  ariaLabel="Expected salary currency"
+                  buttonClassName={selectButtonCls}
+                  align="right"
+                />
               </div>
             </div>
           </div>
@@ -1736,13 +1737,13 @@ function SelectField({
         {label}
         {optional && <OptionalBadge />}
       </span>
-      <select value={value} onChange={(event) => onChange(event.target.value)} className={inputCls}>
-        {options.map((option) => (
-          <option key={option} value={option}>
-            {option}
-          </option>
-        ))}
-      </select>
+      <DashboardSelect
+        value={value}
+        options={options.map((option) => ({ value: option, label: option }))}
+        onChange={onChange}
+        ariaLabel={label}
+        buttonClassName={selectButtonCls}
+      />
     </label>
   );
 }
@@ -1783,10 +1784,31 @@ function Segmented({
   );
 }
 
+function normalizeTitleQuery(value: string) {
+  return value.toLowerCase().replace(/[^a-z0-9+#.]+/g, " ").replace(/\s+/g, " ").trim();
+}
+
+function titleMatchScore(title: string, query: string) {
+  const normalizedTitle = normalizeTitleQuery(title);
+  if (!normalizedTitle || !query) return -1;
+  if (normalizedTitle === query) return 0;
+  if (normalizedTitle.startsWith(query)) return 1;
+  const titleWords = normalizedTitle.split(" ");
+  if (titleWords.some((word) => word.startsWith(query))) return 2;
+  if (normalizedTitle.includes(query)) return 3;
+  const queryWords = query.split(" ").filter(Boolean);
+  if (queryWords.every((queryWord) => titleWords.some((titleWord) => titleWord.startsWith(queryWord)))) {
+    return 4;
+  }
+  if (queryWords.every((queryWord) => normalizedTitle.includes(queryWord))) return 5;
+  return -1;
+}
+
 function TagInput({
   label,
   value,
   suggestions,
+  autocompleteSuggestions,
   placeholder,
   max = 20,
   onChange,
@@ -1794,16 +1816,40 @@ function TagInput({
   label?: string;
   value: string[];
   suggestions?: string[];
+  autocompleteSuggestions?: string[];
   placeholder: string;
   max?: number;
   onChange: (value: string[]) => void;
 }) {
   const [input, setInput] = useState("");
+  const [focused, setFocused] = useState(false);
+  const [activeIndex, setActiveIndex] = useState(0);
   const remaining = Math.max(0, max - value.length);
   const suggestionList = useMemo(
     () => (suggestions ?? []).filter((item) => !value.includes(item)).slice(0, remaining || 0),
     [remaining, suggestions, value],
   );
+  const dropdownSuggestions = useMemo(() => {
+    if (!autocompleteSuggestions || value.length >= max) return [];
+    const query = normalizeTitleQuery(input);
+    if (!query) return [];
+    const selected = new Set(value.map((item) => item.toLowerCase()));
+    return autocompleteSuggestions
+      .map((title) => ({ title, score: titleMatchScore(title, query) }))
+      .filter(({ title, score }) => score >= 0 && !selected.has(title.toLowerCase()))
+      .sort((a, b) => a.score - b.score || a.title.length - b.title.length || a.title.localeCompare(b.title))
+      .slice(0, Math.min(16, remaining || 16))
+      .map(({ title }) => title);
+  }, [autocompleteSuggestions, input, max, remaining, value]);
+  const showDropdown = focused && dropdownSuggestions.length > 0;
+
+  useEffect(() => {
+    setActiveIndex(0);
+  }, [input]);
+
+  useEffect(() => {
+    if (activeIndex >= dropdownSuggestions.length) setActiveIndex(0);
+  }, [activeIndex, dropdownSuggestions.length]);
 
   function add(raw: string) {
     const parts = raw
@@ -1823,7 +1869,7 @@ function TagInput({
   return (
     <div>
       {label && <SectionLabel>{label}</SectionLabel>}
-      <div className="rounded-xl bg-white p-2 ring-1 ring-inset ring-zinc-200 focus-within:ring-2 focus-within:ring-brand-500">
+      <div className="relative rounded-xl bg-white p-2 ring-1 ring-inset ring-zinc-200 focus-within:ring-2 focus-within:ring-brand-500">
         <div className="flex flex-wrap gap-2">
           {value.map((item) => (
             <span
@@ -1839,18 +1885,70 @@ function TagInput({
           <input
             value={input}
             disabled={value.length >= max}
+            onFocus={() => setFocused(true)}
             onChange={(event) => setInput(event.target.value)}
             onKeyDown={(event) => {
+              if (showDropdown && event.key === "ArrowDown") {
+                event.preventDefault();
+                setActiveIndex((index) => (index + 1) % dropdownSuggestions.length);
+                return;
+              }
+              if (showDropdown && event.key === "ArrowUp") {
+                event.preventDefault();
+                setActiveIndex((index) => (index - 1 + dropdownSuggestions.length) % dropdownSuggestions.length);
+                return;
+              }
+              if (showDropdown && event.key === "Enter") {
+                event.preventDefault();
+                add(dropdownSuggestions[activeIndex] ?? input);
+                return;
+              }
+              if (showDropdown && event.key === "Escape") {
+                event.preventDefault();
+                setFocused(false);
+                return;
+              }
               if (event.key === "Enter" || event.key === ",") {
                 event.preventDefault();
                 add(input);
               }
             }}
-            onBlur={() => add(input)}
+            onBlur={() => {
+              setFocused(false);
+              add(input);
+            }}
             placeholder={value.length >= max ? "Limit reached" : placeholder}
+            aria-autocomplete={autocompleteSuggestions ? "list" : undefined}
+            aria-expanded={autocompleteSuggestions ? showDropdown : undefined}
             className="h-8 min-w-[12rem] flex-1 bg-transparent px-1 text-sm font-semibold text-ink outline-none placeholder:text-zinc-500"
           />
         </div>
+        {showDropdown && (
+          <div
+            role="listbox"
+            className="absolute right-2 left-2 top-[calc(100%+0.5rem)] z-30 max-h-72 overflow-auto rounded-xl bg-white p-1.5 shadow-[0_16px_34px_rgba(15,23,42,0.16)] ring-1 ring-inset ring-zinc-200"
+          >
+            {dropdownSuggestions.map((item, index) => (
+              <button
+                key={item}
+                type="button"
+                role="option"
+                aria-selected={index === activeIndex}
+                onMouseEnter={() => setActiveIndex(index)}
+                onMouseDown={(event) => {
+                  event.preventDefault();
+                  add(item);
+                }}
+                className={cn(
+                  "flex w-full items-center rounded-lg px-3 py-2 text-left text-sm font-bold transition-colors",
+                  index === activeIndex ? "bg-brand-50 text-brand-800" : "text-ink hover:bg-zinc-50",
+                )}
+              >
+                {item}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
       {suggestionList.length > 0 && (
         <div className="mt-2 flex flex-wrap gap-2">

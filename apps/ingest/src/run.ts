@@ -14,6 +14,11 @@ import { fetchLeverCompany } from "./sources/lever";
 import { embedJobs } from "./embed";
 import { upsertJobs } from "./upsert";
 import { runBackfill, type BackfillSummary } from "./backfill";
+import {
+  runCompanyAssetBackfill,
+  type CompanyAssetBackfillSummary,
+} from "./company-assets-backfill";
+import { enrichRawJobsWithCompanyAssets } from "./company-assets";
 import { countBoards, loadBoardConfig, type BoardConfig } from "./config";
 import { mapLimit } from "./util";
 
@@ -65,7 +70,8 @@ export async function runIngest(
     }
   });
 
-  const normalized: Job[] = raw.map(normalizeJob);
+  const enrichedRaw = await enrichRawJobsWithCompanyAssets(raw);
+  const normalized: Job[] = enrichedRaw.map(normalizeJob);
   const deduped = dedupeJobs(normalized);
   const embedded = await embedJobs(deduped);
   const embeddedCount = embedded.filter((j) => j.embedding != null).length;
@@ -90,6 +96,7 @@ export async function cronHandler(): Promise<Response> {
   // were enabled, or whose batch failed). Bounded per run; set INGEST_BACKFILL_LIMIT=0 to disable.
   const backfillLimit = Number(process.env.INGEST_BACKFILL_LIMIT ?? 200);
   let backfill: BackfillSummary | null = null;
+  let companyAssets: CompanyAssetBackfillSummary | null = null;
   if (Number.isFinite(backfillLimit) && backfillLimit > 0) {
     try {
       backfill = await runBackfill({ jobs: true, resumes: false, limit: backfillLimit });
@@ -98,7 +105,16 @@ export async function cronHandler(): Promise<Response> {
     }
   }
 
-  return new Response(JSON.stringify({ ...summary, backfill }), {
+  const logoBackfillLimit = Number(process.env.INGEST_LOGO_BACKFILL_LIMIT ?? 100);
+  if (Number.isFinite(logoBackfillLimit) && logoBackfillLimit > 0) {
+    try {
+      companyAssets = await runCompanyAssetBackfill({ limit: logoBackfillLimit });
+    } catch (err) {
+      console.error("[ingest] company logo backfill failed:", (err as Error).message);
+    }
+  }
+
+  return new Response(JSON.stringify({ ...summary, backfill, companyAssets }), {
     headers: { "content-type": "application/json" },
   });
 }

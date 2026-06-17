@@ -1,11 +1,15 @@
 import type { Metadata } from "next";
 import { ApplicationsBrowser } from "@/components/dashboard/ApplicationsBrowser";
-import { getDashboardApplications } from "@/lib/dashboard/applications";
+import { getDashboardApplicationsPage } from "@/lib/dashboard/applications";
 
 export const metadata: Metadata = { title: "Job application history" };
 
-export default async function ApplicationsPage() {
-  const applications = await getDashboardApplications();
+export default async function ApplicationsPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  const page = await getDashboardApplicationsPage(await searchParams);
 
   return (
     <div className="space-y-6">
@@ -14,12 +18,12 @@ export default async function ApplicationsPage() {
           Job application history
         </h1>
         <p className="mt-1 text-sm font-semibold text-muted">
-          {applications.length} JobPosted applications · manual tracker entries and extension
+          {page.total} JobPosted applications · manual tracker entries and extension
           captures stay in Tracker.
         </p>
       </div>
 
-      <ApplicationsBrowser applications={applications} />
+      <ApplicationsBrowser {...page} />
     </div>
   );
 }

@@ -1,6 +1,9 @@
 import { createHash } from "node:crypto";
 import { NextResponse } from "next/server";
-import type { ExtensionApplicationUpsert } from "@jobposted/shared";
+import {
+  resolveCompanyAssetsFromJobUrl,
+  type ExtensionApplicationUpsert,
+} from "@jobposted/shared";
 import { getUsageStatus, usageLimitMessage } from "@/lib/billing/limits";
 import { getServiceRoleClient } from "@/lib/supabase/service-role";
 import { authErrorResponse, extensionError, getExtensionAuthContext } from "@/lib/extension/auth";
@@ -124,6 +127,9 @@ export async function POST(request: Request) {
     const jobUrl = normalizeJobUrl(asString(payload.jobUrl));
     const company = asString(payload.company) || "Unknown company";
     const role = asString(payload.role) || "Unknown role";
+    const companyAssets = jobUrl
+      ? await resolveCompanyAssetsFromJobUrl({ applyUrl: jobUrl }, { timeoutMs: 2500 })
+      : { companyDomain: null, companyLogoUrl: null, companyLogoResolvedAt: null };
     let jobId = asString(payload.jobId) || null;
     const { data: profile } = await auth.supabase
       .from("profiles")
@@ -144,6 +150,17 @@ export async function POST(request: Request) {
       jobId = await findExistingJobId(supabase, auth.user.id, jobUrl);
     }
 
+    if (jobId && writeClient && (companyAssets.companyDomain || companyAssets.companyLogoUrl)) {
+      const jobPatch: Record<string, unknown> = {};
+      if (companyAssets.companyDomain) jobPatch.company_domain = companyAssets.companyDomain;
+      if (companyAssets.companyLogoUrl) {
+        jobPatch.company_logo_url = companyAssets.companyLogoUrl;
+        jobPatch.company_logo_resolved_at = companyAssets.companyLogoResolvedAt ?? new Date().toISOString();
+      }
+      const { error: logoUpdateError } = await writeClient.from("jobs").update(jobPatch).eq("id", jobId);
+      if (logoUpdateError) console.error("extension job logo update failed", logoUpdateError);
+    }
+
     if (!jobId && writeClient) {
       const { data: job, error: jobError } = await writeClient
         .from("jobs")
@@ -153,6 +170,13 @@ export async function POST(request: Request) {
             source_job_id: sourceJobId(jobUrl, `${payload.platform}:${company}:${role}`),
             ats_type: payload.platform,
             company,
+            ...(companyAssets.companyDomain ? { company_domain: companyAssets.companyDomain } : {}),
+            ...(companyAssets.companyLogoUrl
+              ? {
+                  company_logo_url: companyAssets.companyLogoUrl,
+                  company_logo_resolved_at: companyAssets.companyLogoResolvedAt ?? new Date().toISOString(),
+                }
+              : {}),
             title: role,
             location: null,
             remote: "unknown",
@@ -185,25 +209,40 @@ export async function POST(request: Request) {
       payload,
       jobUrl,
       company,
+      companyAssets,
       role,
       activeResumeVersionId,
       existingApplication,
     });
 
-    const query = existingApplication
-      ? supabase.from("applications").update(applicationRow).eq("id", existingApplication.id).select("id,job_id").single()
-      : supabase.from("applications").insert(applicationRow).select("id,job_id").single();
-
-    const { data: application, error: applicationError } = await query;
+    const { data: application, error: applicationError } = await supabase
+      .rpc("upsert_application_log", {
+        p_user_id: applicationRow.user_id,
+        p_job_id: applicationRow.job_id,
+        p_status: applicationRow.status,
+        p_apply_path: applicationRow.apply_path,
+        p_resume_doc_id: applicationRow.resume_doc_id,
+        p_cover_letter_doc_id: applicationRow.cover_letter_doc_id,
+        p_field_map: applicationRow.field_map,
+        p_screenshot_path: applicationRow.screenshot_path,
+        p_failure_reason: applicationRow.failure_reason,
+        p_base_version_id: applicationRow.base_version_id,
+        p_resume_variant_id: applicationRow.resume_variant_id,
+        p_tailoring_delta: applicationRow.tailoring_delta,
+        p_rendered_pdf_path: applicationRow.rendered_pdf_path,
+        p_submitted_at: applicationRow.submitted_at,
+      })
+      .single();
     if (applicationError) {
       console.error("extension application upsert failed", applicationError);
       return extensionError("Could not sync the application.", 500);
     }
+    const savedApplication = application as { id: string; job_id: string | null } | null;
 
     return NextResponse.json({
       ok: true,
-      applicationId: application?.id ?? null,
-      jobId: application?.job_id ?? jobId,
+      applicationId: savedApplication?.id ?? null,
+      jobId: savedApplication?.job_id ?? jobId,
     });
   } catch (error) {
     return authErrorResponse(error);

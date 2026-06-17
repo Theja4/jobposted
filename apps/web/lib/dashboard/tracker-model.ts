@@ -9,6 +9,8 @@ export interface TrackerItem {
   jobId: string | null;
   role: string;
   company: string;
+  companyDomain: string | null;
+  companyLogoUrl: string | null;
   location: string;
   stage: TrackerStage;
   status: string;

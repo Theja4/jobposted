@@ -14,7 +14,7 @@ export interface UpsertResult {
 
 /** Map the camelCase Job to the snake_case jobs row. pgvector wants the vector as text. */
 function toRow(job: Job): Record<string, unknown> {
-  return {
+  const row: Record<string, unknown> = {
     source: job.source,
     source_job_id: job.sourceJobId,
     ats_type: job.atsType,
@@ -37,6 +37,12 @@ function toRow(job: Job): Record<string, unknown> {
     dedupe_key: dedupeKey(job.company, job.title, job.location),
     embedding: job.embedding ? JSON.stringify(job.embedding) : null,
   };
+  if (job.companyDomain) row.company_domain = job.companyDomain;
+  if (job.companyLogoUrl) {
+    row.company_logo_url = job.companyLogoUrl;
+    row.company_logo_resolved_at = job.companyLogoResolvedAt ?? new Date().toISOString();
+  }
+  return row;
 }
 
 export async function upsertJobs(jobs: Job[]): Promise<UpsertResult> {
@@ -57,11 +63,11 @@ export async function upsertJobs(jobs: Job[]): Promise<UpsertResult> {
   const batchSize = 500;
   for (let i = 0; i < jobs.length; i += batchSize) {
     const rows = jobs.slice(i, i + batchSize).map(toRow);
-    const { error, count } = await supabase
+    const { error } = await supabase
       .from("jobs")
-      .upsert(rows, { onConflict: "source,source_job_id", count: "exact" });
+      .upsert(rows, { onConflict: "source,source_job_id" });
     if (error) throw new Error(`[upsert] ${error.message}`);
-    upserted += count ?? rows.length;
+    upserted += rows.length;
   }
 
   const closeAfterDays = Number(process.env.INGEST_CLOSE_AFTER_DAYS ?? 45);

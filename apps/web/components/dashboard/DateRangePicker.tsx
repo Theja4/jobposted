@@ -108,10 +108,10 @@ export function DateRangePicker({
         onClick={() => setOpen((o) => !o)}
         aria-expanded={open}
         className={cn(
-          "inline-flex h-10 items-center gap-2 rounded-full px-4 text-sm font-bold transition-colors",
+          "inline-flex h-10 items-center gap-2 rounded-full px-4 text-sm font-bold transition-[background-color,color,box-shadow]",
           active
             ? "bg-brand-600 text-white shadow-[0_10px_22px_-10px_rgba(31,100,224,0.6)]"
-            : "bg-white/70 text-ink ring-1 ring-inset ring-white hover:bg-white",
+            : "bg-white text-ink shadow-[0_12px_26px_-22px_rgba(15,23,42,0.48),0_3px_10px_-9px_rgba(15,23,42,0.18)] hover:bg-brand-50 hover:text-brand-700",
         )}
       >
         <Calendar className="size-4" />
@@ -139,7 +139,7 @@ export function DateRangePicker({
       </button>
 
       {open && (
-        <div className="absolute right-0 z-50 mt-2 w-[19rem] rounded-2xl border border-black/5 bg-white p-4 shadow-[0_24px_60px_rgba(7,26,51,0.18)]">
+        <div className="absolute right-0 z-50 mt-2 w-[19rem] rounded-2xl bg-white p-4 shadow-[0_24px_60px_rgba(7,26,51,0.18)]">
           {/* Presets */}
           <div className="mb-3 flex flex-wrap gap-1.5">
             {[
@@ -225,7 +225,7 @@ export function DateRangePicker({
                     isEdge && "bg-brand-600 text-white",
                     within && "bg-brand-100 text-brand-800",
                     !isEdge && !within && "text-ink hover:bg-brand-50",
-                    isToday && !isEdge && "ring-1 ring-inset ring-brand-300",
+                    isToday && !isEdge && "shadow-[0_0_0_3px_rgba(31,100,224,0.16)]",
                   )}
                 >
                   {day.getDate()}
@@ -235,7 +235,7 @@ export function DateRangePicker({
           </div>
 
           {availableDays && (
-            <p className="mt-3 border-t border-black/5 pt-2.5 text-[11px] font-semibold text-muted">
+            <p className="mt-3 rounded-xl bg-zinc-50/80 px-3 py-2 text-[11px] font-semibold text-muted shadow-[0_8px_18px_-16px_rgba(15,23,42,0.34)]">
               Dimmed dates have no applications.
             </p>
           )}

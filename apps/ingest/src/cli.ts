@@ -13,6 +13,7 @@ import { applyUrlDirectness, dedupeJobs, normalizeJob, type Job, type RawJob } f
 import { fetchAshbyBoard } from "./sources/ashby";
 import { fetchGreenhouseBoard } from "./sources/greenhouse";
 import { fetchLeverCompany } from "./sources/lever";
+import { enrichRawJobsWithCompanyAssets } from "./company-assets";
 
 interface Args {
   source?: string;
@@ -62,6 +63,7 @@ function summarize(job: Job): string {
     `    ${job.location ?? "no location"} · ${job.remote} · ${job.formQuestions.length} question(s)` +
       `${salary}`,
     `    apply: ${job.applyUrl}  (directness ${directness})`,
+    `    logo: ${job.companyLogoUrl ?? "none"}  domain: ${job.companyDomain ?? "unknown"}`,
     `    desc: ${job.descriptionMd ? `${job.descriptionMd.length} chars md` : "none"}`,
   ].join("\n");
 }
@@ -89,7 +91,8 @@ async function main() {
     return fail("Usage: --source <lever|ashby|greenhouse> --company <slug> | --board <token>");
   }
 
-  const normalized = raw.map(normalizeJob);
+  const enrichedRaw = await enrichRawJobsWithCompanyAssets(raw);
+  const normalized = enrichedRaw.map(normalizeJob);
   const deduped = dedupeJobs(normalized);
 
   console.info("\n──────── ingest result ────────");

@@ -6,6 +6,7 @@ import Link from "next/link";
 import { ArrowRight, CheckCircle2, ExternalLink, FileText, Loader2, RefreshCcw, X } from "lucide-react";
 import type { JobListing } from "@/lib/dashboard/sample-data";
 import type { TailorAnalysis, ResumeContent } from "@jobposted/shared";
+import { CompanyAvatar } from "./CompanyAvatar";
 
 type TailorResponse =
   | {
@@ -120,9 +121,7 @@ export function TailorModal({ job, onClose }: { job: JobListing; onClose: () => 
       />
       <div className="relative flex max-h-[88vh] w-full max-w-2xl flex-col overflow-hidden rounded-[1.125rem] bg-white shadow-[0_32px_80px_rgba(4,16,42,0.32)]">
         <div className="flex items-center gap-3 border-b border-black/5 px-5 py-4">
-          <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-brand-50 text-brand-700">
-            <FileText className="size-4" />
-          </span>
+          <CompanyAvatar company={job.company} logoUrl={job.companyLogoUrl} size="sm" />
           <div className="min-w-0 flex-1">
             <p className="truncate text-sm font-extrabold text-ink">Resume tailoring review</p>
             <p className="truncate text-xs font-semibold text-muted">

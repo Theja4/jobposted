@@ -62,7 +62,7 @@ export default async function DashboardPage() {
     data: { user },
   } = await supabase.auth.getUser();
   const [applications, queue, stats] = await Promise.all([
-    getDashboardApplications(),
+    getDashboardApplications({ limit: 5 }),
     getDashboardQueue(),
     getDashboardStats(),
   ]);

@@ -16,6 +16,8 @@ import {
 type TrackerJobJoin = {
   id: string;
   company: string | null;
+  company_domain: string | null;
+  company_logo_url: string | null;
   title: string | null;
   location: string | null;
   apply_url: string | null;
@@ -36,7 +38,7 @@ export type TrackerApplicationRow = {
 };
 
 export const TRACKER_APPLICATION_SELECT =
-  "id,status,apply_path,submitted_at,created_at,rendered_pdf_path,field_map,failure_reason,jobs:job_id(id,company,title,location,apply_url,ats_type,source)";
+  "id,status,apply_path,submitted_at,created_at,rendered_pdf_path,field_map,failure_reason,jobs:job_id(id,company,company_domain,company_logo_url,title,location,apply_url,ats_type,source)";
 
 export type TrackerSort = "recent" | "fit" | "company" | "role" | "source";
 export type TrackerSourceFilter = "all" | TrackerSource;
@@ -77,6 +79,8 @@ type TrackerPageRpcRow = {
   failure_reason: string | null;
   job_id: string | null;
   job_company: string | null;
+  job_company_domain: string | null;
+  job_company_logo_url: string | null;
   job_title: string | null;
   job_location: string | null;
   job_apply_url: string | null;
@@ -161,6 +165,8 @@ function rowFromRpc(row: TrackerPageRpcRow): TrackerApplicationRow {
       ? {
           id: row.job_id ?? "",
           company: row.job_company,
+          company_domain: row.job_company_domain,
+          company_logo_url: row.job_company_logo_url,
           title: row.job_title,
           location: row.job_location,
           apply_url: row.job_apply_url,
@@ -189,6 +195,8 @@ export function mapTrackerApplicationRow(row: TrackerApplicationRow): TrackerIte
   const manualEditable = source === "manual" || source === "job_board";
   const fieldRole = asString(fieldMap.role);
   const fieldCompany = asString(fieldMap.company);
+  const fieldCompanyDomain = asString(fieldMap.companyDomain);
+  const fieldCompanyLogoUrl = asString(fieldMap.companyLogoUrl);
   const fieldLocation = asString(fieldMap.location);
   const fieldJobUrl = asString(fieldMap.jobUrl);
   const role = ((manualEditable && fieldRole) || job?.title || fieldRole) || "Unknown role";
@@ -203,6 +211,8 @@ export function mapTrackerApplicationRow(row: TrackerApplicationRow): TrackerIte
     jobId: job?.id ?? null,
     role,
     company,
+    companyDomain: (job?.company_domain ?? fieldCompanyDomain) || null,
+    companyLogoUrl: (job?.company_logo_url ?? fieldCompanyLogoUrl) || null,
     location,
     stage: trackerStageForStatus(row.status),
     status: row.status ?? "applied",

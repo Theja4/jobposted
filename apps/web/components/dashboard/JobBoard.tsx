@@ -6,7 +6,6 @@ import {
   ArrowDownWideNarrow,
   ArrowUpRight,
   Briefcase,
-  Building2,
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
@@ -23,6 +22,8 @@ import {
 } from "lucide-react";
 import { type JobListing, type Workplace } from "@/lib/dashboard/sample-data";
 import { cn } from "@/lib/cn";
+import { CompanyAvatar } from "./CompanyAvatar";
+import { DashboardSelect } from "./DashboardSelect";
 import { TailorModal } from "./TailorModal";
 
 const WORKPLACE_FILTERS: ("All" | Workplace)[] = ["All", "Remote", "Hybrid", "On-site"];
@@ -75,6 +76,27 @@ const SOURCE_OPTIONS = [
   { value: "indeed", label: "Indeed" },
   { value: "other", label: "Other" },
 ];
+
+const JOB_PANEL_CLASS =
+  "bg-white shadow-[0_18px_42px_-32px_rgba(15,23,42,0.48),0_8px_18px_-18px_rgba(15,23,42,0.2)]";
+const JOB_CARD_CLASS =
+  "bg-white shadow-[0_18px_38px_-30px_rgba(15,23,42,0.5),0_8px_18px_-18px_rgba(15,23,42,0.22)]";
+const JOB_CONTROL_CLASS =
+  "bg-white shadow-[0_12px_26px_-22px_rgba(15,23,42,0.48),0_3px_10px_-9px_rgba(15,23,42,0.18)]";
+const JOB_CONTROL_FOCUS_CLASS =
+  "focus:shadow-[0_0_0_3px_rgba(31,100,224,0.18),0_12px_26px_-22px_rgba(15,23,42,0.48),0_3px_10px_-9px_rgba(15,23,42,0.18)]";
+const JOB_CONTROL_FOCUS_WITHIN_CLASS =
+  "focus-within:shadow-[0_0_0_3px_rgba(31,100,224,0.18),0_12px_26px_-22px_rgba(15,23,42,0.48),0_3px_10px_-9px_rgba(15,23,42,0.18)]";
+const JOB_INPUT_CLASS = cn(
+  "h-10 w-full rounded-xl px-3 text-sm font-semibold text-ink outline-none transition-[background-color,box-shadow] placeholder:text-zinc-500",
+  JOB_CONTROL_CLASS,
+  JOB_CONTROL_FOCUS_CLASS,
+);
+const JOB_BUTTON_CLASS =
+  "bg-white text-ink shadow-[0_12px_26px_-22px_rgba(15,23,42,0.48),0_3px_10px_-9px_rgba(15,23,42,0.18)] transition-[background-color,color,box-shadow] hover:bg-brand-50 hover:text-brand-700 hover:shadow-[0_16px_30px_-22px_rgba(31,100,224,0.36),0_5px_12px_-10px_rgba(31,100,224,0.24)]";
+const JOB_PRIMARY_BUTTON_CLASS =
+  "bg-brand-600 text-white shadow-[0_14px_30px_-18px_rgba(31,100,224,0.7),0_4px_12px_-10px_rgba(15,23,42,0.25)] transition-[background-color,box-shadow] hover:bg-brand-700 hover:shadow-[0_18px_34px_-18px_rgba(31,100,224,0.75),0_6px_16px_-12px_rgba(15,23,42,0.3)]";
+const JOB_CHIP_SHADOW_CLASS = "shadow-[0_8px_16px_-14px_rgba(15,23,42,0.4)]";
 
 type JobBoardFilters = {
   query: string;
@@ -182,23 +204,18 @@ function JobListItem({
       onClick={() => onSelect(job)}
       aria-pressed={active}
       className={cn(
-        "w-full rounded-2xl p-4 text-left ring-1 ring-inset transition-colors",
+        "w-full rounded-2xl p-4 text-left transition-[background-color,box-shadow]",
         active
-          ? "bg-brand-50 text-ink ring-brand-200"
-          : "bg-white text-ink ring-zinc-200 hover:bg-brand-50/55 hover:ring-brand-100",
+          ? "bg-brand-50 text-ink shadow-[0_0_0_3px_rgba(31,100,224,0.16),0_18px_38px_-28px_rgba(31,100,224,0.42),0_8px_18px_-18px_rgba(15,23,42,0.18)]"
+          : cn("text-ink hover:bg-brand-50/55 hover:shadow-[0_20px_42px_-30px_rgba(31,100,224,0.38),0_8px_18px_-18px_rgba(15,23,42,0.2)]", JOB_CARD_CLASS),
       )}
     >
       <div className="flex items-start gap-3">
-        <span
-          className={cn(
-            "grid size-10 shrink-0 place-items-center rounded-xl text-sm font-black ring-1 ring-inset",
-            active
-              ? "bg-brand-600 text-white ring-brand-600"
-              : "bg-brand-50 text-brand-700 ring-brand-100",
-          )}
-        >
-          {job.company.slice(0, 1).toUpperCase()}
-        </span>
+        <CompanyAvatar
+          company={job.company}
+          logoUrl={job.companyLogoUrl}
+          selected={active}
+        />
         <span className="min-w-0 flex-1">
           <span className="block line-clamp-2 text-sm font-extrabold leading-5">
             <Highlight text={job.title} tokens={tokens} />
@@ -217,16 +234,16 @@ function JobListItem({
         <span>{relativeDate(job.postedOn)}</span>
       </div>
       <div className="mt-3 flex flex-wrap gap-1.5">
-        <span className="rounded-full bg-white px-2 py-1 text-[11px] font-black text-brand-700 ring-1 ring-inset ring-brand-100">
+        <span className={cn("rounded-full bg-white px-2 py-1 text-[11px] font-black text-brand-700", JOB_CHIP_SHADOW_CLASS)}>
           {job.workplace}
         </span>
-        <span className="rounded-full bg-white px-2 py-1 text-[11px] font-black text-ink/70 ring-1 ring-inset ring-zinc-200">
+        <span className={cn("rounded-full bg-white px-2 py-1 text-[11px] font-black text-ink/70", JOB_CHIP_SHADOW_CLASS)}>
           {job.type}
         </span>
         {job.tags.slice(0, 2).map((tag) => (
           <span
             key={tag}
-            className="rounded-full bg-white px-2 py-1 text-[11px] font-black text-ink/70 ring-1 ring-inset ring-zinc-200"
+            className={cn("rounded-full bg-white px-2 py-1 text-[11px] font-black text-ink/70", JOB_CHIP_SHADOW_CLASS)}
           >
             <Highlight text={tag} tokens={tokens} />
           </span>
@@ -251,8 +268,8 @@ function JobDetail({
 }) {
   if (!job) {
     return (
-      <section className="min-h-full rounded-2xl bg-white p-8 text-center ring-1 ring-inset ring-zinc-200">
-        <span className="mx-auto grid size-12 place-items-center rounded-2xl bg-brand-50 text-brand-700 ring-1 ring-inset ring-brand-100">
+      <section className={cn("min-h-full rounded-2xl p-8 text-center", JOB_PANEL_CLASS)}>
+        <span className={cn("mx-auto grid size-12 place-items-center rounded-2xl bg-brand-50 text-brand-700", JOB_CHIP_SHADOW_CLASS)}>
           <Search className="size-5" />
         </span>
         <h2 className="mt-4 text-lg font-extrabold text-ink">No job selected</h2>
@@ -264,11 +281,16 @@ function JobDetail({
   }
 
   return (
-    <section className="min-h-full rounded-2xl bg-white p-5 ring-1 ring-inset ring-zinc-200">
+    <section className={cn("min-h-full rounded-2xl p-5", JOB_PANEL_CLASS)}>
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0">
-          <p className="inline-flex items-center gap-1.5 rounded-full bg-brand-50 px-2.5 py-1 text-xs font-black text-brand-700 ring-1 ring-inset ring-brand-100">
-            <Building2 className="size-3.5" />
+          <p className={cn("inline-flex items-center gap-2 rounded-full bg-brand-50 py-1 pr-2.5 pl-1 text-xs font-black text-brand-700", JOB_CHIP_SHADOW_CLASS)}>
+            <CompanyAvatar
+              company={job.company}
+              logoUrl={job.companyLogoUrl}
+              size="sm"
+              className="size-6 rounded-full text-[9px]"
+            />
             {job.company}
           </p>
           <h2 className="mt-4 text-2xl font-extrabold tracking-[-0.03em] text-ink">
@@ -291,7 +313,10 @@ function JobDetail({
             href={job.applyUrl}
             target="_blank"
             rel="noreferrer"
-            className="inline-flex h-10 shrink-0 items-center justify-center gap-2 rounded-xl bg-white px-3 text-sm font-black text-ink ring-1 ring-inset ring-zinc-200 transition-colors hover:bg-brand-50 hover:text-brand-700"
+            className={cn(
+              "inline-flex h-10 shrink-0 items-center justify-center gap-2 rounded-xl px-3 text-sm font-black",
+              JOB_BUTTON_CLASS,
+            )}
           >
             Open <ExternalLink className="size-4" />
           </a>
@@ -309,7 +334,7 @@ function JobDetail({
           {job.tags.map((tag) => (
             <span
               key={tag}
-              className="rounded-full bg-zinc-50 px-2.5 py-1 text-xs font-bold text-ink/75 ring-1 ring-inset ring-zinc-200"
+              className={cn("rounded-full bg-zinc-50 px-2.5 py-1 text-xs font-bold text-ink/75", JOB_CHIP_SHADOW_CLASS)}
             >
               {tag}
             </span>
@@ -317,18 +342,21 @@ function JobDetail({
         </div>
       )}
 
-      <div className="mt-6 border-t border-zinc-100 pt-5">
+      <div className="mt-6 rounded-xl bg-zinc-50/70 p-4 shadow-[0_10px_22px_-19px_rgba(15,23,42,0.32)]">
         <h3 className="text-sm font-extrabold text-ink">Overview</h3>
         <p className="mt-2 whitespace-pre-line text-sm font-medium leading-7 text-muted">
           {job.description}
         </p>
       </div>
 
-      <div className="mt-6 flex flex-col gap-2 border-t border-zinc-100 pt-5 sm:flex-row">
+      <div className="mt-4 flex flex-col gap-2 rounded-xl bg-zinc-50/70 p-3 shadow-[0_10px_22px_-19px_rgba(15,23,42,0.32)] sm:flex-row">
         <button
           type="button"
           onClick={() => onTailor(job)}
-          className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-white px-4 text-sm font-black text-brand-700 ring-1 ring-inset ring-brand-200 transition-colors hover:bg-brand-50"
+          className={cn(
+            "inline-flex h-11 items-center justify-center gap-2 rounded-xl px-4 text-sm font-black text-brand-700",
+            JOB_BUTTON_CLASS,
+          )}
         >
           <FileText className="size-4" />
           Tailor resume
@@ -337,7 +365,10 @@ function JobDetail({
           type="button"
           onClick={() => onApply(job)}
           disabled={applying || tracked}
-          className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-brand-600 px-4 text-sm font-black text-white transition-colors hover:bg-brand-700 disabled:pointer-events-none disabled:bg-brand-100 disabled:text-brand-700"
+          className={cn(
+            "inline-flex h-11 items-center justify-center gap-2 rounded-xl px-4 text-sm font-black disabled:pointer-events-none disabled:bg-brand-100 disabled:text-brand-700",
+            JOB_PRIMARY_BUTTON_CLASS,
+          )}
         >
           {applying ? (
             <Loader2 className="size-4 animate-spin" />
@@ -355,7 +386,7 @@ function JobDetail({
 
 function InfoTile({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-xl bg-zinc-50 p-3 ring-1 ring-inset ring-zinc-200">
+    <div className="rounded-xl bg-zinc-50 p-3 shadow-[0_10px_22px_-19px_rgba(15,23,42,0.32)]">
       <p className="text-[11px] font-black text-muted">{label}</p>
       <p className="mt-1 text-sm font-extrabold text-ink">{value}</p>
     </div>
@@ -378,26 +409,15 @@ function FilterSelect({
   className?: string;
 }) {
   return (
-    <label
-      className={cn(
-        "flex h-11 min-w-0 items-center gap-2 rounded-xl bg-zinc-50 px-3 ring-1 ring-inset ring-zinc-200 focus-within:ring-2 focus-within:ring-brand-500",
-        className,
-      )}
-    >
-      {icon}
-      <span className="sr-only">{label}</span>
-      <select
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-        className="min-w-0 flex-1 bg-transparent text-xs font-black text-ink outline-none"
-      >
-        {options.map((option) => (
-          <option key={option.value} value={option.value}>
-            {option.label}
-          </option>
-        ))}
-      </select>
-    </label>
+    <DashboardSelect
+      value={value}
+      options={options}
+      onChange={onChange}
+      ariaLabel={label}
+      icon={icon}
+      className={className}
+      buttonClassName={cn("h-11 text-xs font-black", JOB_CONTROL_CLASS, JOB_CONTROL_FOCUS_WITHIN_CLASS)}
+    />
   );
 }
 
@@ -415,12 +435,17 @@ function ToggleFilter({
   onChange: (checked: boolean) => void;
 }) {
   return (
-    <label className="flex min-h-10 cursor-pointer items-center gap-2 rounded-xl bg-zinc-50 px-3 text-xs font-black text-ink ring-1 ring-inset ring-zinc-200 transition-colors hover:bg-brand-50">
+    <label
+      className={cn(
+        "flex min-h-10 cursor-pointer items-center gap-2 rounded-xl px-3 text-xs font-black text-ink transition-[background-color,box-shadow] hover:bg-brand-50",
+        JOB_CONTROL_CLASS,
+      )}
+    >
       <input
         type="checkbox"
         checked={checked}
         onChange={(event) => onChange(event.target.checked)}
-        className="size-4 rounded border-zinc-300 text-brand-600 focus:ring-brand-500"
+        className="size-4 rounded text-brand-600 shadow-[0_6px_12px_-10px_rgba(15,23,42,0.45)] focus:outline-none focus-visible:shadow-[0_0_0_3px_rgba(31,100,224,0.18),0_6px_12px_-10px_rgba(15,23,42,0.45)]"
       />
       {label}
     </label>
@@ -635,7 +660,7 @@ export function JobBoard({
 
   return (
     <div className="space-y-3 lg:flex lg:min-h-0 lg:flex-1 lg:flex-col lg:gap-3 lg:space-y-0 lg:overflow-hidden">
-      <section className="shrink-0 rounded-xl bg-white p-2 ring-1 ring-inset ring-zinc-200">
+      <section className={cn("shrink-0 rounded-xl p-2", JOB_PANEL_CLASS)}>
         <form
           onSubmit={(event) => {
             event.preventDefault();
@@ -644,7 +669,13 @@ export function JobBoard({
           className="space-y-2"
         >
           <div className="grid gap-2 min-[1180px]:grid-cols-[minmax(18rem,1fr)_auto_10.5rem_10.5rem_auto_auto]">
-            <label className="flex h-11 min-w-0 items-center gap-2.5 rounded-xl bg-zinc-50 px-3 ring-1 ring-inset ring-zinc-200 focus-within:ring-2 focus-within:ring-brand-500">
+            <label
+              className={cn(
+                "flex h-11 min-w-0 items-center gap-2.5 rounded-xl px-3 transition-[background-color,box-shadow]",
+                JOB_CONTROL_CLASS,
+                JOB_CONTROL_FOCUS_WITHIN_CLASS,
+              )}
+            >
               <Search className="size-4 shrink-0 text-muted" />
               <span className="sr-only">Search jobs</span>
               <input
@@ -663,14 +694,14 @@ export function JobBoard({
                     updateParams({ q: null, page: 1 });
                   }}
                   aria-label="Clear search"
-                  className="grid size-7 shrink-0 place-items-center rounded-lg text-muted transition-colors hover:bg-white hover:text-ink"
+                  className="grid size-7 shrink-0 place-items-center rounded-lg text-muted transition-colors hover:bg-zinc-50 hover:text-ink"
                 >
                   <X className="size-4" />
                 </button>
               )}
             </label>
 
-            <div className="flex h-11 min-w-max items-center gap-1 rounded-xl bg-zinc-50 p-1 ring-1 ring-inset ring-zinc-200">
+            <div className={cn("flex h-11 min-w-max items-center gap-1 rounded-xl p-1", JOB_CONTROL_CLASS)}>
               {WORKPLACE_FILTERS.map((option) => (
                 <button
                   key={option}
@@ -680,8 +711,8 @@ export function JobBoard({
                   className={cn(
                     "relative h-9 rounded-lg px-3 text-xs font-bold transition-colors before:absolute before:inset-x-0 before:inset-y-[-4px]",
                     filters.workplace === option
-                      ? "bg-ink text-white"
-                      : "text-muted hover:bg-white hover:text-ink",
+                      ? "bg-ink text-white shadow-[0_10px_20px_-14px_rgba(15,23,42,0.48)]"
+                      : "text-muted hover:bg-brand-50 hover:text-ink",
                   )}
                 >
                   {option}
@@ -712,10 +743,10 @@ export function JobBoard({
               onClick={() => setAdvancedOpen((open) => !open)}
               aria-expanded={advancedOpen}
               className={cn(
-                "inline-flex h-11 items-center justify-center gap-2 rounded-xl px-3 text-sm font-black ring-1 ring-inset transition-colors",
+                "inline-flex h-11 items-center justify-center gap-2 rounded-xl px-3 text-sm font-black transition-[background-color,color,box-shadow]",
                 advancedOpen || activeFilterCount > 0
-                  ? "bg-ink text-white ring-ink"
-                  : "bg-zinc-50 text-ink ring-zinc-200 hover:bg-brand-50 hover:text-brand-700",
+                  ? "bg-ink text-white shadow-[0_14px_28px_-18px_rgba(15,23,42,0.55)]"
+                  : JOB_BUTTON_CLASS,
               )}
             >
               <SlidersHorizontal className="size-4" />
@@ -729,14 +760,17 @@ export function JobBoard({
 
             <button
               type="submit"
-              className="inline-flex h-11 items-center justify-center rounded-xl bg-brand-600 px-4 text-sm font-black text-white transition-colors hover:bg-brand-700"
+              className={cn(
+                "inline-flex h-11 items-center justify-center rounded-xl px-4 text-sm font-black",
+                JOB_PRIMARY_BUTTON_CLASS,
+              )}
             >
               Apply
             </button>
           </div>
 
           {advancedOpen && (
-            <div className="rounded-xl bg-zinc-50 p-3 ring-1 ring-inset ring-zinc-200">
+            <div className="rounded-xl bg-zinc-50/75 p-3 shadow-[0_10px_22px_-19px_rgba(15,23,42,0.32)]">
               <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
                 <label className="space-y-1.5">
                   <FieldLabel>Location</FieldLabel>
@@ -744,7 +778,7 @@ export function JobBoard({
                     value={draft.location}
                     onChange={(event) => updateDraft("location", event.target.value)}
                     placeholder="City, country, remote region"
-                    className="h-10 w-full rounded-xl bg-white px-3 text-sm font-semibold text-ink outline-none ring-1 ring-inset ring-zinc-200 placeholder:text-zinc-500 focus:ring-2 focus:ring-brand-500"
+                    className={JOB_INPUT_CLASS}
                   />
                 </label>
 
@@ -754,7 +788,7 @@ export function JobBoard({
                     value={draft.company}
                     onChange={(event) => updateDraft("company", event.target.value)}
                     placeholder="Include company"
-                    className="h-10 w-full rounded-xl bg-white px-3 text-sm font-semibold text-ink outline-none ring-1 ring-inset ring-zinc-200 placeholder:text-zinc-500 focus:ring-2 focus:ring-brand-500"
+                    className={JOB_INPUT_CLASS}
                   />
                 </label>
 
@@ -764,13 +798,19 @@ export function JobBoard({
                     value={draft.excludeCompany}
                     onChange={(event) => updateDraft("excludeCompany", event.target.value)}
                     placeholder="Comma separated"
-                    className="h-10 w-full rounded-xl bg-white px-3 text-sm font-semibold text-ink outline-none ring-1 ring-inset ring-zinc-200 placeholder:text-zinc-500 focus:ring-2 focus:ring-brand-500"
+                    className={JOB_INPUT_CLASS}
                   />
                 </label>
 
                 <label className="space-y-1.5">
                   <FieldLabel>Minimum salary</FieldLabel>
-                  <div className="flex h-10 items-center gap-2 rounded-xl bg-white px-3 ring-1 ring-inset ring-zinc-200 focus-within:ring-2 focus-within:ring-brand-500">
+                  <div
+                    className={cn(
+                      "flex h-10 items-center gap-2 rounded-xl px-3 transition-[background-color,box-shadow]",
+                      JOB_CONTROL_CLASS,
+                      JOB_CONTROL_FOCUS_WITHIN_CLASS,
+                    )}
+                  >
                     <DollarSign className="size-4 shrink-0 text-brand-600" />
                     <input
                       inputMode="numeric"
@@ -843,7 +883,7 @@ export function JobBoard({
           {activeLabels.map((label, index) => (
             <span
               key={`${label}-${index}`}
-              className="rounded-full bg-brand-50 px-2.5 py-0.5 text-[11px] font-black text-brand-700 ring-1 ring-inset ring-brand-100"
+              className={cn("rounded-full bg-brand-50 px-2.5 py-0.5 text-[11px] font-black text-brand-700", JOB_CHIP_SHADOW_CLASS)}
             >
               {label}
             </span>
@@ -851,7 +891,10 @@ export function JobBoard({
           <button
             type="button"
             onClick={clearFilters}
-            className="relative inline-flex min-h-8 items-center justify-center gap-1.5 rounded-full bg-white px-2.5 text-[11px] font-black text-ink ring-1 ring-inset ring-zinc-200 transition-colors before:absolute before:inset-x-0 before:inset-y-[-6px] hover:bg-zinc-50"
+            className={cn(
+              "relative inline-flex min-h-8 items-center justify-center gap-1.5 rounded-full px-2.5 text-[11px] font-black before:absolute before:inset-x-0 before:inset-y-[-6px]",
+              JOB_BUTTON_CLASS,
+            )}
           >
             <RotateCcw className="size-3.5" />
             Clear
@@ -860,14 +903,14 @@ export function JobBoard({
       )}
 
       {applyError && (
-        <p className="shrink-0 rounded-xl bg-red-50 px-4 py-3 text-sm font-bold text-red-600 ring-1 ring-inset ring-red-100">
+        <p className="shrink-0 rounded-xl bg-red-50 px-4 py-3 text-sm font-bold text-red-600 shadow-[0_12px_24px_-20px_rgba(220,38,38,0.35)]">
           {applyError}
         </p>
       )}
 
       {jobs.length === 0 ? (
-        <section className="rounded-2xl bg-white p-10 text-center ring-1 ring-inset ring-zinc-200">
-          <span className="mx-auto grid size-12 place-items-center rounded-2xl bg-brand-50 text-brand-700 ring-1 ring-inset ring-brand-100">
+        <section className={cn("rounded-2xl p-10 text-center", JOB_PANEL_CLASS)}>
+          <span className={cn("mx-auto grid size-12 place-items-center rounded-2xl bg-brand-50 text-brand-700", JOB_CHIP_SHADOW_CLASS)}>
             <Search className="size-5" />
           </span>
           <h2 className="mt-4 text-lg font-extrabold text-ink">No roles match this view</h2>
@@ -879,9 +922,9 @@ export function JobBoard({
         <div className="grid gap-3 lg:min-h-0 lg:flex-1 lg:grid-cols-[minmax(18rem,25rem)_minmax(0,1fr)] lg:overflow-hidden">
           <section
             aria-label="Job results"
-            className="flex min-h-0 flex-col overflow-hidden rounded-2xl bg-white ring-1 ring-inset ring-zinc-200"
+            className={cn("flex min-h-0 flex-col overflow-hidden rounded-2xl", JOB_PANEL_CLASS)}
           >
-            <div className="flex flex-col gap-1 border-b border-zinc-200 px-4 py-3 text-xs font-semibold text-muted sm:flex-row sm:items-center sm:justify-between lg:flex-col lg:items-start xl:flex-row xl:items-center">
+            <div className="flex flex-col gap-1 bg-zinc-50/72 px-4 py-3 text-xs font-semibold text-muted shadow-[0_9px_18px_-16px_rgba(15,23,42,0.34)] sm:flex-row sm:items-center sm:justify-between lg:flex-col lg:items-start xl:flex-row xl:items-center">
               <p>
                 Showing <span className="font-black text-ink">{from}</span> to{" "}
                 <span className="font-black text-ink">{to}</span> of{" "}
@@ -918,7 +961,7 @@ export function JobBoard({
               {totalPages > 1 && (
                 <nav
                   aria-label="Job board pages"
-                  className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-1.5 rounded-xl bg-white p-2 ring-1 ring-inset ring-zinc-200"
+                  className={cn("grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-1.5 rounded-xl p-2", JOB_CARD_CLASS)}
                 >
                   <button
                     type="button"
@@ -926,7 +969,10 @@ export function JobBoard({
                     disabled={page <= 1}
                     aria-label="Previous page"
                     title="Previous page"
-                    className="grid size-9 place-items-center rounded-xl text-ink ring-1 ring-inset ring-zinc-200 transition-colors hover:bg-brand-50 hover:text-brand-700 disabled:pointer-events-none disabled:opacity-45"
+                    className={cn(
+                      "grid size-9 place-items-center rounded-xl disabled:pointer-events-none disabled:opacity-45",
+                      JOB_BUTTON_CLASS,
+                    )}
                   >
                     <ChevronLeft className="size-4" />
                   </button>
@@ -946,10 +992,10 @@ export function JobBoard({
                           onClick={() => updateParams({ page: item })}
                           aria-current={item === page ? "page" : undefined}
                           className={cn(
-                            "grid h-9 min-w-[2.25rem] shrink-0 place-items-center rounded-xl px-2 text-sm font-black transition-colors",
+                            "grid h-9 min-w-[2.25rem] shrink-0 place-items-center rounded-xl px-2 text-sm font-black transition-[background-color,color,box-shadow]",
                             item === page
-                              ? "bg-brand-600 text-white"
-                              : "text-ink ring-1 ring-inset ring-zinc-200 hover:bg-brand-50 hover:text-brand-700",
+                              ? "bg-brand-600 text-white shadow-[0_12px_24px_-16px_rgba(31,100,224,0.58)]"
+                              : JOB_BUTTON_CLASS,
                           )}
                         >
                           {item}
@@ -963,7 +1009,10 @@ export function JobBoard({
                     disabled={page >= totalPages}
                     aria-label="Next page"
                     title="Next page"
-                    className="grid size-9 place-items-center rounded-xl text-ink ring-1 ring-inset ring-zinc-200 transition-colors hover:bg-brand-50 hover:text-brand-700 disabled:pointer-events-none disabled:opacity-45"
+                    className={cn(
+                      "grid size-9 place-items-center rounded-xl disabled:pointer-events-none disabled:opacity-45",
+                      JOB_BUTTON_CLASS,
+                    )}
                   >
                     <ChevronRight className="size-4" />
                   </button>
