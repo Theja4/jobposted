@@ -18,7 +18,7 @@ export function Footer({ seamless = false }: { seamless?: boolean }) {
       className={
         seamless
           ? "relative -mt-16 overflow-hidden bg-transparent px-5 pt-36 text-ink sm:-mt-20 sm:pt-44 lg:pt-52"
-          : "relative -mt-16 overflow-hidden bg-[linear-gradient(180deg,#ddecff_0%,#cfe4ff_28%,#b6d6ff_64%,#9ec4ff_100%)] px-5 pt-36 text-ink sm:-mt-20 sm:pt-44 lg:pt-52"
+          : "relative mt-16 overflow-hidden bg-[linear-gradient(180deg,#ddecff_0%,#cfe4ff_28%,#b6d6ff_64%,#9ec4ff_100%)] px-5 pt-24 text-ink sm:mt-20 sm:pt-28 lg:mt-24 lg:pt-32"
       }
     >
       {!seamless && (

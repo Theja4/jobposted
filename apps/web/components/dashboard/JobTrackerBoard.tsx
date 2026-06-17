@@ -104,26 +104,27 @@ const EMPTY_FORM: ManualTrackerInput = {
   notes: "",
 };
 
-const TRACKER_PANEL_CLASS =
-  "bg-white/88 shadow-[0_18px_42px_-32px_rgba(15,23,42,0.48),0_8px_18px_-18px_rgba(15,23,42,0.2)]";
-const TRACKER_CONTROL_CLASS =
-  "bg-white shadow-[0_12px_26px_-22px_rgba(15,23,42,0.48),0_3px_10px_-9px_rgba(15,23,42,0.18)]";
+// Frosted "liquid glass" system (globals.css: .liquid-glass / .glass-chip) over a soft
+// ambient gradient. Surfaces are translucent frosted panels; state highlights use
+// `outline` (a separate property) so they never fight the glass box-shadow. Text stays
+// dark ink on the light glass, and cards stay solid pastel — both for readability.
+const TRACKER_PANEL_CLASS = "liquid-glass";
+const TRACKER_LANE_CLASS = "liquid-glass";
+const TRACKER_CONTROL_CLASS = "glass-chip";
 const TRACKER_CONTROL_FOCUS_CLASS =
-  "focus:shadow-[0_0_0_3px_rgba(31,100,224,0.18),0_12px_26px_-22px_rgba(15,23,42,0.48),0_3px_10px_-9px_rgba(15,23,42,0.18)]";
+  "focus:outline focus:outline-2 focus:outline-offset-2 focus:outline-brand-600";
 const TRACKER_CONTROL_FOCUS_WITHIN_CLASS =
-  "focus-within:shadow-[0_0_0_3px_rgba(31,100,224,0.18),0_12px_26px_-22px_rgba(15,23,42,0.48),0_3px_10px_-9px_rgba(15,23,42,0.18)]";
+  "focus-within:outline focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-brand-600";
 const TRACKER_INPUT_CLASS = cn(
-  "h-11 w-full rounded-xl px-3 text-sm font-semibold text-ink outline-none transition-[background-color,box-shadow] placeholder:text-zinc-500 disabled:opacity-60",
+  "h-11 w-full rounded-xl px-3 text-sm font-semibold text-ink outline-none transition placeholder:text-zinc-500 disabled:opacity-60",
   TRACKER_CONTROL_CLASS,
   TRACKER_CONTROL_FOCUS_CLASS,
 );
-const TRACKER_BUTTON_CLASS =
-  "bg-white text-ink shadow-[0_12px_26px_-22px_rgba(15,23,42,0.48),0_3px_10px_-9px_rgba(15,23,42,0.18)] transition-[background-color,color,box-shadow] hover:bg-brand-50 hover:text-brand-700 hover:shadow-[0_16px_30px_-22px_rgba(31,100,224,0.36),0_5px_12px_-10px_rgba(31,100,224,0.24)]";
+const TRACKER_BUTTON_CLASS = "glass-chip text-ink transition-colors hover:text-brand-700";
 const TRACKER_PRIMARY_BUTTON_CLASS =
-  "bg-brand-600 text-white shadow-[0_14px_30px_-18px_rgba(31,100,224,0.7),0_4px_12px_-10px_rgba(15,23,42,0.25)] transition-[background-color,box-shadow] hover:bg-brand-700 hover:shadow-[0_18px_34px_-18px_rgba(31,100,224,0.75),0_6px_16px_-12px_rgba(15,23,42,0.3)]";
-const TRACKER_ICON_BUTTON_CLASS =
-  "bg-white text-muted shadow-[0_10px_20px_-17px_rgba(15,23,42,0.45),0_2px_8px_-7px_rgba(15,23,42,0.16)] transition-[background-color,color,box-shadow]";
-const TRACKER_CHIP_SHADOW_CLASS = "shadow-[0_8px_16px_-14px_rgba(15,23,42,0.4)]";
+  "bg-brand-600 text-white shadow-[0_14px_30px_-14px_rgba(31,100,224,0.55)] transition-colors hover:bg-brand-700";
+const TRACKER_ICON_BUTTON_CLASS = "glass-chip text-muted transition-colors hover:text-brand-700";
+const TRACKER_CHIP_SHADOW_CLASS = "shadow-[inset_0_1px_0_rgba(255,255,255,0.6)]";
 
 function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric" });
@@ -620,7 +621,7 @@ function AddColumnPanel({
                     type="button"
                     disabled={selected || (full && !selected)}
                     onClick={() => addColumn(preset)}
-                    className="flex min-h-14 items-center justify-between gap-3 rounded-xl bg-brand-50/80 px-3 text-left shadow-[0_12px_24px_-20px_rgba(31,100,224,0.38),0_3px_10px_-9px_rgba(31,100,224,0.16)] transition-[background-color,box-shadow] hover:bg-brand-100 hover:shadow-[0_16px_30px_-22px_rgba(31,100,224,0.45),0_5px_12px_-10px_rgba(31,100,224,0.22)] disabled:pointer-events-none disabled:opacity-55"
+                    className="flex min-h-14 items-center justify-between gap-3 rounded-xl bg-brand-50 px-3 text-left ring-1 ring-brand-100 transition-colors hover:bg-brand-100 disabled:pointer-events-none disabled:opacity-55"
                   >
                     <span>
                       <span className="block text-sm font-black text-brand-900">{preset.label}</span>
@@ -734,10 +735,10 @@ function TrackerCard({
         }
         className={cn(
           "group cursor-grab touch-none rounded-2xl border bg-[var(--cbg)] p-3 outline-none transition-[transform,box-shadow,border-color] duration-200 ease-out active:cursor-grabbing",
-          "border-[var(--cbd)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600",
+          "border-[var(--cbd)] shadow-[inset_0_1px_0_rgba(255,255,255,0.7)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600",
           dragging
-            ? "scale-[0.99] border-brand-400 shadow-[0_0_0_3px_rgba(31,100,224,0.18),0_18px_38px_-26px_rgba(31,100,224,0.45)]"
-            : "shadow-[0_10px_24px_-18px_rgba(15,23,42,0.32)] hover:-translate-y-0.5 hover:border-[var(--cbdh)] hover:shadow-[0_18px_34px_-20px_rgba(15,23,42,0.42)]",
+            ? "scale-[0.99] border-brand-300 shadow-[inset_0_1px_0_rgba(255,255,255,0.7),0_16px_30px_-18px_rgba(31,100,224,0.4)]"
+            : "hover:-translate-y-0.5 hover:border-[var(--cbdh)] hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.85),0_16px_30px_-18px_rgba(15,23,42,0.32)]",
           busy && "cursor-default",
         )}
       >
@@ -747,7 +748,7 @@ function TrackerCard({
             logoUrl={item.companyLogoUrl}
             colorSeed={item.source === "manual" ? item.id : undefined}
             size="sm"
-            className="border border-white/70 bg-white"
+            className="bg-white shadow-none ring-1 ring-black/5"
           />
           <div className="min-w-0 flex-1">
             <h3 className="line-clamp-1 text-sm font-extrabold leading-tight text-ink group-hover:line-clamp-none">
@@ -814,10 +815,9 @@ function TrackerColumn({
       onDragLeave={(event) => onColumnDragLeave(column.id, event)}
       onDrop={(event) => onColumnDrop(column.id, event)}
       className={cn(
-        "flex min-h-[24rem] min-w-0 flex-col rounded-2xl p-3 transition-[background-color,box-shadow]",
-        draggingOver
-          ? "bg-brand-50/80 shadow-[0_0_0_3px_rgba(31,100,224,0.18),0_18px_42px_-28px_rgba(31,100,224,0.45),0_8px_18px_-18px_rgba(15,23,42,0.18)]"
-          : TRACKER_PANEL_CLASS,
+        "flex min-h-[20rem] min-w-0 flex-col rounded-2xl p-3 outline outline-2 -outline-offset-2 transition-[outline-color]",
+        TRACKER_LANE_CLASS,
+        draggingOver ? "outline-brand-400" : "outline-transparent",
       )}
     >
       <div className="mb-3 flex items-center justify-between gap-3 px-1">
@@ -874,9 +874,8 @@ function TrackerColumn({
       {items.length === 0 && (
         <div
           className={cn(
-            "mt-1 flex flex-1 items-center justify-center rounded-xl bg-white/62 px-4 py-8 text-center shadow-[0_10px_22px_-19px_rgba(15,23,42,0.34)] transition-[background-color,box-shadow]",
-            draggingOver &&
-              "bg-white/85 shadow-[0_0_0_3px_rgba(31,100,224,0.16),0_14px_28px_-22px_rgba(31,100,224,0.4)]",
+            "mt-1 flex flex-1 items-center justify-center rounded-xl px-4 py-8 text-center transition-colors",
+            draggingOver && "bg-white/40",
           )}
         >
           <p className="text-xs font-bold leading-5 text-muted">
@@ -1328,7 +1327,17 @@ export function JobTrackerBoard({ initialPage }: { initialPage: TrackerPage }) {
   }
 
   return (
-    <div className="w-full space-y-5">
+    <div className="relative w-full space-y-5">
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-0 -z-10 overflow-hidden bg-gradient-to-br from-brand-50/60 via-white/0 to-mint/10"
+      >
+        <div className="absolute -left-24 -top-28 size-80 rounded-full bg-brand-300/35 blur-3xl" />
+        <div className="absolute -right-16 top-16 size-72 rounded-full bg-mint/25 blur-3xl" />
+        <div className="absolute bottom-0 left-1/3 h-80 w-96 rounded-full bg-aqua/20 blur-3xl" />
+        <div className="absolute bottom-1/4 right-1/4 size-64 rounded-full bg-sun/12 blur-3xl" />
+      </div>
+
       <section className={cn("rounded-2xl p-4 sm:p-5", TRACKER_PANEL_CLASS)}>
         <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
           <div className="flex min-w-0 flex-col gap-1.5 sm:flex-row sm:items-baseline sm:gap-3">
@@ -1471,7 +1480,7 @@ export function JobTrackerBoard({ initialPage }: { initialPage: TrackerPage }) {
       />
 
       {mutationError && (
-        <p className="rounded-xl bg-red-50 px-4 py-3 text-sm font-bold text-red-600 shadow-[0_12px_24px_-20px_rgba(220,38,38,0.35)]">
+        <p className="rounded-xl bg-red-50 px-4 py-3 text-sm font-bold text-red-700 ring-1 ring-red-100">
           {mutationError}
         </p>
       )}
@@ -1531,31 +1540,17 @@ export function JobTrackerBoard({ initialPage }: { initialPage: TrackerPage }) {
         </div>
       )}
 
-      {summary.tracked > 0 && (
-        <div className="flex flex-col gap-3 rounded-2xl bg-brand-50/80 px-4 py-3 text-sm shadow-[0_14px_30px_-24px_rgba(31,100,224,0.46),0_5px_12px_-10px_rgba(31,100,224,0.18)] sm:flex-row sm:items-center sm:justify-between">
-          <p className="font-bold text-brand-900">
-            Showing <span className="font-black">{items.length}</span> of{" "}
-            <span className="font-black">{total}</span>
-          </p>
-          <div className="flex items-center gap-3">
-            {hasMore && (
-              <button
-                type="button"
-                disabled={pageLoading}
-                onClick={() => void loadPage(items.length, "append")}
-                className="inline-flex h-9 items-center justify-center gap-2 rounded-xl bg-white px-3 text-xs font-black text-brand-800 shadow-[0_10px_20px_-17px_rgba(31,100,224,0.38)] transition-[background-color,box-shadow] hover:bg-brand-100 hover:shadow-[0_14px_26px_-19px_rgba(31,100,224,0.45)] disabled:pointer-events-none disabled:opacity-60"
-              >
-                {pageLoading ? <Loader2 className="size-3.5 animate-spin" /> : <Plus className="size-3.5" />}
-                Load more
-              </button>
-            )}
-            <a
-              href="/dashboard/applications"
-              className="inline-flex items-center gap-1.5 font-black text-brand-700 transition-colors hover:text-brand-900"
-            >
-              History <ArrowUpRight className="size-4" />
-            </a>
-          </div>
+      {hasMore && (
+        <div className="flex justify-center pt-1">
+          <button
+            type="button"
+            disabled={pageLoading}
+            onClick={() => void loadPage(items.length, "append")}
+            className="glass-chip inline-flex h-10 items-center justify-center gap-2 rounded-xl px-4 text-sm font-bold text-brand-800 transition-colors hover:text-brand-900 disabled:pointer-events-none disabled:opacity-60"
+          >
+            {pageLoading ? <Loader2 className="size-4 animate-spin" /> : <Plus className="size-4" />}
+            Load more
+          </button>
         </div>
       )}
 

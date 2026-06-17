@@ -15,7 +15,7 @@ import { ArrowRight, LayoutGrid, MousePointer2, Send } from "lucide-react";
 import { useAuthUser } from "@/components/auth/useAuthUser";
 import { AnimatedGetStartedButton } from "./AnimatedGetStartedButton";
 
-const ROTATING_HERO_WORDS = ["sleep", "prepare", "chill"] as const;
+const ROTATING_HERO_WORDS = ["Prepare", "sleep", "work", "relax"] as const;
 
 /**
  * Scroll-driven hero: a stack of rounded cards peeks below the headline, then the

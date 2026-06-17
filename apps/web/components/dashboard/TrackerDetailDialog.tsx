@@ -220,7 +220,7 @@ export function TrackerDetailDialog({
                     className={cn(
                       "inline-flex items-center rounded-full px-3 py-1.5 text-xs font-black transition-[background-color,color,box-shadow] disabled:cursor-default",
                       active
-                        ? "bg-brand-600 text-white shadow-[0_10px_22px_-14px_rgba(31,100,224,0.8)]"
+                        ? "bg-brand-600 text-white"
                         : "bg-white text-ink ring-1 ring-zinc-200 hover:bg-brand-50 hover:text-brand-700 hover:ring-brand-200 disabled:opacity-60",
                     )}
                   >

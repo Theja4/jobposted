@@ -10,11 +10,9 @@ import { BILLING_PLANS } from "@/lib/billing/plans";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   Check,
-  Globe2,
   Loader2,
   ShieldCheck,
   Sparkles,
-  Zap,
 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Reveal } from "@/components/ui/Reveal";
@@ -74,17 +72,7 @@ export function Pricing({ pricing }: PricingProps) {
                 className="absolute inset-x-0 top-0 h-1/2 bg-[linear-gradient(180deg,rgba(255,255,255,0.24),rgba(255,255,255,0))]"
               />
               <div className="relative flex h-full flex-col">
-                <div className="flex items-start justify-between gap-4">
-                  <div className="grid size-14 place-items-center rounded-2xl bg-white/18 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.35)]">
-                    <Zap className="size-6" />
-                  </div>
-                  <span className="inline-flex items-center gap-1.5 rounded-full bg-white px-3 py-1 text-xs font-bold text-brand-700">
-                    <Globe2 className="size-3.5" />
-                    {pricing.localPricingReady ? pricing.currencyCode : "USD"}
-                  </span>
-                </div>
-
-                <h3 className="mt-7 text-3xl font-extrabold text-white">{plan.label}</h3>
+                <h3 className="text-3xl font-extrabold text-white">{plan.label}</h3>
                 <p className="mt-2 max-w-sm text-sm leading-6 text-white/78">
                   Prepared applications, tailored resumes, and a tracker built around review before
                   submit.
