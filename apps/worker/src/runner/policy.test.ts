@@ -2,7 +2,14 @@ import { describe, expect, it } from "vitest";
 import { classifyFailure, decideAttempt, failureStatus } from "./policy.js";
 
 describe("decideAttempt", () => {
-  const base = { todaySubmitted: 0, dailyLimit: 20, attempts: 1, maxAttempts: 3 };
+  const base = {
+    todaySubmitted: 0,
+    dailyLimit: 20,
+    canSubmit: true,
+    reason: "ok" as const,
+    attempts: 1,
+    maxAttempts: 3,
+  };
 
   it("proceeds within limits", () => {
     expect(decideAttempt(base)).toEqual({ proceed: true });
@@ -11,8 +18,18 @@ describe("decideAttempt", () => {
   it("releases when the daily limit is reached", () => {
     expect(decideAttempt({ ...base, todaySubmitted: 20 })).toEqual({
       proceed: false,
-      outcome: "limit_reached",
-      release: true,
+      outcome: "daily_limit_reached",
+      status: "queued",
+      releaseAttempt: true,
+    });
+  });
+
+  it("routes inactive subscriptions to review without burning an attempt", () => {
+    expect(decideAttempt({ ...base, canSubmit: false, reason: "subscription_inactive" })).toEqual({
+      proceed: false,
+      outcome: "subscription_inactive",
+      status: "ready_for_review",
+      releaseAttempt: true,
     });
   });
 
@@ -20,14 +37,15 @@ describe("decideAttempt", () => {
     expect(decideAttempt({ ...base, attempts: 4 })).toEqual({
       proceed: false,
       outcome: "too_many_attempts",
-      release: false,
+      status: "failed",
+      releaseAttempt: false,
     });
   });
 
   it("limit check takes precedence over attempts", () => {
     const decision = decideAttempt({ ...base, todaySubmitted: 20, attempts: 9 });
     expect(decision.proceed).toBe(false);
-    if (!decision.proceed) expect(decision.outcome).toBe("limit_reached");
+    if (!decision.proceed) expect(decision.outcome).toBe("daily_limit_reached");
   });
 });
 

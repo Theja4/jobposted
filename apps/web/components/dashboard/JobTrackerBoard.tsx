@@ -9,11 +9,9 @@ import {
   CircleOff,
   Clock3,
   Download,
-  ExternalLink,
   ListChecks,
   Loader2,
   MessageSquareReply,
-  Pencil,
   Plus,
   Search,
   Send,
@@ -29,11 +27,14 @@ import {
   TRACKER_COLUMNS,
   TRACKER_SOURCE_LABELS,
   customStageIdFromLabel,
+  defaultTrackerColor,
   isBuiltInTrackerStage,
   isCustomTrackerStage,
   labelForTrackerStage,
   statusForTrackerStage,
+  trackerColorById,
   type ManualTrackerInput,
+  type TrackerCardColor,
   type TrackerColumn,
   type TrackerItem,
   type TrackerSource,
@@ -41,6 +42,7 @@ import {
 } from "@/lib/dashboard/tracker-model";
 import { CompanyAvatar } from "./CompanyAvatar";
 import { DashboardSelect } from "./DashboardSelect";
+import { TrackerDetailDialog } from "./TrackerDetailDialog";
 
 type SourceFilter = "all" | TrackerSource;
 type StageFilter = "all" | TrackerStage;
@@ -63,6 +65,27 @@ const TRACKER_SORT_OPTIONS: Array<{ value: TrackerSort; label: string }> = [
 ];
 
 const CUSTOM_COLUMN_STORAGE_KEY = "jobposted.tracker.customColumns.v1";
+const CARD_COLOR_STORAGE_KEY = "jobposted.tracker.cardColors.v1";
+
+function readStoredCardColors(): Record<string, string> {
+  if (typeof window === "undefined") return {};
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(CARD_COLOR_STORAGE_KEY) ?? "{}");
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+    const out: Record<string, string> = {};
+    for (const [id, value] of Object.entries(parsed as Record<string, unknown>)) {
+      if (typeof value === "string" && trackerColorById(value)) out[id] = value;
+    }
+    return out;
+  } catch {
+    return {};
+  }
+}
+
+function saveStoredCardColors(colors: Record<string, string>) {
+  if (typeof window === "undefined") return;
+  window.localStorage.setItem(CARD_COLOR_STORAGE_KEY, JSON.stringify(colors));
+}
 
 const STAGE_ICONS: Record<string, typeof Clock3> = {
   inbox: Clock3,
@@ -70,13 +93,6 @@ const STAGE_ICONS: Record<string, typeof Clock3> = {
   interview: MessageSquareReply,
   offer: Trophy,
   closed: CircleOff,
-};
-
-const SOURCE_CLASSES: Record<TrackerSource, string> = {
-  extension: "bg-brand-50 text-brand-700 shadow-[0_8px_16px_-14px_rgba(31,100,224,0.5)]",
-  job_board: "bg-sky-50 text-sky-700 shadow-[0_8px_16px_-14px_rgba(2,132,199,0.5)]",
-  server: "bg-emerald-50 text-emerald-700 shadow-[0_8px_16px_-14px_rgba(5,150,105,0.5)]",
-  manual: "bg-zinc-100 text-zinc-700 shadow-[0_8px_16px_-14px_rgba(15,23,42,0.42)]",
 };
 
 const EMPTY_FORM: ManualTrackerInput = {
@@ -90,8 +106,6 @@ const EMPTY_FORM: ManualTrackerInput = {
 
 const TRACKER_PANEL_CLASS =
   "bg-white/88 shadow-[0_18px_42px_-32px_rgba(15,23,42,0.48),0_8px_18px_-18px_rgba(15,23,42,0.2)]";
-const TRACKER_CARD_CLASS =
-  "bg-white shadow-[0_18px_38px_-30px_rgba(15,23,42,0.5),0_8px_18px_-18px_rgba(15,23,42,0.22)]";
 const TRACKER_CONTROL_CLASS =
   "bg-white shadow-[0_12px_26px_-22px_rgba(15,23,42,0.48),0_3px_10px_-9px_rgba(15,23,42,0.18)]";
 const TRACKER_CONTROL_FOCUS_CLASS =
@@ -177,8 +191,10 @@ function saveStoredCustomColumns(columns: TrackerColumn[]) {
 }
 
 function isInteractiveCardTarget(target: EventTarget | null) {
+  // Note: the card root itself is role="button" (keyboard open), so it is deliberately
+  // excluded here — otherwise every drag/click would match it and be suppressed.
   return target instanceof HTMLElement
-    ? Boolean(target.closest("a, button, input, select, textarea, label, [role='button']"))
+    ? Boolean(target.closest("a, button, input, select, textarea, label"))
     : false;
 }
 
@@ -194,7 +210,7 @@ function setRoundedDragImage(event: React.DragEvent<HTMLElement>) {
   clone.style.borderRadius = "1rem";
   clone.style.overflow = "hidden";
   clone.style.clipPath = "inset(0 round 1rem)";
-  clone.style.background = "#ffffff";
+  clone.style.background = getComputedStyle(source).backgroundColor || "#ffffff";
   clone.style.boxShadow = "0 18px 36px rgba(11, 18, 32, 0.16)";
   clone.style.opacity = "0.96";
   document.body.appendChild(clone);
@@ -651,36 +667,40 @@ function AddColumnPanel({
 
 function TrackerCard({
   item,
+  color,
   busy,
   dragging,
-  stageOptions,
-  onEdit,
-  onDelete,
+  onOpen,
   onDragEnd,
   onDragStart,
   onCardPointerCancel,
   onCardPointerDown,
   onCardPointerMove,
   onCardPointerUp,
-  onStageChange,
 }: {
   item: TrackerItem;
+  color: TrackerCardColor;
   busy: boolean;
   dragging: boolean;
-  stageOptions: Array<{ value: TrackerStage; label: string }>;
-  onEdit: (item: TrackerItem) => void;
-  onDelete: (item: TrackerItem) => void;
+  onOpen: (item: TrackerItem) => void;
   onDragEnd: () => void;
   onDragStart: (item: TrackerItem, event: React.DragEvent<HTMLElement>) => void;
   onCardPointerCancel: (event: React.PointerEvent<HTMLElement>) => void;
   onCardPointerDown: (item: TrackerItem, event: React.PointerEvent<HTMLElement>) => void;
   onCardPointerMove: (event: React.PointerEvent<HTMLElement>) => void;
   onCardPointerUp: (event: React.PointerEvent<HTMLElement>) => void;
-  onStageChange: (item: TrackerItem, stage: TrackerStage) => void;
 }) {
-  const Icon = iconForStage(item.stage);
-  const fieldText =
-    item.totalFields > 0 ? `${item.fieldsFilled}/${item.totalFields} fields` : "Logged";
+  function handleClick(event: React.MouseEvent<HTMLElement>) {
+    if (busy || isInteractiveCardTarget(event.target)) return;
+    onOpen(item);
+  }
+
+  function handleKeyDown(event: React.KeyboardEvent<HTMLElement>) {
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      if (!busy) onOpen(item);
+    }
+  }
 
   return (
     <motion.article
@@ -692,124 +712,56 @@ function TrackerCard({
       className={cn(dragging && "opacity-45")}
     >
       <div
+        role="button"
+        tabIndex={0}
         draggable={!busy}
-        title="Drag to another stage"
+        aria-label={`Open ${item.role} at ${item.company}`}
+        title="Open details · drag to move stage"
+        onClick={handleClick}
+        onKeyDown={handleKeyDown}
         onDragStart={(event) => onDragStart(item, event)}
         onDragEnd={onDragEnd}
         onPointerCancel={onCardPointerCancel}
         onPointerDown={(event) => onCardPointerDown(item, event)}
         onPointerMove={onCardPointerMove}
         onPointerUp={onCardPointerUp}
+        style={
+          {
+            "--cbg": color.bg,
+            "--cbd": color.border,
+            "--cbdh": color.swatch,
+          } as React.CSSProperties
+        }
         className={cn(
-          "cursor-grab touch-none rounded-2xl p-4 transition-[background-color,box-shadow] hover:bg-brand-50/55 active:cursor-grabbing",
+          "group cursor-grab touch-none rounded-2xl border bg-[var(--cbg)] p-3 outline-none transition-[transform,box-shadow,border-color] duration-200 ease-out active:cursor-grabbing",
+          "border-[var(--cbd)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600",
           dragging
-            ? "bg-brand-50/80 shadow-[0_0_0_3px_rgba(31,100,224,0.18),0_18px_38px_-26px_rgba(31,100,224,0.48),0_8px_18px_-16px_rgba(15,23,42,0.2)]"
-            : TRACKER_CARD_CLASS,
+            ? "scale-[0.99] border-brand-400 shadow-[0_0_0_3px_rgba(31,100,224,0.18),0_18px_38px_-26px_rgba(31,100,224,0.45)]"
+            : "shadow-[0_10px_24px_-18px_rgba(15,23,42,0.32)] hover:-translate-y-0.5 hover:border-[var(--cbdh)] hover:shadow-[0_18px_34px_-20px_rgba(15,23,42,0.42)]",
           busy && "cursor-default",
         )}
       >
-        <div className="flex items-start gap-3">
+        <div className="flex items-center gap-3">
           <CompanyAvatar
             company={item.company}
             logoUrl={item.companyLogoUrl}
             colorSeed={item.source === "manual" ? item.id : undefined}
+            size="sm"
+            className="border border-white/70 bg-white"
           />
           <div className="min-w-0 flex-1">
-            <h3 className="line-clamp-2 text-sm font-extrabold leading-5 text-ink">{item.role}</h3>
-            <p className="mt-0.5 truncate text-xs font-bold text-muted">{item.company}</p>
+            <h3 className="line-clamp-1 text-sm font-extrabold leading-tight text-ink group-hover:line-clamp-none">
+              {item.role}
+            </h3>
+            <p className="mt-0.5 line-clamp-1 text-xs font-bold text-ink/65 group-hover:line-clamp-none">
+              {item.company} · {formatDate(item.updatedAt)}
+            </p>
           </div>
-          {item.jobUrl && (
-            <a
-              href={item.jobUrl}
-              target="_blank"
-              rel="noreferrer"
-              aria-label={`Open ${item.role} at ${item.company}`}
-              className={cn(
-                "grid size-8 shrink-0 place-items-center rounded-lg hover:bg-brand-50 hover:text-brand-700",
-                TRACKER_ICON_BUTTON_CLASS,
-              )}
-            >
-              <ExternalLink className="size-4" />
-            </a>
-          )}
+          <ArrowUpRight
+            className="size-4 shrink-0 text-ink/45 opacity-0 transition-opacity duration-200 group-hover:opacity-100"
+            aria-hidden
+          />
         </div>
-
-      <div className="mt-3 flex flex-wrap gap-1.5">
-        <span
-          className={cn(
-            "inline-flex items-center gap-1 rounded-full px-2 py-1 text-[11px] font-black",
-            SOURCE_CLASSES[item.source],
-          )}
-        >
-          {item.sourceLabel}
-        </span>
-        <span
-          className={cn(
-            "inline-flex items-center gap-1 rounded-full bg-white px-2 py-1 text-[11px] font-black text-brand-700",
-            TRACKER_CHIP_SHADOW_CLASS,
-          )}
-        >
-          <Icon className="size-3" />
-          {fieldText}
-        </span>
-        {item.matchScore > 0 && (
-          <span className="inline-flex rounded-full bg-emerald-50 px-2 py-1 text-[11px] font-black text-emerald-700 shadow-[0_8px_16px_-14px_rgba(5,150,105,0.5)]">
-            {item.matchScore}% fit
-          </span>
-        )}
-      </div>
-
-      <div className="mt-3 flex items-center justify-between gap-3 rounded-xl bg-zinc-50/80 px-3 py-2 shadow-[0_9px_18px_-16px_rgba(15,23,42,0.34)]">
-        <p className="truncate text-xs font-bold text-muted">{item.location}</p>
-        <time className="shrink-0 text-xs font-black text-ink">{formatDate(item.updatedAt)}</time>
-      </div>
-
-      {item.notes && <p className="mt-2 line-clamp-2 text-xs leading-5 text-ink/70">{item.notes}</p>}
-
-      <div className="mt-3 flex items-center gap-2 rounded-xl bg-zinc-50/75 p-2 shadow-[0_9px_18px_-16px_rgba(15,23,42,0.34)]">
-        <span className="sr-only" id={`tracker-stage-label-${item.id}`}>
-          Move tracker item
-        </span>
-        <DashboardSelect
-          id={`tracker-stage-${item.id}`}
-          value={item.stage}
-          disabled={busy}
-          options={stageOptions}
-          onChange={(stage) => onStageChange(item, stage)}
-          ariaLabel={`Move ${item.role} at ${item.company}`}
-          className="min-w-0 flex-1"
-          buttonClassName={cn(
-            "h-9 min-w-0 flex-1 rounded-lg px-2.5 text-xs font-black text-ink outline-none transition-[background-color,box-shadow] disabled:opacity-60",
-            TRACKER_CONTROL_CLASS,
-            TRACKER_CONTROL_FOCUS_CLASS,
-          )}
-          maxMenuHeight={240}
-        />
-        <button
-          type="button"
-          onClick={() => onEdit(item)}
-          disabled={busy}
-          aria-label={`Edit ${item.role} at ${item.company}`}
-          className={cn(
-            "grid size-9 shrink-0 place-items-center rounded-lg hover:bg-brand-50 hover:text-brand-700 disabled:pointer-events-none disabled:opacity-60",
-            TRACKER_ICON_BUTTON_CLASS,
-          )}
-        >
-          <Pencil className="size-4" />
-        </button>
-        <button
-          type="button"
-          onClick={() => onDelete(item)}
-          disabled={busy}
-          aria-label={`Delete ${item.role} at ${item.company}`}
-          className={cn(
-            "grid size-9 shrink-0 place-items-center rounded-lg hover:bg-red-50 hover:text-red-600 disabled:pointer-events-none disabled:opacity-60",
-            TRACKER_ICON_BUTTON_CLASS,
-          )}
-        >
-          <Trash2 className="size-4" />
-        </button>
-      </div>
       </div>
     </motion.article>
   );
@@ -821,9 +773,8 @@ function TrackerColumn({
   busyId,
   draggingId,
   dragOverStage,
-  stageOptions,
-  onEdit,
-  onDelete,
+  colorForItem,
+  onOpen,
   onRemoveColumn,
   onCardDragEnd,
   onCardDragStart,
@@ -834,16 +785,14 @@ function TrackerColumn({
   onCardPointerDown,
   onCardPointerMove,
   onCardPointerUp,
-  onStageChange,
 }: {
   column: TrackerColumn;
   items: TrackerItem[];
   busyId: string | null;
   draggingId: string | null;
   dragOverStage: TrackerStage | null;
-  stageOptions: Array<{ value: TrackerStage; label: string }>;
-  onEdit: (item: TrackerItem) => void;
-  onDelete: (item: TrackerItem) => void;
+  colorForItem: (item: TrackerItem) => TrackerCardColor;
+  onOpen: (item: TrackerItem) => void;
   onRemoveColumn: (column: TrackerColumn) => void;
   onCardDragEnd: () => void;
   onCardDragStart: (item: TrackerItem, event: React.DragEvent<HTMLElement>) => void;
@@ -854,7 +803,6 @@ function TrackerColumn({
   onCardPointerDown: (item: TrackerItem, event: React.PointerEvent<HTMLElement>) => void;
   onCardPointerMove: (event: React.PointerEvent<HTMLElement>) => void;
   onCardPointerUp: (event: React.PointerEvent<HTMLElement>) => void;
-  onStageChange: (item: TrackerItem, stage: TrackerStage) => void;
 }) {
   const Icon = iconForStage(column.id);
   const draggingOver = dragOverStage === column.id;
@@ -908,18 +856,16 @@ function TrackerColumn({
             <TrackerCard
               key={item.id}
               item={item}
+              color={colorForItem(item)}
               busy={busyId === item.id}
               dragging={draggingId === item.id}
-              stageOptions={stageOptions}
-              onEdit={onEdit}
-              onDelete={onDelete}
+              onOpen={onOpen}
               onDragEnd={onCardDragEnd}
               onDragStart={onCardDragStart}
               onCardPointerCancel={onCardPointerCancel}
               onCardPointerDown={onCardPointerDown}
               onCardPointerMove={onCardPointerMove}
               onCardPointerUp={onCardPointerUp}
-              onStageChange={onStageChange}
             />
           ))}
         </AnimatePresence>
@@ -961,6 +907,9 @@ export function JobTrackerBoard({ initialPage }: { initialPage: TrackerPage }) {
   const [customColumns, setCustomColumns] = useState<TrackerColumn[]>([]);
   const [editingItem, setEditingItem] = useState<TrackerItem | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [detailItem, setDetailItem] = useState<TrackerItem | null>(null);
+  const [cardColors, setCardColors] = useState<Record<string, string>>({});
+  const [cardColorsLoaded, setCardColorsLoaded] = useState(false);
   const [pageLoading, setPageLoading] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [draggingId, setDraggingId] = useState<string | null>(null);
@@ -974,6 +923,25 @@ export function JobTrackerBoard({ initialPage }: { initialPage: TrackerPage }) {
   useEffect(() => {
     setCustomColumns(readStoredCustomColumns());
     setColumnsLoaded(true);
+  }, []);
+
+  useEffect(() => {
+    setCardColors(readStoredCardColors());
+    setCardColorsLoaded(true);
+  }, []);
+
+  useEffect(() => {
+    if (!cardColorsLoaded) return;
+    saveStoredCardColors(cardColors);
+  }, [cardColorsLoaded, cardColors]);
+
+  const colorForItem = useCallback(
+    (item: TrackerItem) => trackerColorById(cardColors[item.id]) ?? defaultTrackerColor(item.id),
+    [cardColors],
+  );
+
+  const setCardColor = useCallback((id: string, colorId: string) => {
+    setCardColors((current) => ({ ...current, [id]: colorId }));
   }, []);
 
   useEffect(() => {
@@ -1545,13 +1513,8 @@ export function JobTrackerBoard({ initialPage }: { initialPage: TrackerPage }) {
                 busyId={busyId}
                 draggingId={draggingId}
                 dragOverStage={dragOverStage}
-                stageOptions={stageOptions}
-                onEdit={(item) => {
-                  setColumnPanelOpen(false);
-                  setManualOpen(false);
-                  setEditingItem(item);
-                }}
-                onDelete={deleteItem}
+                colorForItem={colorForItem}
+                onOpen={setDetailItem}
                 onRemoveColumn={removeCustomColumn}
                 onCardDragEnd={endDrag}
                 onCardDragStart={startDrag}
@@ -1562,7 +1525,6 @@ export function JobTrackerBoard({ initialPage }: { initialPage: TrackerPage }) {
                 onCardPointerDown={startCardPointerDrag}
                 onCardPointerMove={moveCardPointerDrag}
                 onCardPointerUp={endCardPointerDrag}
-                onStageChange={changeStage}
               />
             ))}
           </div>
@@ -1596,6 +1558,38 @@ export function JobTrackerBoard({ initialPage }: { initialPage: TrackerPage }) {
           </div>
         </div>
       )}
+
+      <AnimatePresence>
+        {detailItem && (
+          <TrackerDetailDialog
+            item={detailItem}
+            color={colorForItem(detailItem)}
+            stages={trackerColumns}
+            busy={busyId === detailItem.id}
+            onClose={() => setDetailItem(null)}
+            onStageChange={(stage) => {
+              const target = detailItem;
+              setDetailItem((prev) =>
+                prev ? { ...prev, stage, status: statusForTrackerStage(stage) } : prev,
+              );
+              void changeStage(target, stage);
+            }}
+            onColorChange={(colorId) => setCardColor(detailItem.id, colorId)}
+            onEdit={() => {
+              const target = detailItem;
+              setDetailItem(null);
+              setColumnPanelOpen(false);
+              setManualOpen(false);
+              setEditingItem(target);
+            }}
+            onDelete={() => {
+              const target = detailItem;
+              setDetailItem(null);
+              void deleteItem(target);
+            }}
+          />
+        )}
+      </AnimatePresence>
     </div>
   );
 }

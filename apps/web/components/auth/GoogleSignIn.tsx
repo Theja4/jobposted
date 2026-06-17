@@ -57,7 +57,7 @@ declare global {
 
 export function GoogleSignIn({
   onError,
-  redirectTo = "/dashboard/onboarding",
+  redirectTo = "/dashboard/jobs",
 }: {
   onError: (message: string) => void;
   redirectTo?: string;

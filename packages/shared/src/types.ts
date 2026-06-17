@@ -81,8 +81,8 @@ export type ApplicationStatus =
 /** Which path submitted the application (design doc §2, §8). */
 export type ApplyPath = "server" | "extension" | "manual" | "job_board";
 
-/** Paid entitlement plans. starter_20 is legacy; pro_50 backs the current JobPosted plan. */
-export type Plan = "starter_20" | "pro_50";
+/** Paid entitlement plan. Legacy starter_20/pro_50 subscription rows are normalized in billing code. */
+export type Plan = "jobposted_20";
 
 /** Subscription lifecycle (design doc §8, §12). */
 export type SubscriptionStatus = "trialing" | "active" | "past_due" | "canceled";
@@ -257,9 +257,9 @@ export interface Subscription {
   userId: string;
   provider: string | null; // 'polar' | 'razorpay'
   plan: Plan | null;
-  dailyLimit: number | null; // 20 for starter_20, 50 for pro_50
+  dailyLimit: number | null; // 20 for jobposted_20
   status: SubscriptionStatus | null;
-  trialApplicationsUsed: number; // counts toward the 5-application trial
+  trialApplicationsUsed: number; // legacy column; no longer grants free submissions
   renewsAt: string | null;
 }
 
@@ -305,9 +305,5 @@ export interface PlanInfo {
 
 /** Honest "up to" daily caps (design doc §7.1, §12). */
 export const PLANS: Record<Plan, PlanInfo> = {
-  starter_20: { id: "starter_20", name: "Starter", priceUsd: 19, dailyLimit: 20 },
-  pro_50: { id: "pro_50", name: "JobPosted", priceUsd: 19.99, dailyLimit: 50 },
+  jobposted_20: { id: "jobposted_20", name: "JobPosted", priceUsd: 19.99, dailyLimit: 20 },
 };
-
-/** Applications a user gets free before the card is charged (design doc §12, §23.7). */
-export const TRIAL_APPLICATION_LIMIT = 5;

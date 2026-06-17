@@ -679,7 +679,7 @@ function modeFrom(value: unknown): "auto" | "review" | null {
 }
 
 function dailyLimitFromEnv() {
-  const value = Number(process.env.JOBPOSTED_DAILY_PREP_LIMIT ?? 16);
+  const value = Number(process.env.JOBPOSTED_DAILY_PREP_LIMIT ?? 20);
   if (!Number.isFinite(value) || value < 1) return 16;
   return Math.min(50, Math.floor(value));
 }
@@ -1002,9 +1002,7 @@ export async function prepareDailyApplicationsForUser(
 
   const usage = await readUsageStatus(client, userId, now);
   const dailyRemaining = Math.max(0, usage.dailyLimit - usage.todaySubmitted);
-  const trialRemaining = usage.plan === "trial" ? usage.trialRemaining : Number.POSITIVE_INFINITY;
-  const remaining = Math.max(0, Math.min(dailyRemaining, trialRemaining));
-  const limit = Math.min(configuredLimit, remaining);
+  const limit = Math.min(configuredLimit, dailyRemaining);
   if (!usage.canSubmit || limit < 1) {
     return {
       ok: true,

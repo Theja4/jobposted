@@ -1,4 +1,4 @@
-export type BillingPlanId = "starter_20" | "pro_50";
+export type BillingPlanId = "jobposted_20";
 
 export type BillingTenure = "monthly" | "quarterly";
 
@@ -34,9 +34,7 @@ export type BillingPricingView = {
   options: BillingPricingOption[];
 };
 
-export const TRIAL_APPLICATIONS = 5;
-export const TRIAL_DAILY_LIMIT = 5;
-export const CURRENT_BILLING_PLAN_ID: BillingPlanId = "pro_50";
+export const CURRENT_BILLING_PLAN_ID: BillingPlanId = "jobposted_20";
 
 export const BILLING_TENURES: BillingTenure[] = ["monthly", "quarterly"];
 
@@ -164,24 +162,20 @@ export function billingRegionForCountry(countryCode: unknown): BillingRegion {
 }
 
 export const BILLING_PLANS: Record<BillingPlanId, BillingPlan> = {
-  starter_20: {
-    id: "starter_20",
-    label: "Starter",
-    dailyLimit: 20,
-    productEnv: "CREEM_STARTER_20_PRODUCT_ID",
-    checkoutEnv: "CHECKOUT_STARTER_20_URL",
-  },
-  pro_50: {
-    id: "pro_50",
+  jobposted_20: {
+    id: "jobposted_20",
     label: "JobPosted",
-    dailyLimit: 50,
-    productEnv: "CREEM_PRO_50_PRODUCT_ID",
-    checkoutEnv: "CHECKOUT_PRO_50_URL",
+    dailyLimit: 20,
+    productEnv: "CREEM_PRODUCT_ID",
+    checkoutEnv: "CHECKOUT_URL",
   },
 };
 
 export function parsePlan(value: unknown): BillingPlanId | null {
-  return value === "starter_20" || value === "pro_50" ? value : null;
+  if (value === "jobposted_20" || value === "starter_20" || value === "pro_50") {
+    return CURRENT_BILLING_PLAN_ID;
+  }
+  return null;
 }
 
 export function planFor(value: unknown): BillingPlan | null {

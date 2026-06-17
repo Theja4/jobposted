@@ -2,22 +2,26 @@ import { describe, expect, it } from "vitest";
 import { computeUsageStatus } from "./usage";
 
 describe("computeUsageStatus", () => {
-  it("allows trial users under the five application trial", () => {
+  it("blocks users without an active subscription", () => {
     expect(
       computeUsageStatus({ subscription: null, totalSubmitted: 2, todaySubmitted: 2 }),
-    ).toMatchObject({ canSubmit: true, plan: "trial", trialRemaining: 3 });
+    ).toMatchObject({ canSubmit: false, plan: "jobposted_20", reason: "subscription_inactive" });
   });
 
-  it("blocks when the trial is exhausted", () => {
+  it("does not grant access for trialing subscriptions", () => {
     expect(
-      computeUsageStatus({ subscription: null, totalSubmitted: 5, todaySubmitted: 1 }),
-    ).toMatchObject({ canSubmit: false, reason: "trial_exhausted" });
+      computeUsageStatus({
+        subscription: { plan: "jobposted_20", status: "trialing", dailyLimit: 20 },
+        totalSubmitted: 0,
+        todaySubmitted: 0,
+      }),
+    ).toMatchObject({ canSubmit: false, reason: "subscription_inactive" });
   });
 
   it("blocks active plans at the daily limit", () => {
     expect(
       computeUsageStatus({
-        subscription: { plan: "starter_20", status: "active", dailyLimit: 20 },
+        subscription: { plan: "jobposted_20", status: "active", dailyLimit: 20 },
         totalSubmitted: 30,
         todaySubmitted: 20,
       }),

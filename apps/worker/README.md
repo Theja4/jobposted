@@ -29,8 +29,10 @@ screenshot, and transitions status. Implemented in `src/runner/`:
 - **Dry-run by default** — fills the form + screenshots it but never clicks submit. Only an
   explicit `APPLY_DRY_RUN=0` submits live.
 - Enforces each user's daily limit (derived from `subscriptions`; inactive sub → 0) and an
-  attempt cap; permanent failures (unsupported ATS, login wall, captcha, missing form/resume) are
-  routed to `ready_for_review`, transient ones are re-queued with backoff.
+  attempt cap; users without an active subscription are routed to review without submission even if
+  rows enter the queue through a non-matcher path. Permanent failures (unsupported ATS, login wall,
+  captcha, missing form/resume) are routed to `ready_for_review`, transient ones are re-queued with
+  backoff.
 - Validates selectors before submit. The runner checks for login walls, captchas, closed jobs,
   required identity/email/resume/submit controls, and captures a screenshot before routing broken
   forms to review.
@@ -50,9 +52,9 @@ Runner env:
 ```bash
 APPLY_RUNNER_ENABLED=0          # 1 to enable the /runner/run endpoint
 APPLY_DRY_RUN=1                 # 0 to actually submit (default: dry run)
-APPLY_BATCH=10                  # applications claimed per run (max 50)
+APPLY_BATCH=50                  # applications claimed per run (max 50)
 APPLY_MAX_ATTEMPTS=3            # retries before a transient failure becomes 'failed'
-APPLY_DAILY_LIMIT_DEFAULT=20    # fallback when a subscription has no daily_limit
+APPLY_RUNNER_LOCK_TTL_SECONDS=900 # DB lease protecting concurrent runner executions
 ```
 
 ## Auto pipeline (`POST /cron/run` or `cron:run`)
@@ -64,7 +66,7 @@ A single scheduled cron hit runs the whole auto path in order:
 2. **render** — `POST $JOBPOSTED_WEB_URL/api/queue/render` tailors (when enabled + gateway
    configured) and renders a PDF for queued apps missing an artifact, pinning `rendered_pdf_path`
    so the runner submits the *tailored* resume, not the master fallback. Gated by
-   `QUEUE_RENDER_ON_CRON` (default on); batch via `QUEUE_RENDER_LIMIT` (default 8).
+  `QUEUE_RENDER_ON_CRON` (default on); batch via `QUEUE_RENDER_LIMIT` (default 50).
 3. **apply** — runs `runApplyBatch` locally (same code as `POST /runner/run`). Gated by
    `APPLY_RUNNER_ON_CRON` (default on) **and** `APPLY_RUNNER_ENABLED=1`, still dry-run unless
    `APPLY_DRY_RUN=0`.
@@ -72,8 +74,10 @@ A single scheduled cron hit runs the whole auto path in order:
 
 ```bash
 QUEUE_RENDER_ON_CRON=1          # 0 to skip the render step in /cron/run
-QUEUE_RENDER_LIMIT=8            # apps rendered per cron tick (web side, max 50)
+QUEUE_RENDER_LIMIT=50           # apps rendered per cron tick (web side, max 50)
 APPLY_RUNNER_ON_CRON=1          # 0 to skip the apply step in /cron/run
+WORKER_LOCKS_ENABLED=1          # 0 disables DB leases (not recommended in production)
+WORKER_CRON_LOCK_TTL_SECONDS=1800
 ```
 
 Each stage is independent: a render or apply failure is captured in the response (and error
@@ -155,7 +159,7 @@ ERROR_REPORTING_WEBHOOK_URL=
 Optional queue-prep env:
 
 ```bash
-JOBPOSTED_DAILY_PREP_LIMIT=16
+JOBPOSTED_DAILY_PREP_LIMIT=20
 JOBPOSTED_DAILY_CANDIDATE_LIMIT=500
 JOBPOSTED_BULK_USER_PAGE_SIZE=200
 JOBPOSTED_BULK_CONCURRENCY=4

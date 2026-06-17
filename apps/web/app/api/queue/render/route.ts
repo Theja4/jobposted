@@ -5,6 +5,7 @@ import { gatewayConfigured } from "@/lib/ai/gateway";
 import { loadBaseResume } from "@/lib/tailor/source";
 import { tailorResume } from "@/lib/tailor/engine";
 import { renderResumePdf } from "@/lib/tailor/pdf";
+import { getUsageStatus } from "@/lib/billing/limits";
 import { reportError } from "@/lib/observability/report";
 
 export const runtime = "nodejs";
@@ -55,7 +56,7 @@ export async function POST(request: Request) {
   const serviceClient = service;
 
   const body = (await request.json().catch(() => null)) as Record<string, unknown> | null;
-  const defaultLimit = Number(process.env.QUEUE_RENDER_LIMIT ?? process.env.APPLY_BATCH ?? 10) || 10;
+  const defaultLimit = Number(process.env.QUEUE_RENDER_LIMIT ?? process.env.APPLY_BATCH ?? 50) || 50;
   const limit = Math.min(50, Math.max(1, Number(body?.limit ?? defaultLimit) || defaultLimit));
 
   const { data, error } = await serviceClient
@@ -91,6 +92,16 @@ export async function POST(request: Request) {
   // Sequential: tailoring is an LLM call; small bounded batch per tick avoids hammering the gateway.
   for (const row of rows) {
     try {
+      const usage = await getUsageStatus(serviceClient, row.user_id);
+      if (!usage.canSubmit) {
+        if (usage.reason === "subscription_inactive") {
+          await markReadyForReview(row.id, "subscription_inactive");
+        } else {
+          errors.push({ id: row.id, reason: usage.reason });
+        }
+        continue;
+      }
+
       const base = await loadBaseResume(serviceClient, row.user_id, row.base_version_id);
       if (!base) {
         await markReadyForReview(row.id, "no_base_resume");

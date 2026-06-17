@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { sanitizeOnboardingConfig } from "@/lib/onboarding/model";
 import { reportError } from "@/lib/observability/report";
+import { requireProApi } from "@/lib/billing/access";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
@@ -15,6 +16,8 @@ export async function POST(request: Request) {
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ ok: false, error: "unauthorized" }, { status: 401 });
+  const proGate = await requireProApi(supabase, user.id);
+  if (proGate) return proGate;
 
   const body = (await request.json().catch(() => null)) as { tailorResume?: unknown } | null;
   if (typeof body?.tailorResume !== "boolean") {

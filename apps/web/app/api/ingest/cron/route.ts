@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { cronHandler } from "@jobposted/ingest";
+import { reportError } from "@/lib/observability/report";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -25,7 +26,7 @@ async function handleCron(request: Request) {
     const body = await response.json().catch(() => null);
     return NextResponse.json({ ok: true, ingest: body }, { status: response.status });
   } catch (error) {
-    console.error("ingest cron failed", error);
+    await reportError("ingest cron failed", error);
     return NextResponse.json({ ok: false, error: "ingest_failed" }, { status: 500 });
   }
 }

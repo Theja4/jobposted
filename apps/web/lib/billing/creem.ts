@@ -23,7 +23,7 @@ function envText(name: string) {
 
 function globalProductEnvNamesForTenure(tenure: BillingTenure) {
   return tenure === "monthly"
-    ? ["CREEM_MONTHLY_PRODUCT_ID", "CREEM_PRODUCT_ID", "CREEM_PRO_50_PRODUCT_ID"]
+    ? ["CREEM_MONTHLY_PRODUCT_ID", "CREEM_PRODUCT_ID", "CREEM_PRO_50_PRODUCT_ID", "CREEM_STARTER_20_PRODUCT_ID"]
     : ["CREEM_QUARTERLY_PRODUCT_ID"];
 }
 
@@ -51,14 +51,11 @@ export function creemProductIdForCheckout(args: {
   tenure: BillingTenure;
   countryCode?: string | null;
 }) {
-  if (args.plan.id !== CURRENT_BILLING_PLAN_ID) {
-    return envText(args.plan.productEnv);
-  }
-
   const region = billingRegionForCountry(args.countryCode);
   return (
     envText(CREEM_PRODUCT_ENV_BY_REGION[region][args.tenure]) ||
-    productIdFromEnvNames(globalProductEnvNamesForTenure(args.tenure))
+    productIdFromEnvNames(globalProductEnvNamesForTenure(args.tenure)) ||
+    envText(args.plan.productEnv)
   );
 }
 
@@ -66,11 +63,10 @@ export function creemPlanIdForProductId(productId: string): BillingPlanId | null
   const id = productId.trim();
   if (!id) return null;
 
-  if (id === envText("CREEM_STARTER_20_PRODUCT_ID")) return "starter_20";
-
   const currentProductIds = [
     envText("CREEM_PRODUCT_ID"),
     envText("CREEM_PRO_50_PRODUCT_ID"),
+    envText("CREEM_STARTER_20_PRODUCT_ID"),
     ...Object.values(CREEM_PRODUCT_ENV_BY_REGION).flatMap((envByTenure) =>
       Object.values(envByTenure).map(envText),
     ),

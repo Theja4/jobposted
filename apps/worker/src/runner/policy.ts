@@ -2,24 +2,51 @@
 
 export type AttemptDecision =
   | { proceed: true }
-  | { proceed: false; outcome: "limit_reached" | "too_many_attempts"; release: boolean };
+  | {
+      proceed: false;
+      outcome: "daily_limit_reached" | "too_many_attempts" | "subscription_inactive";
+      status: "queued" | "failed" | "ready_for_review";
+      releaseAttempt: boolean;
+    };
 
 /**
  * Decide whether to submit one claimed application.
  * - Daily limit reached → release back to the queue (try again after the day rolls over).
+ * - Inactive subscription → surface for user action.
  * - Too many attempts → do NOT release; it becomes a permanent failure for human review.
  */
 export function decideAttempt(input: {
   todaySubmitted: number;
   dailyLimit: number;
+  canSubmit: boolean;
+  reason: "ok" | "daily_limit_reached" | "subscription_inactive";
   attempts: number; // includes the current (just-incremented) attempt
   maxAttempts: number;
 }): AttemptDecision {
-  if (input.todaySubmitted >= input.dailyLimit) {
-    return { proceed: false, outcome: "limit_reached", release: true };
+  if (input.reason === "daily_limit_reached" || input.todaySubmitted >= input.dailyLimit) {
+    return {
+      proceed: false,
+      outcome: "daily_limit_reached",
+      status: "queued",
+      releaseAttempt: true,
+    };
+  }
+  if (!input.canSubmit) {
+    const outcome = input.reason === "ok" ? "subscription_inactive" : input.reason;
+    return {
+      proceed: false,
+      outcome,
+      status: "ready_for_review",
+      releaseAttempt: true,
+    };
   }
   if (input.attempts > input.maxAttempts) {
-    return { proceed: false, outcome: "too_many_attempts", release: false };
+    return {
+      proceed: false,
+      outcome: "too_many_attempts",
+      status: "failed",
+      releaseAttempt: false,
+    };
   }
   return { proceed: true };
 }

@@ -104,11 +104,8 @@ export function usageLimitMessage(status: UsageStatus) {
   if (status.reason === "daily_limit_reached") {
     return `Daily application limit reached (${status.todaySubmitted}/${status.dailyLimit}).`;
   }
-  if (status.reason === "trial_exhausted") {
-    return "Your 5 free applications are used. Choose a plan to keep applying.";
-  }
   if (status.reason === "subscription_inactive") {
-    return "Your subscription is not active. Choose a plan to keep applying.";
+    return "JobPosted applications require an active plan. Upgrade to keep applying.";
   }
   return "Application limit reached.";
 }

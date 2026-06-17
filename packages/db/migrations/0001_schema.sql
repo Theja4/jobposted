@@ -115,10 +115,10 @@ create table if not exists jobposted.applications (
 create table if not exists jobposted.subscriptions (
   user_id uuid primary key references auth.users(id) on delete cascade,
   provider text,                  -- polar | razorpay
-  plan text,                      -- starter_20 | pro_50
-  daily_limit int,                -- 20 for Starter ($19), 50 for Pro ($49)
-  status text,                    -- trialing | active | past_due | canceled
-  trial_applications_used int default 0,  -- counts toward the 5-application trial
+  plan text,                      -- jobposted_20 (legacy: starter_20 | pro_50)
+  daily_limit int,                -- 20 apps/day for active paid users
+  status text,                    -- active | past_due | canceled (legacy: trialing)
+  trial_applications_used int default 0,  -- legacy, no longer grants free submissions
   renews_at timestamptz
 );
 -- Daily usage is DERIVED from the applications table (drift-free; design doc §12), not a

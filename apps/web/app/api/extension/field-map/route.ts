@@ -7,6 +7,8 @@ import type {
 } from "@jobposted/shared";
 import { callGatewayJSON, GatewayError, gatewayConfigured } from "@/lib/ai/gateway";
 import { authErrorResponse, extensionError, getExtensionAuthContext } from "@/lib/extension/auth";
+import { reportError } from "@/lib/observability/report";
+import { checkRateLimit, RATE_LIMITS, rateLimitResponse } from "@/lib/rate-limit";
 
 export const runtime = "nodejs";
 
@@ -126,8 +128,10 @@ async function callGateway(field: ExtensionFieldContext, profile: MasterProfile)
       reason: asString(parsed.reason) || "AI mapping.",
     };
   } catch (error) {
-    if (error instanceof GatewayError) console.error("AI field map failed", error.message);
-    else console.error("AI field map request failed", error);
+    await reportError(error instanceof GatewayError ? "AI field map failed" : "AI field map request failed", error, {
+      platform: field.platform,
+      signature: field.signature,
+    });
     return null;
   }
 }
@@ -161,6 +165,15 @@ export async function POST(request: Request) {
           reason: "Previously mapped for this platform.",
         },
       });
+    }
+
+    const rateLimit = await checkRateLimit({
+      scope: "field_map:user",
+      key: user.id,
+      ...RATE_LIMITS.fieldMap,
+    });
+    if (!rateLimit.allowed) {
+      return rateLimitResponse(rateLimit, "Field mapping is temporarily rate limited. Try again shortly.");
     }
 
     const mapping = (await callGateway(field, profile)) ?? localFallback(field, profile);

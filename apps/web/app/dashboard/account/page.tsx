@@ -4,6 +4,7 @@ import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { SignOutButton } from "@/components/dashboard/SignOutButton";
 import { ModeToggle } from "@/components/dashboard/ModeToggle";
 import { ManageBillingButton } from "@/components/dashboard/ManageBillingButton";
+import { hasActiveSubscription } from "@/lib/billing/access";
 import { getApplicationMode } from "@/lib/dashboard/applications";
 import { SUPPORT_EMAIL } from "@/lib/site";
 import { Mail, ShieldCheck, ExternalLink, ReceiptText } from "lucide-react";
@@ -22,7 +23,8 @@ export default async function AccountPage() {
   } = await supabase.auth.getUser();
 
   const provider = user?.app_metadata?.provider ?? "email";
-  const mode = await getApplicationMode();
+  const isPro = user ? await hasActiveSubscription(supabase, user.id) : false;
+  const mode = isPro ? await getApplicationMode() : "review";
 
   return (
     <div className="space-y-6">
@@ -30,8 +32,11 @@ export default async function AccountPage() {
         <h1 className="text-3xl font-extrabold tracking-[-0.03em] text-ink">Account</h1>
         <p className="mt-1 text-sm font-semibold text-muted">
           Your login and security. Looking for your resume data?{" "}
-          <Link href={{ pathname: "/dashboard/onboarding" }} className="font-bold text-brand-700 hover:text-brand-800">
-            Update it in Setup
+          <Link
+            href={{ pathname: isPro ? "/dashboard/onboarding" : "/pricing" }}
+            className="font-bold text-brand-700 hover:text-brand-800"
+          >
+            {isPro ? "Update it in Setup" : "Upgrade for Setup"}
           </Link>
           .
         </p>
@@ -66,14 +71,30 @@ export default async function AccountPage() {
         </dl>
       </section>
 
-      <section className="liquid-glass rounded-[1.75rem] p-6 sm:p-7">
-        <h2 className="text-lg font-extrabold tracking-[-0.02em] text-ink">How JobPosted applies</h2>
-        <p className="mt-1.5 mb-4 text-sm leading-6 text-muted">
-          Choose whether JobPosted prepares a daily queue for your review, or waits for you to
-          handle applications manually.
-        </p>
-        <ModeToggle mode={mode} />
-      </section>
+      {isPro ? (
+        <section className="liquid-glass rounded-[1.75rem] p-6 sm:p-7">
+          <h2 className="text-lg font-extrabold tracking-[-0.02em] text-ink">How JobPosted applies</h2>
+          <p className="mt-1.5 mb-4 text-sm leading-6 text-muted">
+            Choose whether JobPosted prepares a daily queue for your review, or waits for you to
+            handle applications manually.
+          </p>
+          <ModeToggle mode={mode} />
+        </section>
+      ) : (
+        <section className="liquid-glass rounded-[1.75rem] p-6 sm:p-7">
+          <h2 className="text-lg font-extrabold tracking-[-0.02em] text-ink">JobPosted Pro</h2>
+          <p className="mt-1.5 text-sm leading-6 text-muted">
+            Free accounts can use the job board and tracker. Upgrade to unlock Setup, Queue,
+            resume tailoring, and application history.
+          </p>
+          <Link
+            href="/pricing"
+            className="mt-4 inline-flex items-center gap-1.5 rounded-full bg-brand-600 px-4 py-2 text-sm font-bold text-white shadow-[0_12px_22px_-16px_rgba(31,100,224,0.58)] transition-colors hover:bg-brand-700"
+          >
+            View pricing <ExternalLink className="size-3.5" />
+          </Link>
+        </section>
+      )}
 
       <section className="liquid-glass rounded-[1.75rem] p-6 sm:p-7">
         <h2 className="text-lg font-extrabold tracking-[-0.02em] text-ink">Connected to Rezoomed</h2>

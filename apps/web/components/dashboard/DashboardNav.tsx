@@ -17,10 +17,10 @@ import { SignOutButton } from "./SignOutButton";
 
 const NAV_LINKS = [
   { href: "/dashboard", label: "Dashboard", exact: true, icon: LayoutDashboard },
-  { href: "/dashboard/queue", label: "Queue", exact: false, icon: ListChecks },
+  { href: "/dashboard/queue", label: "Queue", exact: false, icon: ListChecks, pro: true },
   { href: "/dashboard/jobs", label: "Jobs", exact: false, icon: BriefcaseBusiness },
-  { href: "/dashboard/onboarding", label: "Setup", exact: false, icon: Settings2 },
-  { href: "/dashboard/applications", label: "History", exact: false, icon: Clock3 },
+  { href: "/dashboard/onboarding", label: "Setup", exact: false, icon: Settings2, pro: true },
+  { href: "/dashboard/applications", label: "History", exact: false, icon: Clock3, pro: true },
   { href: "/dashboard/tracker", label: "Tracker", exact: false, icon: Workflow },
   { href: "/dashboard/account", label: "Account", exact: false, icon: UserCircle2 },
 ] as const;

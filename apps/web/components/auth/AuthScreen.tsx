@@ -88,7 +88,7 @@ export function AuthScreen() {
         track("auth_signup", { email_domain: email.split("@")[1] ?? null });
         // Email-confirmation projects return a user but no active session.
         if (data.session) {
-          router.push((redirectTo ?? "/dashboard/onboarding") as Route);
+          router.push((redirectTo ?? "/dashboard/jobs") as Route);
           router.refresh();
           return;
         }
@@ -100,7 +100,7 @@ export function AuthScreen() {
       const { error } = await supabase.auth.signInWithPassword({ email, password });
       if (error) throw error;
       track("auth_signin", { email_domain: email.split("@")[1] ?? null });
-      router.push((redirectTo ?? "/") as Route);
+      router.push((redirectTo ?? "/dashboard/jobs") as Route);
       router.refresh();
     } catch (err) {
       setStatus("error");
@@ -146,7 +146,7 @@ export function AuthScreen() {
             </h1>
             <p className="mt-2 text-sm leading-6 text-muted">
               {mode === "signup"
-                ? "Queue tailored applications and confirm every send. Your first five are free."
+                ? "Create your account, browse jobs, and upgrade when you are ready for JobPosted to prepare applications."
                 : "Pick up your queue right where you left it."}
             </p>
 

@@ -5,7 +5,6 @@ import { SITE_NAME, SUPPORT_EMAIL } from "@/lib/site";
 
 const FOOTER_LINKS = [
   { href: "/#how-it-works", label: "How it works" },
-  { href: "/pricing", label: "Pricing" },
   { href: "/#faq", label: "FAQ" },
   { href: "https://rezoomed.com", label: "Rezoomed" },
   { href: "/privacy", label: "Privacy" },

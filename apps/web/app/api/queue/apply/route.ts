@@ -1,4 +1,6 @@
 import { NextResponse } from "next/server";
+import { reportError } from "@/lib/observability/report";
+import { requireProApi } from "@/lib/billing/access";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
@@ -23,6 +25,8 @@ export async function POST() {
   if (authError || !user) {
     return NextResponse.json({ ok: false, error: "unauthorized" }, { status: 401 });
   }
+  const proGate = await requireProApi(supabase, user.id);
+  if (proGate) return proGate;
 
   const day = utcDayRange();
   const { data, error } = await supabase
@@ -36,7 +40,7 @@ export async function POST() {
     .select("id");
 
   if (error) {
-    console.error("queue release failed", error);
+    await reportError("queue release failed", error, { userId: user.id });
     return NextResponse.json({ ok: false, error: "release_failed" }, { status: 500 });
   }
 
@@ -45,7 +49,7 @@ export async function POST() {
     .upsert({ user_id: user.id, ack_date: day.key }, { onConflict: "user_id,ack_date" });
 
   if (acknowledgeError) {
-    console.error("queue release acknowledgement failed", acknowledgeError);
+    await reportError("queue release acknowledgement failed", acknowledgeError, { userId: user.id });
     return NextResponse.json({ ok: false, error: "ack_failed" }, { status: 500 });
   }
 

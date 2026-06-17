@@ -9,9 +9,7 @@ import type {
 import { BILLING_PLANS } from "@/lib/billing/plans";
 import { AnimatePresence, motion } from "framer-motion";
 import {
-  ArrowUpRight,
   Check,
-  FileCheck2,
   Globe2,
   Loader2,
   ShieldCheck,
@@ -29,7 +27,7 @@ type PricingProps = {
 };
 
 const FEATURE_ROWS = [
-  "Up to 50 applications a day",
+  "Up to 20 applications a day",
   "Resume tailoring and profile setup",
   "Review queue and application tracker",
   "Browser extension support",
@@ -42,7 +40,6 @@ export function Pricing({ pricing }: PricingProps) {
     [pricing.options, tenure],
   );
   const plan = BILLING_PLANS[pricing.planId];
-  const otherOption = pricing.options.find((option) => option.tenure !== selected.tenure);
 
   return (
     <section
@@ -135,12 +132,6 @@ export function Pricing({ pricing }: PricingProps) {
                   <span className="pb-2 text-sm font-semibold text-white/72">{selected.cadence}</span>
                 </div>
 
-                {otherOption ? (
-                  <p className="mt-3 text-sm font-semibold text-white/70">
-                    {otherOption.label} is {otherOption.priceLabel} {otherOption.cadence}.
-                  </p>
-                ) : null}
-
                 <PlanCheckoutButton
                   planId={pricing.planId}
                   tenure={selected.tenure}
@@ -186,25 +177,6 @@ export function Pricing({ pricing }: PricingProps) {
                 ))}
               </ul>
 
-              <div className="mt-7 rounded-2xl bg-white px-4 py-4 shadow-[0_14px_30px_-24px_rgba(15,23,42,0.42)]">
-                <div className="flex items-start gap-3">
-                  <FileCheck2 className="mt-1 size-5 shrink-0 text-brand-700" />
-                  <p className="text-sm leading-6 text-muted">
-                    Detected region:{" "}
-                    <span className="font-extrabold text-ink">
-                      {pricing.countryCode ? `${pricing.regionLabel} (${pricing.countryCode})` : pricing.regionLabel}
-                    </span>
-                    . Checkout uses the matching Creem product when its product ID is configured.
-                  </p>
-                </div>
-              </div>
-
-              <a
-                href="#faq"
-                className="mt-6 inline-flex items-center gap-1.5 rounded-xl bg-brand-50 px-4 py-2 text-sm font-extrabold text-brand-700 transition-colors hover:bg-brand-100 hover:text-brand-900"
-              >
-                Read pricing FAQ <ArrowUpRight className="size-4" />
-              </a>
             </section>
           </div>
         </Reveal>

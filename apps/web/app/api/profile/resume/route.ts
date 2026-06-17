@@ -2,6 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
 import { embedResumeContent, vectorToSql } from "@/lib/ai/embeddings";
 import { reportError } from "@/lib/observability/report";
+import { requireProApi } from "@/lib/billing/access";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import {
   mergeResumeSourceDocument,
@@ -18,13 +19,31 @@ const ALLOWED = new Set([
   "application/pdf",
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
   "application/msword",
+  "text/plain",
 ]);
+const ALLOWED_EXTENSIONS = [".pdf", ".docx", ".doc", ".txt"];
+
+function isAllowedFile(file: File) {
+  const lower = file.name.toLowerCase();
+  return ALLOWED.has(file.type) || ALLOWED_EXTENSIONS.some((ext) => lower.endsWith(ext));
+}
 
 function extFor(type: string, name: string) {
-  if (type === "application/pdf") return "pdf";
-  if (name.toLowerCase().endsWith(".docx")) return "docx";
-  if (name.toLowerCase().endsWith(".doc")) return "doc";
+  const lower = name.toLowerCase();
+  if (type === "application/pdf" || lower.endsWith(".pdf")) return "pdf";
+  if (lower.endsWith(".docx")) return "docx";
+  if (lower.endsWith(".doc")) return "doc";
+  if (type === "text/plain" || lower.endsWith(".txt")) return "txt";
   return "pdf";
+}
+
+function contentTypeFor(file: File) {
+  if (ALLOWED.has(file.type)) return file.type;
+  const ext = extFor(file.type, file.name);
+  if (ext === "pdf") return "application/pdf";
+  if (ext === "docx") return "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+  if (ext === "doc") return "application/msword";
+  return "text/plain";
 }
 
 function hashBuffer(buffer: Buffer) {
@@ -49,6 +68,8 @@ export async function POST(request: Request) {
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ ok: false, error: "unauthorized" }, { status: 401 });
+  const proGate = await requireProApi(supabase, user.id);
+  if (proGate) return proGate;
 
   const form = await request.formData().catch(() => null);
   const file = form?.get("file");
@@ -58,9 +79,9 @@ export async function POST(request: Request) {
   if (file.size > MAX_BYTES) {
     return NextResponse.json({ ok: false, error: "too_large", message: "Max 6 MB." }, { status: 400 });
   }
-  if (file.type && !ALLOWED.has(file.type)) {
+  if (!isAllowedFile(file)) {
     return NextResponse.json(
-      { ok: false, error: "bad_type", message: "Upload a PDF or Word document." },
+      { ok: false, error: "bad_type", message: "Upload a PDF, DOCX, DOC, or text resume." },
       { status: 400 },
     );
   }
@@ -102,11 +123,12 @@ export async function POST(request: Request) {
   }
 
   const versionId = randomUUID();
+  const contentType = contentTypeFor(file);
   // Storage RLS requires the first path segment to be the owner's uid.
   const path = `${user.id}/base/${versionId}.${extFor(file.type, file.name)}`;
   const { error: uploadError } = await supabase.storage
     .from("resumes")
-    .upload(path, bytes, { upsert: false, contentType: file.type || "application/pdf" });
+    .upload(path, bytes, { upsert: false, contentType });
   if (uploadError) {
     await reportError("base resume upload failed", uploadError, { userId: user.id });
     return NextResponse.json({ ok: false, error: "upload_failed" }, { status: 500 });
@@ -115,7 +137,7 @@ export async function POST(request: Request) {
   const sourceDocument: SourceDocument = {
     name: file.name,
     storagePath: path,
-    contentType: file.type || "application/octet-stream",
+    contentType,
     size: file.size,
     uploadedAt: new Date().toISOString(),
     contentHash,

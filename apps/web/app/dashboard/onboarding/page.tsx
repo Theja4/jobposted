@@ -1,10 +1,13 @@
 import type { Metadata } from "next";
+import { Settings2 } from "lucide-react";
 import { OnboardingWizard } from "@/components/dashboard/OnboardingWizard";
+import { ProFeatureGate } from "@/components/dashboard/ProFeatureGate";
 import {
   defaultOnboardingConfig,
   sanitizeOnboardingConfig,
   type OnboardingConfig,
 } from "@/lib/onboarding/model";
+import { hasActiveSubscription } from "@/lib/billing/access";
 import type { SourceDocument } from "@/lib/profile/resume-version";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
@@ -150,6 +153,16 @@ export default async function OnboardingPage() {
   const email = user?.email ?? "";
   if (!user) {
     return <OnboardingWizard initialConfig={defaultOnboardingConfig(email)} />;
+  }
+  if (!(await hasActiveSubscription(supabase, user.id))) {
+    return (
+      <ProFeatureGate
+        icon={Settings2}
+        title="Setup unlocks with Pro"
+        description="Setup gives JobPosted the profile, resume, and preferences it needs to prepare applications accurately."
+        detail="You can still browse jobs and track roles without upgrading."
+      />
+    );
   }
 
   const [{ data: configRow }, { data: profile }] = await Promise.all([

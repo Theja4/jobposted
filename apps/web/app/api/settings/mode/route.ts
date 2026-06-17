@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { sanitizeOnboardingConfig } from "@/lib/onboarding/model";
+import { reportError } from "@/lib/observability/report";
+import { requireProApi } from "@/lib/billing/access";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
@@ -28,6 +30,8 @@ export async function POST(request: Request) {
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ ok: false, error: "unauthorized" }, { status: 401 });
+  const proGate = await requireProApi(supabase, user.id);
+  if (proGate) return proGate;
 
   const body = (await request.json().catch(() => null)) as { mode?: unknown } | null;
   const mode = body?.mode === "review" ? "review" : body?.mode === "auto" ? "auto" : null;
@@ -57,18 +61,22 @@ export async function POST(request: Request) {
         { onConflict: "id" },
       );
       if (fallbackError) {
-        console.error("application_mode profile fallback failed", fallbackError);
+        await reportError("application_mode profile fallback failed", fallbackError, { userId: user.id, mode });
         return NextResponse.json({ ok: false, error: "save_failed" }, { status: 500 });
       }
     } else {
-      console.error("application_mode update failed", error);
+      await reportError("application_mode update failed", error, { userId: user.id, mode });
       return NextResponse.json({ ok: false, error: "save_failed" }, { status: 500 });
     }
   }
 
   const savedProfileMode = rec(profile).application_mode;
   if (savedProfileMode && savedProfileMode !== mode) {
-    console.error("application_mode verification failed", { expected: mode, actual: savedProfileMode });
+    await reportError("application_mode verification failed", new Error("application_mode_mismatch"), {
+      userId: user.id,
+      expected: mode,
+      actual: savedProfileMode,
+    });
     return NextResponse.json({ ok: false, error: "save_failed" }, { status: 500 });
   }
 
@@ -90,7 +98,7 @@ export async function POST(request: Request) {
     { onConflict: "user_id" },
   );
   if (onboardingError) {
-    console.error("onboarding application_mode mirror failed", onboardingError);
+    await reportError("onboarding application_mode mirror failed", onboardingError, { userId: user.id, mode });
   }
 
   return NextResponse.json({ ok: true, mode });

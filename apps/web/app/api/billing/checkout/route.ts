@@ -48,7 +48,7 @@ export async function POST(request: Request) {
   const productId = creemProductIdForCheckout({ plan, tenure, countryCode });
   const legacyCheckoutUrl =
     tenure === "monthly"
-      ? process.env[plan.checkoutEnv]?.trim()
+      ? process.env[plan.checkoutEnv]?.trim() || process.env.CHECKOUT_PRO_50_URL?.trim()
       : process.env.CHECKOUT_QUARTERLY_URL?.trim();
 
   if (apiKey && productId) {

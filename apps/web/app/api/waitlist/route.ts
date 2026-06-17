@@ -1,4 +1,6 @@
 import { NextResponse } from "next/server";
+import { reportError } from "@/lib/observability/report";
+import { checkRateLimit, clientIp, RATE_LIMITS, rateLimitResponse } from "@/lib/rate-limit";
 import { getServiceRoleClient } from "@/lib/supabase/service-role";
 
 export const runtime = "nodejs";
@@ -6,6 +8,15 @@ export const runtime = "nodejs";
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export async function POST(request: Request) {
+  const rateLimit = await checkRateLimit({
+    scope: "waitlist:ip",
+    key: clientIp(request),
+    ...RATE_LIMITS.waitlist,
+  });
+  if (!rateLimit.allowed) {
+    return rateLimitResponse(rateLimit, "Too many sign-up attempts. Try again shortly.");
+  }
+
   let email: unknown;
   try {
     ({ email } = await request.json());
@@ -37,7 +48,7 @@ export async function POST(request: Request) {
     if (error.code === "23505") {
       return NextResponse.json({ ok: true, message: "You're already on the list — thanks!" });
     }
-    console.error("waitlist insert failed", error);
+    await reportError("waitlist insert failed", error, { emailDomain: normalized.split("@")[1] ?? "" });
     return NextResponse.json(
       { ok: false, message: "Couldn't save your email. Please try again." },
       { status: 500 },

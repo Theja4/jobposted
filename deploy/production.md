@@ -33,6 +33,14 @@ INGEST_CRON_SECRET=
 INGEST_BOARDS_FILE=
 ```
 
+Vercel plan check:
+
+- `POST /api/tailor` declares `maxDuration = 120`.
+- `POST /api/queue/render` declares `maxDuration = 300` for batch resume rendering.
+- `GET/POST /api/ingest/cron` declares `maxDuration = 60`.
+- Make sure the deployed Vercel plan supports those durations, or lower the batch sizes/timeouts
+  before enabling scheduled production traffic.
+
 ## Worker on Railway
 
 Railway config is in `railway.toml`; the image is built from `Dockerfile.worker`.
@@ -76,12 +84,21 @@ WORKER_PORT=8080
 Safe launch env:
 
 ```bash
-APPLY_RUNNER_ENABLED=1
+APPLY_RUNNER_ENABLED=0
 APPLY_DRY_RUN=1
-APPLY_BATCH=5
+APPLY_BATCH=50
 QUEUE_RENDER_ON_CRON=1
-APPLY_RUNNER_ON_CRON=1
+APPLY_RUNNER_ON_CRON=0
 DOCUMENT_CLEANUP_ON_CRON=1
+WORKER_LOCKS_ENABLED=1
+```
+
+Only when intentionally validating the server apply runner:
+
+```bash
+APPLY_RUNNER_ENABLED=1
+APPLY_RUNNER_ON_CRON=1
+APPLY_DRY_RUN=1
 ```
 
 Only after dry-run screenshots and adapter validation pass:

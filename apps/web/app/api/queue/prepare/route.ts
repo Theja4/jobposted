@@ -3,6 +3,8 @@ import {
   prepareDailyApplicationsForAllUsers,
   prepareDailyApplicationsForUser,
 } from "@/lib/apply/matcher";
+import { reportError } from "@/lib/observability/report";
+import { requireProApi } from "@/lib/billing/access";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { getServiceRoleClient } from "@/lib/supabase/service-role";
 
@@ -34,7 +36,7 @@ export async function POST(request: Request) {
       const result = await prepareDailyApplicationsForAllUsers(service, options);
       return NextResponse.json(result);
     } catch (error) {
-      console.error("queue prepare cron failed", error);
+      await reportError("queue prepare cron failed", error, { options });
       return NextResponse.json({ ok: false, error: "prepare_failed" }, { status: 500 });
     }
   }
@@ -47,12 +49,14 @@ export async function POST(request: Request) {
   if (authError || !user) {
     return NextResponse.json({ ok: false, error: "unauthorized" }, { status: 401 });
   }
+  const proGate = await requireProApi(supabase, user.id);
+  if (proGate) return proGate;
 
   try {
     const result = await prepareDailyApplicationsForUser(supabase, user.id);
     return NextResponse.json(result);
   } catch (error) {
-    console.error("queue prepare failed", error);
+    await reportError("queue prepare failed", error, { userId: user.id });
     return NextResponse.json({ ok: false, error: "prepare_failed" }, { status: 500 });
   }
 }

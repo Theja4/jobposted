@@ -1,12 +1,12 @@
 import { createClient } from "@supabase/supabase-js";
 import type { MasterProfile, MasterProfileEducation, MasterProfileExperience, ReusableAnswer } from "./field-resolver.js";
 import type { ApplicantProfile, ApplyJob, ResumeArtifact } from "./types.js";
+import { computeUsageStatus, parsePlan, type BillingStatus, type UsageStatus } from "./usage.js";
 
 /** Data access the runner needs. Interface so the orchestrator can be unit-tested with a fake. */
 export interface RunnerDb {
   claim(batch: number): Promise<ApplyJob[]>;
-  dailyLimitFor(userId: string): Promise<number>;
-  countSubmittedToday(userId: string, now: Date): Promise<number>;
+  usageFor(userId: string, now: Date): Promise<UsageStatus>;
   loadApplicant(userId: string, baseVersionId: string | null): Promise<ApplicantProfile>;
   /** Full setup profile (identity, work auth, reusable screening answers) for form filling. */
   loadMasterProfile(userId: string, baseVersionId: string | null): Promise<MasterProfile>;
@@ -21,13 +21,17 @@ export interface RunnerDb {
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-type Client = { from: (t: string) => any; rpc: (fn: string, args?: Record<string, unknown>) => any; storage: any };
-
-const DEFAULT_DAILY_LIMIT = Number(process.env.APPLY_DAILY_LIMIT_DEFAULT ?? 20) || 20;
-const ACTIVE_STATUSES = new Set(["active", "trialing"]);
+export type ServiceClient = { from: (t: string) => any; rpc: (fn: string, args?: Record<string, unknown>) => any; storage: any };
+type Client = ServiceClient;
 
 function startOfUtcDay(date: Date) {
   return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
+}
+
+function nextUtcDay(date: Date) {
+  const next = new Date(date);
+  next.setUTCDate(next.getUTCDate() + 1);
+  return next;
 }
 
 function asRecord(value: unknown): Record<string, unknown> {
@@ -96,6 +100,23 @@ function contentTypeFor(path: string): string {
   return "application/pdf";
 }
 
+async function countSubmitted(
+  client: Client,
+  userId: string,
+  range?: { gte: string; lt: string },
+) {
+  let query = client
+    .from("applications")
+    .select("id", { count: "exact", head: true })
+    .eq("user_id", userId)
+    .eq("apply_path", "server")
+    .not("submitted_at", "is", null);
+  if (range) query = query.gte("submitted_at", range.gte).lt("submitted_at", range.lt);
+  const { count, error } = await query;
+  if (error) throw new Error(`usage_count_failed: ${error.message}`);
+  return count ?? 0;
+}
+
 export function createServiceClient(): Client | null {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -127,29 +148,58 @@ export function createRunnerDb(client: Client): RunnerDb {
       );
     },
 
-    async dailyLimitFor(userId) {
-      const { data } = await client
-        .from("subscriptions")
-        .select("status,daily_limit")
-        .eq("user_id", userId)
-        .maybeSingle();
-      const row = asRecord(data);
-      const status = str(row.status);
-      if (status && !ACTIVE_STATUSES.has(status)) return 0; // inactive sub → never auto-submit
-      const limit = typeof row.daily_limit === "number" ? row.daily_limit : DEFAULT_DAILY_LIMIT;
-      return Math.max(0, limit);
-    },
-
-    async countSubmittedToday(userId, now) {
+    async usageFor(userId, now) {
       const dayStart = startOfUtcDay(now);
-      const { count } = await client
-        .from("applications")
-        .select("id", { count: "exact", head: true })
-        .eq("user_id", userId)
-        .eq("apply_path", "server")
-        .not("submitted_at", "is", null)
-        .gte("submitted_at", dayStart.toISOString());
-      return count ?? 0;
+      const nextDay = nextUtcDay(dayStart);
+
+      const { data, error } = await client
+        .rpc("application_usage_snapshot", {
+          p_user_id: userId,
+          p_usage_date: dayStart.toISOString().slice(0, 10),
+        })
+        .maybeSingle();
+
+      if (!error && data) {
+        const row = asRecord(data);
+        const hasSubscription = Boolean(row.plan || row.status || row.daily_limit || row.trial_applications_used);
+        return computeUsageStatus({
+          subscription: hasSubscription
+            ? {
+                plan: parsePlan(row.plan),
+                status: str(row.status) as BillingStatus | null,
+                dailyLimit: typeof row.daily_limit === "number" ? row.daily_limit : null,
+                trialApplicationsUsed:
+                  typeof row.trial_applications_used === "number" ? row.trial_applications_used : null,
+              }
+            : null,
+          totalSubmitted: typeof row.total_submitted === "number" ? row.total_submitted : 0,
+          todaySubmitted: typeof row.today_submitted === "number" ? row.today_submitted : 0,
+        });
+      }
+
+      const [{ data: subscription }, totalSubmitted, todaySubmitted] = await Promise.all([
+        client.from("subscriptions").select("*").eq("user_id", userId).maybeSingle(),
+        countSubmitted(client, userId),
+        countSubmitted(client, userId, {
+          gte: dayStart.toISOString(),
+          lt: nextDay.toISOString(),
+        }),
+      ]);
+      const row = asRecord(subscription);
+      const hasSubscription = Boolean(subscription);
+      return computeUsageStatus({
+        subscription: hasSubscription
+          ? {
+              plan: parsePlan(row.plan),
+              status: str(row.status) as BillingStatus | null,
+              dailyLimit: typeof row.daily_limit === "number" ? row.daily_limit : null,
+              trialApplicationsUsed:
+                typeof row.trial_applications_used === "number" ? row.trial_applications_used : null,
+            }
+          : null,
+        totalSubmitted,
+        todaySubmitted,
+      });
     },
 
     async loadApplicant(userId, baseVersionId) {

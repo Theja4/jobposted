@@ -164,3 +164,57 @@ export function trackerSourceForApplyPath(applyPath: string | null | undefined):
   if (normalized === "server") return "server";
   return "job_board";
 }
+
+/* ── Card colours ───────────────────────────────────────────────────────────
+   A fixed set of 15 soft pastels. Every tracker card gets one, assigned
+   deterministically from its id (stable, looks random, costs no storage). Users
+   can override a card's colour from the detail dialog; the override is persisted
+   client-side only. Text on cards always stays `ink`, so contrast holds on all 15. */
+export type TrackerCardColor = {
+  /** Stable identifier persisted for user overrides. */
+  id: string;
+  /** Human label for the swatch's accessible name. */
+  name: string;
+  /** Card fill (very light pastel). */
+  bg: string;
+  /** Resting hairline border. */
+  border: string;
+  /** Hover border + picker swatch (a touch deeper so it reads on white). */
+  swatch: string;
+};
+
+export const TRACKER_CARD_COLORS: TrackerCardColor[] = [
+  { id: "rose", name: "Rose", bg: "#fdecee", border: "#f6cdd5", swatch: "#f0a6b2" },
+  { id: "pink", name: "Pink", bg: "#fcebf4", border: "#f5cbe2", swatch: "#eea7d0" },
+  { id: "plum", name: "Plum", bg: "#f6ecfb", border: "#e6cef2", swatch: "#d3aeea" },
+  { id: "violet", name: "Violet", bg: "#efecfc", border: "#d6cef5", swatch: "#bcb2ef" },
+  { id: "indigo", name: "Indigo", bg: "#eaecfb", border: "#cbd1f4", swatch: "#aab6f0" },
+  { id: "blue", name: "Blue", bg: "#e7f0fd", border: "#c4daf7", swatch: "#9ec8f2" },
+  { id: "sky", name: "Sky", bg: "#e6f3fc", border: "#bfe0f5", swatch: "#97d1ef" },
+  { id: "cyan", name: "Cyan", bg: "#e4f4f6", border: "#b8e4e8", swatch: "#8ed8dd" },
+  { id: "teal", name: "Teal", bg: "#e5f4ef", border: "#bce5d8", swatch: "#92d7c2" },
+  { id: "emerald", name: "Emerald", bg: "#e7f4ea", border: "#c2e4cc", swatch: "#9bd6ac" },
+  { id: "green", name: "Green", bg: "#eef4e4", border: "#d3e5b8", swatch: "#bdd991" },
+  { id: "lime", name: "Lime", bg: "#f3f3df", border: "#e1e4ad", swatch: "#cdd281" },
+  { id: "amber", name: "Amber", bg: "#fbf1dc", border: "#f3dba8", swatch: "#eaca81" },
+  { id: "orange", name: "Orange", bg: "#fceee3", border: "#f6d4b8", swatch: "#f0bd95" },
+  { id: "stone", name: "Stone", bg: "#f1f0ec", border: "#dcd8d0", swatch: "#c8c2b8" },
+];
+
+function hashSeed(value: string) {
+  let hash = 0;
+  for (let i = 0; i < value.length; i++) {
+    hash = (hash * 31 + value.charCodeAt(i)) >>> 0;
+  }
+  return hash;
+}
+
+export function trackerColorById(id: string | null | undefined): TrackerCardColor | null {
+  if (!id) return null;
+  return TRACKER_CARD_COLORS.find((color) => color.id === id) ?? null;
+}
+
+/** Stable default colour for a card with no explicit override. */
+export function defaultTrackerColor(seed: string): TrackerCardColor {
+  return TRACKER_CARD_COLORS[hashSeed(seed) % TRACKER_CARD_COLORS.length]!;
+}

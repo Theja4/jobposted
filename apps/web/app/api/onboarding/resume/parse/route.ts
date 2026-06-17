@@ -1,8 +1,10 @@
 import { createHash, randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
 import { reportError } from "@/lib/observability/report";
+import { requireProApi } from "@/lib/billing/access";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import type { SourceDocument } from "@/lib/profile/resume-version";
+import { checkRateLimit, RATE_LIMITS, rateLimitResponse } from "@/lib/rate-limit";
 
 export const runtime = "nodejs";
 
@@ -70,6 +72,17 @@ export async function POST(request: Request) {
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ ok: false, error: "unauthorized" }, { status: 401 });
+  const proGate = await requireProApi(supabase, user.id);
+  if (proGate) return proGate;
+
+  const rateLimit = await checkRateLimit({
+    scope: "resume_parse:user",
+    key: user.id,
+    ...RATE_LIMITS.resumeParse,
+  });
+  if (!rateLimit.allowed) {
+    return rateLimitResponse(rateLimit, "Resume parsing is temporarily rate limited. Try again shortly.");
+  }
 
   const form = await request.formData().catch(() => null);
   const file = form?.get("file");
@@ -105,7 +118,7 @@ export async function POST(request: Request) {
     fileName: file.name,
     contentType: file.type,
   }).catch((error) => {
-    console.error("onboarding resume parse failed", error);
+    void reportError("onboarding resume parse failed", error, { userId: user.id, fileName: file.name });
     return { error };
   });
   if ("error" in parsed) {

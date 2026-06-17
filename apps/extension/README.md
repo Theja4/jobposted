@@ -76,7 +76,7 @@ The extension never collects or stores Workday, LinkedIn, or employer passwords.
 - Application sync is durable: transient network/server failures are stored in
   `chrome.storage.local`, retried with `chrome.alarms`, and shown in the popup as pending syncs.
 - Filled-but-not-submitted extension records do **not** set `submitted_at`, so they do not count
-  against daily/trial application limits.
+  against paid daily application limits.
 - The web app exposes `GET /api/health` for deployment monitoring and uses
   `AI_GATEWAY_TIMEOUT_MS` to cap ambiguous field-mapping calls.
 - `Fill & Continue` respects the `autoAdvance` option, and auto-submit only clicks Submit when

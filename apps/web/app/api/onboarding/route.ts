@@ -6,6 +6,7 @@ import {
 } from "@/lib/onboarding/model";
 import { embedResumeContent, vectorToSql } from "@/lib/ai/embeddings";
 import { reportError } from "@/lib/observability/report";
+import { requireProApi } from "@/lib/billing/access";
 import {
   bool,
   num,
@@ -35,6 +36,8 @@ export async function POST(request: Request) {
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ ok: false, error: "unauthorized" }, { status: 401 });
+  const proGate = await requireProApi(supabase, user.id);
+  if (proGate) return proGate;
 
   const body = await request.json().catch(() => null);
   const config = sanitizeOnboardingConfig(body, user.email ?? "");

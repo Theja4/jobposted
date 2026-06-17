@@ -1,7 +1,7 @@
 import { reportError } from "./observability.js";
 import { launchPlaywright } from "./runner/browser.js";
 import { pickAdapter } from "./runner/adapters.js";
-import { createRunnerDb, createServiceClient } from "./runner/db.js";
+import { createRunnerDb, createServiceClient, type ServiceClient } from "./runner/db.js";
 import { runApplyBatch } from "./runner/runner.js";
 import { cleanupTransientDocuments } from "./retention.js";
 
@@ -33,6 +33,46 @@ function envInt(name: string, fallback: number) {
   return Number.isFinite(value) && value > 0 ? Math.trunc(value) : fallback;
 }
 
+function workerHolder() {
+  return `${process.env.RAILWAY_SERVICE_ID || process.env.RAILWAY_DEPLOYMENT_ID || "local"}:${process.pid}:${Date.now()}`;
+}
+
+async function acquireWorkerLock(client: ServiceClient, lockName: string, holder: string, ttlSeconds: number) {
+  const { data, error } = await client.rpc("acquire_worker_lock", {
+    p_lock_name: lockName,
+    p_holder: holder,
+    p_ttl_seconds: ttlSeconds,
+  });
+  if (error) throw new Error(`worker_lock_failed: ${error.message}`);
+  return data === true;
+}
+
+async function releaseWorkerLock(client: ServiceClient, lockName: string, holder: string) {
+  const { error } = await client.rpc("release_worker_lock", {
+    p_lock_name: lockName,
+    p_holder: holder,
+  });
+  if (error) await reportError("worker lock release failed", error, { lockName });
+}
+
+async function withWorkerLock<T>(
+  client: ServiceClient,
+  lockName: string,
+  ttlSeconds: number,
+  onLocked: () => T,
+  fn: () => Promise<T>,
+) {
+  if (process.env.WORKER_LOCKS_ENABLED === "0") return fn();
+  const holder = workerHolder();
+  const acquired = await acquireWorkerLock(client, lockName, holder, ttlSeconds);
+  if (!acquired) return onLocked();
+  try {
+    return await fn();
+  } finally {
+    await releaseWorkerLock(client, lockName, holder);
+  }
+}
+
 async function triggerPrepare(baseUrl: string) {
   const target = new URL("/api/queue/prepare", baseUrl);
   const response = await fetch(target, {
@@ -49,7 +89,7 @@ async function triggerPrepare(baseUrl: string) {
 /** Ask the web app to render PDFs for queued tailoring-enabled applications between prepare and apply. */
 async function triggerRender(baseUrl: string): Promise<unknown> {
   const target = new URL("/api/queue/render", baseUrl);
-  const limit = envInt("QUEUE_RENDER_LIMIT", envInt("APPLY_BATCH", 10));
+  const limit = envInt("QUEUE_RENDER_LIMIT", envInt("APPLY_BATCH", 50));
   const response = await fetch(target, {
     method: "POST",
     headers: {
@@ -66,17 +106,25 @@ export async function runApplyFromEnv(): Promise<Record<string, unknown>> {
   if (process.env.APPLY_RUNNER_ENABLED !== "1") return { ok: false, disabled: true };
   const client = createServiceClient();
   if (!client) return { ok: false, error: "service_role_unavailable" };
-  const summary = await runApplyBatch({
-    db: createRunnerDb(client),
-    launchBrowser: launchPlaywright,
-    pickAdapter,
-    // Dry-run is the default; only an explicit APPLY_DRY_RUN=0 submits live.
-    dryRun: process.env.APPLY_DRY_RUN !== "0",
-    batch: Number(process.env.APPLY_BATCH ?? 10) || 10,
-    maxAttempts: Number(process.env.APPLY_MAX_ATTEMPTS ?? 3) || 3,
-    log: (message) => console.info("[runner]", message),
-  });
-  return { ok: true, runner: summary };
+  return withWorkerLock<Record<string, unknown>>(
+    client,
+    "apply-runner",
+    envInt("APPLY_RUNNER_LOCK_TTL_SECONDS", 15 * 60),
+    () => ({ ok: false, skipped: true, error: "runner_lock_held" }),
+    async () => {
+      const summary = await runApplyBatch({
+        db: createRunnerDb(client),
+        launchBrowser: launchPlaywright,
+        pickAdapter,
+        // Dry-run is the default; only an explicit APPLY_DRY_RUN=0 submits live.
+        dryRun: process.env.APPLY_DRY_RUN !== "0",
+        batch: Number(process.env.APPLY_BATCH ?? 50) || 50,
+        maxAttempts: Number(process.env.APPLY_MAX_ATTEMPTS ?? 3) || 3,
+        log: (message) => console.info("[runner]", message),
+      });
+      return { ok: true, runner: summary };
+    },
+  );
 }
 
 async function runCleanupFromEnv(): Promise<unknown> {
@@ -126,7 +174,8 @@ export async function runCronPipeline(): Promise<WorkerCronResult> {
     };
   }
 
-  try {
+  const lockClient = createServiceClient();
+  const run = async (): Promise<WorkerCronResult> => {
     const { response, body } = await triggerPrepare(baseUrl);
 
     let render: unknown = null;
@@ -185,6 +234,20 @@ export async function runCronPipeline(): Promise<WorkerCronResult> {
           : "Web queue preparation failed.",
       },
     };
+  };
+
+  try {
+    if (!lockClient) return run();
+    return await withWorkerLock(
+      lockClient,
+      "cron-pipeline",
+      envInt("WORKER_CRON_LOCK_TTL_SECONDS", 30 * 60),
+      () => ({
+        status: 202,
+        body: { ok: true, skipped: true, error: "cron_lock_held", message: "Another worker cron run is already active." },
+      }),
+      run,
+    );
   } catch (error) {
     await reportError("worker queue preparation request failed", error, { source: "worker-cron" });
     return {

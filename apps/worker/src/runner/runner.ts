@@ -2,6 +2,7 @@
 import type { RunnerDb } from "./db.js";
 import type { LaunchBrowser } from "./browser.js";
 import type { Adapter, AdapterContext, ApplyJob } from "./types.js";
+import type { UsageStatus } from "./usage.js";
 import { classifyFailure, decideAttempt, failureStatus } from "./policy.js";
 
 export type RunnerDeps = {
@@ -60,17 +61,13 @@ export async function runApplyBatch(deps: RunnerDeps): Promise<RunnerSummary> {
   summary.claimed = jobs.length;
   if (jobs.length === 0) return summary;
 
-  // Per-user quota cache for this run; increment locally as we submit.
-  const quota = new Map<string, { limit: number; submitted: number }>();
-  const getQuota = async (userId: string) => {
-    let q = quota.get(userId);
+  // Per-user usage cache for this run; increment locally as we submit.
+  const usage = new Map<string, UsageStatus>();
+  const getUsage = async (userId: string) => {
+    let q = usage.get(userId);
     if (!q) {
-      const [limit, submitted] = await Promise.all([
-        deps.db.dailyLimitFor(userId),
-        deps.db.countSubmittedToday(userId, now()),
-      ]);
-      q = { limit, submitted };
-      quota.set(userId, q);
+      q = await deps.db.usageFor(userId, now());
+      usage.set(userId, q);
     }
     return q;
   };
@@ -127,23 +124,23 @@ export async function runApplyBatch(deps: RunnerDeps): Promise<RunnerSummary> {
       return;
     }
 
-    // Daily-limit / attempt gate.
-    const q = await getQuota(job.userId);
+    // Billing daily-limit / attempt gate.
+    const q = await getUsage(job.userId);
     const decision = decideAttempt({
-      todaySubmitted: q.submitted,
-      dailyLimit: q.limit,
+      todaySubmitted: q.todaySubmitted,
+      dailyLimit: q.dailyLimit,
+      canSubmit: q.canSubmit,
+      reason: q.reason,
       attempts: job.attempts,
       maxAttempts,
     });
     if (!decision.proceed) {
-      if (decision.release) {
-        // Didn't actually attempt → give the attempt back so it isn't burned.
-        await deps.db.markStatus(job.id, "queued", { attempts: Math.max(0, job.attempts - 1), reason: null });
-        summary.requeued += 1;
-      } else {
-        await deps.db.markStatus(job.id, "failed", { reason: "too_many_attempts" });
-        summary.failed += 1;
-      }
+      const attempts = decision.releaseAttempt ? Math.max(0, job.attempts - 1) : undefined;
+      const reason = decision.status === "queued" ? null : decision.outcome;
+      await deps.db.markStatus(job.id, decision.status, { attempts, reason });
+      if (decision.status === "queued") summary.requeued += 1;
+      else if (decision.status === "ready_for_review") summary.review += 1;
+      else summary.failed += 1;
       return;
     }
 
@@ -204,7 +201,12 @@ export async function runApplyBatch(deps: RunnerDeps): Promise<RunnerSummary> {
 
       if (outcome.status === "submitted") {
         await deps.db.markSubmitted(job.id, screenshotPath);
-        q.submitted += 1;
+        q.todaySubmitted += 1;
+        q.totalSubmitted += 1;
+        if (q.todaySubmitted >= q.dailyLimit) {
+          q.canSubmit = false;
+          q.reason = "daily_limit_reached";
+        }
         summary.submitted += 1;
         return;
       }

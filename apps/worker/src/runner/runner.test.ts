@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { RunnerDb } from "./db.js";
 import type { LaunchBrowser } from "./browser.js";
 import type { Adapter, AdapterValidation, ApplyJob, SubmitOutcome } from "./types.js";
+import { computeUsageStatus, type UsageStatus } from "./usage.js";
 import { runApplyBatch } from "./runner.js";
 
 function job(overrides: Partial<ApplyJob> = {}): ApplyJob {
@@ -20,17 +21,24 @@ function job(overrides: Partial<ApplyJob> = {}): ApplyJob {
 
 type Update = { id: string; status: string; reason?: string | null; attempts?: number; screenshotPath?: string | null };
 
-function fakeDb(jobs: ApplyJob[], opts: { limit?: number; submitted?: number; resumeThrows?: boolean } = {}) {
+function fakeDb(
+  jobs: ApplyJob[],
+  opts: { usage?: UsageStatus; limit?: number; submitted?: number; totalSubmitted?: number; resumeThrows?: boolean } = {},
+) {
   const updates: Update[] = [];
   const db: RunnerDb = {
     async claim() {
       return jobs;
     },
-    async dailyLimitFor() {
-      return opts.limit ?? 20;
-    },
-    async countSubmittedToday() {
-      return opts.submitted ?? 0;
+    async usageFor() {
+      return (
+        opts.usage ??
+        computeUsageStatus({
+          subscription: { plan: "jobposted_20", status: "active", dailyLimit: opts.limit ?? 20 },
+          todaySubmitted: opts.submitted ?? 0,
+          totalSubmitted: opts.totalSubmitted ?? opts.submitted ?? 0,
+        })
+      );
     },
     async loadApplicant() {
       return {
@@ -171,6 +179,26 @@ describe("runApplyBatch", () => {
     expect(summary.requeued).toBe(1);
     expect(submit).not.toHaveBeenCalled();
     expect(updates[0]).toMatchObject({ status: "queued", attempts: 0 });
+  });
+
+  it("routes free users to review before submit", async () => {
+    const submit = vi.fn();
+    const { db, updates } = fakeDb([job({ attempts: 1 })], {
+      usage: computeUsageStatus({
+        subscription: null,
+        totalSubmitted: 0,
+        todaySubmitted: 0,
+      }),
+    });
+    const summary = await runApplyBatch({
+      db,
+      launchBrowser: browser,
+      pickAdapter: adapterReturning({ status: "submitted" }, submit),
+      dryRun: false,
+    });
+    expect(summary.review).toBe(1);
+    expect(submit).not.toHaveBeenCalled();
+    expect(updates[0]).toMatchObject({ status: "ready_for_review", reason: "subscription_inactive", attempts: 0 });
   });
 
   it("sends permanent failures to review", async () => {

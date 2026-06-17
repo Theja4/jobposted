@@ -6,6 +6,8 @@ import { tailorResume } from "@/lib/tailor/engine";
 import { renderResumePdf } from "@/lib/tailor/pdf";
 import { renderResumeDocx } from "@/lib/tailor/docx";
 import { reportError } from "@/lib/observability/report";
+import { requireProApi } from "@/lib/billing/access";
+import { checkRateLimit, RATE_LIMITS, rateLimitResponse } from "@/lib/rate-limit";
 
 export const runtime = "nodejs";
 export const maxDuration = 120;
@@ -21,6 +23,17 @@ export async function POST(request: Request) {
   } = await supabase.auth.getUser();
   if (!user) {
     return NextResponse.json({ ok: false, error: "unauthorized" }, { status: 401 });
+  }
+  const proGate = await requireProApi(supabase, user.id);
+  if (proGate) return proGate;
+
+  const rateLimit = await checkRateLimit({
+    scope: "tailor:user",
+    key: user.id,
+    ...RATE_LIMITS.tailor,
+  });
+  if (!rateLimit.allowed) {
+    return rateLimitResponse(rateLimit, "Resume tailoring is temporarily rate limited. Try again shortly.");
   }
 
   const body = (await request.json().catch(() => null)) as {
@@ -169,13 +182,13 @@ export async function POST(request: Request) {
     });
   } catch (error) {
     if (error instanceof GatewayError) {
-      console.error("tailor gateway error", error);
+      await reportError("tailor gateway error", error, { userId: user.id, jobId });
       return NextResponse.json(
         { ok: false, error: "tailoring_failed", message: "The tailoring engine is busy. Try again shortly." },
         { status: 502 },
       );
     }
-    console.error("tailor route error", error);
+    await reportError("tailor route error", error, { userId: user.id, jobId });
     return NextResponse.json({ ok: false, error: "internal_error" }, { status: 500 });
   }
 }

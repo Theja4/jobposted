@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { reportError } from "@/lib/observability/report";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 /**
@@ -20,6 +21,9 @@ export async function GET(request: Request) {
     if (!error) {
       return NextResponse.redirect(`${origin}${next}`);
     }
+    await reportError("OAuth callback exchange failed", error, { next });
+  } else {
+    await reportError("OAuth callback missing code", new Error("oauth_code_missing"), { next });
   }
 
   return NextResponse.redirect(`${origin}/get-started?mode=signin&error=oauth`);
