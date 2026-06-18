@@ -6,10 +6,12 @@ import {
 } from "./model";
 
 describe("onboarding model", () => {
-  it("defaults company employee connection screening answers to no", () => {
+  it("defaults reusable compliance screening answers to no", () => {
     const config = defaultOnboardingConfig("person@example.com");
 
     expect(config.profile.screening.knowsCompanyEmployee).toBe(false);
+    expect(config.profile.screening.previouslyEmployedByCompany).toBe(false);
+    expect(config.profile.screening.outsideBusinessActivities).toBe(false);
     expect(reusableAnswersFromOnboarding(config)).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -28,6 +30,22 @@ describe("onboarding model", () => {
           key: "screening.current_employee_connection",
           value: "No",
         }),
+        expect.objectContaining({
+          key: "screening.previous_company_employment",
+          value: "No",
+        }),
+        expect.objectContaining({
+          key: "screening.previous_subsidiary_employment",
+          value: "No",
+        }),
+        expect.objectContaining({
+          key: "screening.outside_business_activities",
+          value: "No",
+        }),
+        expect.objectContaining({
+          key: "screening.side_business_activities",
+          value: "No",
+        }),
       ]),
     );
   });
@@ -38,5 +56,7 @@ describe("onboarding model", () => {
     });
 
     expect(config.profile.screening.knowsCompanyEmployee).toBe(false);
+    expect(config.profile.screening.previouslyEmployedByCompany).toBe(false);
+    expect(config.profile.screening.outsideBusinessActivities).toBe(false);
   });
 });

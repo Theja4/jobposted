@@ -308,6 +308,14 @@ function mergeParsed(config: OnboardingConfig, parsed: ParsedResumeProfile): Onb
           typeof parsedScreening.knowsCompanyEmployee === "boolean"
             ? parsedScreening.knowsCompanyEmployee
             : config.profile.screening.knowsCompanyEmployee,
+        previouslyEmployedByCompany:
+          typeof parsedScreening.previouslyEmployedByCompany === "boolean"
+            ? parsedScreening.previouslyEmployedByCompany
+            : config.profile.screening.previouslyEmployedByCompany,
+        outsideBusinessActivities:
+          typeof parsedScreening.outsideBusinessActivities === "boolean"
+            ? parsedScreening.outsideBusinessActivities
+            : config.profile.screening.outsideBusinessActivities,
         dateOfBirth: parsedScreening.dateOfBirth || config.profile.screening.dateOfBirth,
         gpa: parsedScreening.gpa || config.profile.screening.gpa,
         over18:
@@ -1363,6 +1371,16 @@ function StepProfile({
             label="Know anyone at this company?"
             value={config.profile.screening.knowsCompanyEmployee}
             onChange={(knowsCompanyEmployee) => patchScreening({ knowsCompanyEmployee })}
+          />
+          <BooleanChoice
+            label="Worked here before?"
+            value={config.profile.screening.previouslyEmployedByCompany}
+            onChange={(previouslyEmployedByCompany) => patchScreening({ previouslyEmployedByCompany })}
+          />
+          <BooleanChoice
+            label="Outside business activities?"
+            value={config.profile.screening.outsideBusinessActivities}
+            onChange={(outsideBusinessActivities) => patchScreening({ outsideBusinessActivities })}
           />
           <TagInput
             label="Fluent languages"

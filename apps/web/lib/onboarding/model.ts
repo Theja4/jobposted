@@ -80,6 +80,8 @@ export type OnboardingConfig = {
       relocationOk: boolean | null;
       spokenLanguages: string[];
       knowsCompanyEmployee: boolean | null;
+      previouslyEmployedByCompany: boolean | null;
+      outsideBusinessActivities: boolean | null;
       dateOfBirth: string;
       gpa: string;
       over18: boolean | null;
@@ -194,6 +196,8 @@ export function defaultOnboardingConfig(email = ""): OnboardingConfig {
         relocationOk: null,
         spokenLanguages: [],
         knowsCompanyEmployee: false,
+        previouslyEmployedByCompany: false,
+        outsideBusinessActivities: false,
         dateOfBirth: "",
         gpa: "",
         over18: null,
@@ -366,6 +370,8 @@ export function sanitizeOnboardingConfig(value: unknown, email = ""): Onboarding
         relocationOk: asBool(screening.relocationOk),
         spokenLanguages: stringArray(screening.spokenLanguages, 6),
         knowsCompanyEmployee: asBool(screening.knowsCompanyEmployee) ?? false,
+        previouslyEmployedByCompany: asBool(screening.previouslyEmployedByCompany) ?? false,
+        outsideBusinessActivities: asBool(screening.outsideBusinessActivities) ?? false,
         dateOfBirth: asString(screening.dateOfBirth),
         gpa: asString(screening.gpa),
         over18: asBool(screening.over18),
@@ -456,6 +462,26 @@ export function reusableAnswersFromOnboarding(config: OnboardingConfig): Reusabl
       key: "screening.current_employee_connection",
       prompt: "Do you know any current employees at this company?",
       value: yesNo(s.knowsCompanyEmployee),
+    },
+    {
+      key: "screening.previous_company_employment",
+      prompt: "Have you been employed by this company in the past?",
+      value: yesNo(s.previouslyEmployedByCompany),
+    },
+    {
+      key: "screening.previous_subsidiary_employment",
+      prompt: "Have you previously worked for this company or any of its subsidiaries?",
+      value: yesNo(s.previouslyEmployedByCompany),
+    },
+    {
+      key: "screening.outside_business_activities",
+      prompt: "Do you have any outside business activities you would continue if hired?",
+      value: yesNo(s.outsideBusinessActivities),
+    },
+    {
+      key: "screening.side_business_activities",
+      prompt: "Do you have advisory, consulting, board, or side business activities?",
+      value: yesNo(s.outsideBusinessActivities),
     },
     {
       key: "screening.languages",

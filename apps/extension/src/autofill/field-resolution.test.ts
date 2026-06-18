@@ -122,4 +122,51 @@ describe("field resolution", () => {
     expect(mapping.canonicalKey).toBe("answers.screening.company_employee_connection");
     expect(mapping.value).toBe("No");
   });
+
+  it("maps previous employment and outside business activity questions to setup answers", async () => {
+    const { document } = parseHTML("<input />");
+    const baseField = {
+      id: "custom-question",
+      element: document.querySelector("input") as HTMLElement,
+      context: "",
+      type: "radio" as const,
+      required: true,
+      options: ["Yes", "No"],
+      signature: "custom-question",
+    };
+    const testProfile = {
+      ...profile,
+      answers: [
+        { key: "screening.previous_company_employment", prompt: "Have you been employed by this company in the past?", value: "No" },
+        { key: "screening.outside_business_activities", prompt: "Do you have any outside business activities you would continue if hired?", value: "No" },
+      ],
+    };
+    const previous = await resolveField({
+      field: {
+        ...baseField,
+        label: "Have you been employed by Okta, Inc. or any of its subsidiaries in the past?",
+      },
+      profile: testProfile,
+      platform: "generic",
+      url: "",
+      demographicsEnabled: false,
+    });
+    const outside = await resolveField({
+      field: {
+        ...baseField,
+        id: "outside-business",
+        signature: "outside-business",
+        label: "Do you have any outside business activity(ies) that you would continue engaging in if you joined us?",
+      },
+      profile: testProfile,
+      platform: "generic",
+      url: "",
+      demographicsEnabled: false,
+    });
+
+    expect(previous.canonicalKey).toBe("answers.screening.previous_company_employment");
+    expect(previous.value).toBe("No");
+    expect(outside.canonicalKey).toBe("answers.screening.outside_business_activities");
+    expect(outside.value).toBe("No");
+  });
 });

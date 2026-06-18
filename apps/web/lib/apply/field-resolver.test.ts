@@ -63,6 +63,22 @@ describe("resolveFieldValue", () => {
     expect(r.value).toBe("No");
   });
 
+  it("maps previous employment and outside business activity questions to setup answers", () => {
+    const p = profile({
+      answers: [
+        { key: "screening.previous_company_employment", prompt: "Have you been employed by this company in the past?", value: "No" },
+        { key: "screening.outside_business_activities", prompt: "Do you have any outside business activities you would continue if hired?", value: "No" },
+      ],
+    });
+    const previous = resolveFieldValue(field({ label: "Have you been employed by Okta, Inc. or any of its subsidiaries in the past?" }), p, { demographicsEnabled: false });
+    const outside = resolveFieldValue(field({ label: "Do you have any outside business activity(ies) that you would continue engaging in if you joined us?" }), p, { demographicsEnabled: false });
+
+    expect(previous.canonicalKey).toBe("answers.screening.previous_company_employment");
+    expect(previous.value).toBe("No");
+    expect(outside.canonicalKey).toBe("answers.screening.outside_business_activities");
+    expect(outside.value).toBe("No");
+  });
+
   it("does not resolve demographics unless enabled", () => {
     const off = resolveFieldValue(field({ label: "Gender" }), profile(), { demographicsEnabled: false });
     expect(off.canonicalKey).toBe("unknown");

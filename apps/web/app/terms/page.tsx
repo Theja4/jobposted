@@ -11,7 +11,7 @@ export const metadata: Metadata = {
   alternates: { canonical: "/terms" },
 };
 
-const UPDATED_AT = "June 17, 2026";
+const UPDATED_AT = "June 19, 2026";
 
 export default function TermsPage() {
   return (
@@ -28,7 +28,8 @@ export default function TermsPage() {
           <h2 className="text-base font-extrabold text-ink">Short version</h2>
           <p className="mt-3 text-sm leading-6 text-muted">
             JobPosted is a job-application copilot. We help find roles, tailor resumes, prepare
-            applications, and keep a tracker. You are responsible for reviewing your information and
+            applications, and keep a tracker. We may fill fields, choose options, and check boxes
+            from your saved setup answers. You are responsible for reviewing your information and
             deciding what gets submitted.
           </p>
         </section>
@@ -54,18 +55,23 @@ export default function TermsPage() {
 
         <Clause title="3. What JobPosted does">
           JobPosted helps match jobs to your profile, tailor resumes, prepare application forms, and
-          track application status. Some supported open ATS flows may be prepared server-side after
-          your explicit confirmation. Login-gated platforms such as LinkedIn or Workday run in your
-          own browser session through the extension; JobPosted does not ask for or store those
-          passwords. When a form requires a resume or cover-letter upload, you are responsible for
-          checking the file before submission.
+          track application status. To prepare an application, JobPosted may fill text fields,
+          select dropdown or radio options, upload supported documents, and check or uncheck boxes
+          based on your saved profile, setup answers, inferred field mappings, and selected
+          workflow. This can include screening answers, acknowledgements, and checkboxes that an
+          application form requires to continue. Some supported open ATS flows may be prepared
+          server-side after your explicit confirmation. Login-gated platforms such as LinkedIn or
+          Workday run in your own browser session through the extension; JobPosted does not ask for
+          or store those passwords. When a form requires a resume or cover-letter upload, you are
+          responsible for checking the file before submission.
         </Clause>
 
         <Clause title="4. Review before submitting">
           JobPosted uses automation and AI, and outputs can be incomplete, outdated, or wrong. You
-          must review each resume, answer, field fill, application, and employer requirement before
-          submitting. You are responsible for the final content sent to an employer or applicant
-          tracking system.
+          authorize JobPosted to prepare forms by making automated field selections from your saved
+          information, but you must review each resume, answer, field fill, checkbox, application,
+          and employer requirement before submitting. You are responsible for the final content and
+          selections sent to an employer or applicant tracking system.
         </Clause>
 
         <Clause title="5. AI-generated content">

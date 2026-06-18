@@ -584,6 +584,14 @@ export function mergeParsedIntoOnboarding(
           typeof parsedScreening.knowsCompanyEmployee === "boolean"
             ? parsedScreening.knowsCompanyEmployee
             : next.profile.screening.knowsCompanyEmployee,
+        previouslyEmployedByCompany:
+          typeof parsedScreening.previouslyEmployedByCompany === "boolean"
+            ? parsedScreening.previouslyEmployedByCompany
+            : next.profile.screening.previouslyEmployedByCompany,
+        outsideBusinessActivities:
+          typeof parsedScreening.outsideBusinessActivities === "boolean"
+            ? parsedScreening.outsideBusinessActivities
+            : next.profile.screening.outsideBusinessActivities,
         dateOfBirth: parsedScreening.dateOfBirth || next.profile.screening.dateOfBirth,
         gpa: parsedScreening.gpa || next.profile.screening.gpa,
         over18:

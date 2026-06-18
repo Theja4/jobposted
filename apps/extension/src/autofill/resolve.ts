@@ -1,6 +1,6 @@
 import {
   FIELD_RULES,
-  matchCompanyConnectionAnswer,
+  matchScreeningReusableAnswer,
   valueForKey,
   type ExtensionFieldContext,
   type ExtensionFieldMapping,
@@ -36,14 +36,14 @@ export function toFieldContext(
 
 function answerMapping(field: FieldDescriptor, profile: MasterProfile): ExtensionFieldMapping | null {
   const text = fieldText(field);
-  const companyConnectionAnswer = matchCompanyConnectionAnswer(text, profile);
-  if (companyConnectionAnswer) {
+  const semanticAnswer = matchScreeningReusableAnswer(text, profile);
+  if (semanticAnswer) {
     return {
-      canonicalKey: `answers.${companyConnectionAnswer.key}`,
-      value: companyConnectionAnswer.value,
+      canonicalKey: `answers.${semanticAnswer.key}`,
+      value: semanticAnswer.value,
       confidence: 0.84,
       source: "answer",
-      reason: "Matched the company connection setup answer.",
+      reason: "Matched a setup screening answer.",
     };
   }
   const answer = profile.answers.find((item) => {

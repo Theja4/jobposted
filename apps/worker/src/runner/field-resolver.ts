@@ -79,13 +79,58 @@ const COMPANY_CONNECTION_PATTERNS = [
   /\b(?:relationship|personal relationship)\b.*\b(?:employee|employees|company|organization|organisation)\b/,
 ] as const;
 
+const PREVIOUS_COMPANY_EMPLOYMENT_ANSWER_KEYS = [
+  "screening.previous_company_employment",
+  "screening.previous_subsidiary_employment",
+] as const;
+
+const PREVIOUS_COMPANY_EMPLOYMENT_PATTERNS = [
+  /\b(?:previously|formerly|ever|in\s+the\s+past)\s+(?:been\s+)?(?:employed|worked|work)\s+(?:by|at|for|with)\b/,
+  /\b(?:been\s+)?(?:employed|worked)\s+(?:by|at|for|with).*\b(?:previously|formerly|before|in\s+the\s+past|past)\b/,
+  /\bformer\s+employee\b/,
+  /\b(?:subsidiar(?:y|ies)|affiliate|affiliates)\b.*\b(?:previously|formerly|employed|worked|past)\b/,
+] as const;
+
+const OUTSIDE_BUSINESS_ACTIVITIES_ANSWER_KEYS = [
+  "screening.outside_business_activities",
+  "screening.side_business_activities",
+] as const;
+
+const OUTSIDE_BUSINESS_ACTIVITIES_PATTERNS = [
+  /\boutside\s+business\s+activit(?:y|ies)\b/,
+  /\b(?:advisory|consulting|board)\s+roles?\b/,
+  /\bside\s+(?:business(?:es)?|job|jobs|gig|gigs|hustle)\b/,
+  /\boutside\s+(?:employment|work|consulting)\b/,
+  /\bconflict\s+of\s+interest\b.*\b(?:business|employment|activity|activities)\b/,
+] as const;
+
+function answerForKeys<T extends readonly string[]>(profile: MasterProfile, keys: T) {
+  return profile.answers.find((answer) => keys.includes(answer.key as T[number])) ?? null;
+}
+
 function matchCompanyConnectionAnswer(text: string, profile: MasterProfile) {
   const normalized = normalizeText(text);
   if (!includesAny(normalized, COMPANY_CONNECTION_PATTERNS)) return null;
+  return answerForKeys(profile, COMPANY_CONNECTION_ANSWER_KEYS);
+}
+
+function matchPreviousCompanyEmploymentAnswer(text: string, profile: MasterProfile) {
+  const normalized = normalizeText(text);
+  if (!includesAny(normalized, PREVIOUS_COMPANY_EMPLOYMENT_PATTERNS)) return null;
+  return answerForKeys(profile, PREVIOUS_COMPANY_EMPLOYMENT_ANSWER_KEYS);
+}
+
+function matchOutsideBusinessActivitiesAnswer(text: string, profile: MasterProfile) {
+  const normalized = normalizeText(text);
+  if (!includesAny(normalized, OUTSIDE_BUSINESS_ACTIVITIES_PATTERNS)) return null;
+  return answerForKeys(profile, OUTSIDE_BUSINESS_ACTIVITIES_ANSWER_KEYS);
+}
+
+function matchScreeningReusableAnswer(text: string, profile: MasterProfile) {
   return (
-    profile.answers.find((answer) =>
-      COMPANY_CONNECTION_ANSWER_KEYS.includes(answer.key as (typeof COMPANY_CONNECTION_ANSWER_KEYS)[number]),
-    ) ?? null
+    matchCompanyConnectionAnswer(text, profile) ??
+    matchPreviousCompanyEmploymentAnswer(text, profile) ??
+    matchOutsideBusinessActivitiesAnswer(text, profile)
   );
 }
 
@@ -252,11 +297,11 @@ export type ResolvedField = { canonicalKey: string; value: string | string[] | b
 
 function matchReusableAnswer(field: ResolvableField, profile: MasterProfile): ResolvedField | null {
   const text = normalizeText(`${field.label} ${field.context ?? ""} ${(field.options ?? []).join(" ")}`);
-  const companyConnectionAnswer = matchCompanyConnectionAnswer(text, profile);
-  if (companyConnectionAnswer) {
+  const semanticAnswer = matchScreeningReusableAnswer(text, profile);
+  if (semanticAnswer) {
     return {
-      canonicalKey: `answers.${companyConnectionAnswer.key}`,
-      value: companyConnectionAnswer.value,
+      canonicalKey: `answers.${semanticAnswer.key}`,
+      value: semanticAnswer.value,
       confidence: 0.84,
       source: "answer",
     };
