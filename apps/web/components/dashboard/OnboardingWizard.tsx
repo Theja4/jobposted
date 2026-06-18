@@ -154,6 +154,12 @@ const RACIAL_ETHNIC_BACKGROUND_OPTIONS = [
 ];
 
 const EASE = [0.22, 1, 0.36, 1] as const;
+const SAVED_DATE_FORMATTER = new Intl.DateTimeFormat("en-GB", {
+  day: "2-digit",
+  month: "2-digit",
+  year: "numeric",
+  timeZone: "Asia/Kolkata",
+});
 const labelCls = "mb-1.5 flex items-center gap-2 text-xs font-bold text-ink/75";
 const inputCls =
   "h-11 w-full rounded-xl bg-white/80 px-3.5 text-sm font-semibold text-ink shadow-sm outline-none ring-1 ring-inset ring-zinc-200/80 transition-all placeholder:text-zinc-400 hover:ring-zinc-300 focus:bg-white focus:ring-2 focus:ring-brand-500";
@@ -439,6 +445,12 @@ function serializeRemotePreferences(values: string[]) {
   return REMOTE_PREFERENCES.filter((option) => values.includes(option)).join(", ");
 }
 
+function formatSavedDate(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  return SAVED_DATE_FORMATTER.format(date);
+}
+
 export function OnboardingWizard({
   initialConfig,
   completedAt,
@@ -600,7 +612,7 @@ export function OnboardingWizard({
 
   const currentCopy = STEP_COPY[step];
   const currentQuality = completionForStep(config, step);
-  const savedLabel = completedAt ? new Date(completedAt).toLocaleDateString() : null;
+  const savedLabel = completedAt ? formatSavedDate(completedAt) : null;
 
   return (
     <div className="w-full">

@@ -1,5 +1,5 @@
 export const JOBPOSTED_WEB_ORIGIN: string =
-  import.meta.env.WXT_JOBPOSTED_WEB_ORIGIN || "http://localhost:3000";
+  import.meta.env.WXT_JOBPOSTED_WEB_ORIGIN || "https://jobposted.app";
 
 export const SUPABASE_URL: string = import.meta.env.WXT_SUPABASE_URL || "";
 export const SUPABASE_ANON_KEY: string = import.meta.env.WXT_SUPABASE_ANON_KEY || "";

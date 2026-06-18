@@ -21,10 +21,9 @@ WXT_SUPABASE_ANON_KEY=...
 WXT_INCLUDE_LOCALHOST=1
 ```
 
-Local development defaults to `http://localhost:3000` even if `WXT_JOBPOSTED_WEB_ORIGIN` is not
-set. When the website is live, build the extension with
-`WXT_JOBPOSTED_WEB_ORIGIN=https://www.jobposted.ai`. The service-role key and AI/model keys are
-never bundled into the extension.
+Extension builds default to `https://jobposted.app`. For local development, set
+`WXT_JOBPOSTED_WEB_ORIGIN=http://localhost:3000` and `WXT_INCLUDE_LOCALHOST=1`. The service-role key
+and AI/model keys are never bundled into the extension.
 
 The web app routes use:
 
@@ -71,8 +70,8 @@ The extension never collects or stores Workday, LinkedIn, or employer passwords.
 
 ## Production Reliability
 
-- Local-only builds default to `http://localhost:3000`; live builds must explicitly set
-  `WXT_JOBPOSTED_WEB_ORIGIN=https://www.jobposted.ai` or the deployed origin.
+- Live builds default to `https://jobposted.app`; local-only builds should explicitly set
+  `WXT_JOBPOSTED_WEB_ORIGIN=http://localhost:3000` and `WXT_INCLUDE_LOCALHOST=1`.
 - Application sync is durable: transient network/server failures are stored in
   `chrome.storage.local`, retried with `chrome.alarms`, and shown in the popup as pending syncs.
 - Filled-but-not-submitted extension records do **not** set `submitted_at`, so they do not count

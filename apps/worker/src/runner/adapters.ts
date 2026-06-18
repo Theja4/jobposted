@@ -379,6 +379,15 @@ async function runForm(page: any, ctx: AdapterContext, spec: FormSpec): Promise<
       await page.waitForTimeout(3_000);
     }
   } catch {
+    const blocker = await detectPageBlocker(page);
+    if (blocker.blocker) {
+      return {
+        status: "failed",
+        reason: blocker.reason ?? blocker.blocker,
+        permanent: true,
+        screenshot: await screenshot(page),
+      };
+    }
     return {
       status: "failed",
       reason: "confirmation_timeout: could not verify submission",

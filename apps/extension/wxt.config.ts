@@ -2,10 +2,10 @@ import tailwindcss from "@tailwindcss/vite";
 import { defineConfig } from "wxt";
 
 const EXTENSION_NAME = "JobPosted";
-const configuredWebOrigin = process.env.WXT_JOBPOSTED_WEB_ORIGIN || "http://localhost:3000";
+const configuredWebOrigin = process.env.WXT_JOBPOSTED_WEB_ORIGIN || "https://jobposted.app";
 
 const includeLocalhost =
-  process.env.NODE_ENV !== "production" ||
+  process.env.WXT_INCLUDE_LOCALHOST === "1" ||
   process.env.INCLUDE_LOCALHOST === "1" ||
   configuredWebOrigin.startsWith("http://localhost");
 
@@ -13,12 +13,14 @@ function originMatch(origin: string) {
   try {
     return `${new URL(origin).origin}/*`;
   } catch {
-    return "http://localhost:3000/*";
+    return "https://jobposted.app/*";
   }
 }
 
 const JOBPOSTED_HOSTS = [
   originMatch(configuredWebOrigin),
+  "https://jobposted.app/*",
+  "https://www.jobposted.app/*",
   "https://jobposted.ai/*",
   "https://www.jobposted.ai/*",
   ...(includeLocalhost ? ["http://localhost:3000/*"] : []),

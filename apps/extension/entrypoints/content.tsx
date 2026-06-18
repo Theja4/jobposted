@@ -21,7 +21,7 @@ function originMatch(origin: string) {
   try {
     return `${new URL(origin).origin}/*`;
   } catch {
-    return "http://localhost:3000/*";
+    return "https://jobposted.app/*";
   }
 }
 
@@ -46,6 +46,8 @@ const CONTENT_MATCHES = [
   "https://*.rippling.com/*",
   "https://*.paylocity.com/*",
   originMatch(JOBPOSTED_WEB_ORIGIN),
+  "https://jobposted.app/*",
+  "https://www.jobposted.app/*",
   "https://jobposted.ai/*",
   "https://www.jobposted.ai/*",
   ...(includeLocalhost ? ["http://localhost:3000/*"] : []),
