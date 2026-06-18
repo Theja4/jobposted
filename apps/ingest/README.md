@@ -45,7 +45,9 @@ pnpm --filter @jobposted/ingest run
 
 Upserts are idempotent (conflict on `unique (source, source_job_id)`), so re-running refreshes
 rather than duplicates. Each seen job refreshes `last_seen_at`; jobs not seen for
-`INGEST_CLOSE_AFTER_DAYS` days, default 45, are marked `closed_at` and excluded from matching.
+`INGEST_CLOSE_AFTER_DAYS` days, default 30, are marked `closed_at` and excluded from matching.
+The maintenance pass can also purge closed jobs after `INGEST_PURGE_CLOSED_AFTER_DAYS` days
+when they are not referenced by applications or documents.
 
 ## Scheduling
 
@@ -55,7 +57,8 @@ rather than duplicates. Each seen job refreshes `last_seen_at`; jobs not seen fo
   `INGEST_CRON_SECRET` or `WORKER_CRON_SECRET`, and schedule it in `vercel.json` / `vercel.ts`
   (design doc §9.4, Vercel Cron for light jobs).
 - **Standalone worker** — run `pnpm --filter @jobposted/ingest run` on a Fly/Railway schedule for
-  heavier polling.
+  heavier polling. The standalone command also runs the same bounded embedding, company-logo, and
+  stale-job maintenance pass as the web cron.
 
 ## Adding sources
 

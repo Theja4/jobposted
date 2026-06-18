@@ -38,9 +38,10 @@ function toRow(job: Job): Record<string, unknown> {
     embedding: job.embedding ? JSON.stringify(job.embedding) : null,
   };
   if (job.companyDomain) row.company_domain = job.companyDomain;
+  if (job.companyLogoResolvedAt) row.company_logo_resolved_at = job.companyLogoResolvedAt;
   if (job.companyLogoUrl) {
     row.company_logo_url = job.companyLogoUrl;
-    row.company_logo_resolved_at = job.companyLogoResolvedAt ?? new Date().toISOString();
+    row.company_logo_resolved_at = job.companyLogoResolvedAt ?? row.company_logo_resolved_at ?? new Date().toISOString();
   }
   return row;
 }
@@ -70,7 +71,7 @@ export async function upsertJobs(jobs: Job[]): Promise<UpsertResult> {
     upserted += rows.length;
   }
 
-  const closeAfterDays = Number(process.env.INGEST_CLOSE_AFTER_DAYS ?? 45);
+  const closeAfterDays = Number(process.env.INGEST_CLOSE_AFTER_DAYS ?? 30);
   if (Number.isFinite(closeAfterDays) && closeAfterDays > 0) {
     const cutoff = new Date(Date.now() - closeAfterDays * 86_400_000).toISOString();
     const { error } = await supabase

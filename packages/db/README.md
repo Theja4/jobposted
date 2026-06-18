@@ -28,6 +28,7 @@ FKs to `auth.users` and RLS via `auth.uid()` work identically in a non-public sc
 | `0017_job_board_filters.sql` | normalized type/seniority/salary fields and filter indexes | §9, §12 |
 | `0018_tracker_search.sql` | server-side tracker pagination, filtering, sorting, and search | §10, §12 |
 | `0019_current_compensation.sql` | separate current salary/CTC fields from expected compensation | setup/autofill |
+| `0027_job_retention.sql` | purge RPC for closed, unreferenced job-board rows | §9, §12 |
 
 ## How to apply
 

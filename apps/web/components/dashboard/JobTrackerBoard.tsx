@@ -42,7 +42,7 @@ import {
 } from "@/lib/dashboard/tracker-model";
 import { CompanyAvatar } from "./CompanyAvatar";
 import { DashboardSelect } from "./DashboardSelect";
-import { TrackerDetailDialog } from "./TrackerDetailDialog";
+import { TrackerDetailDialog, type TrackerEditPayload } from "./TrackerDetailDialog";
 
 type SourceFilter = "all" | TrackerSource;
 type StageFilter = "all" | TrackerStage;
@@ -95,6 +95,55 @@ const STAGE_ICONS: Record<string, typeof Clock3> = {
   closed: CircleOff,
 };
 
+// Each stage owns a colour so columns read as distinct sections, not white blocks. The ramp
+// runs left→right like a pipeline: neutral slate → brand blue → violet → green (offer is the
+// good outcome) → rose (closed). Lanes are frosted tints; the icon tile + count carry the hue.
+type StageTheme = { lane: string; iconTile: string; count: string };
+
+const STAGE_THEME: Record<string, StageTheme> = {
+  inbox: {
+    lane: "border-white/55 bg-slate-100/35",
+    iconTile: "bg-slate-200/80 text-slate-700",
+    count: "bg-white/75 text-slate-700",
+  },
+  applied: {
+    lane: "border-white/55 bg-brand-100/35",
+    iconTile: "bg-brand-100 text-brand-700",
+    count: "bg-white/75 text-brand-700",
+  },
+  interview: {
+    lane: "border-white/55 bg-violet-100/35",
+    iconTile: "bg-violet-100 text-violet-700",
+    count: "bg-white/75 text-violet-700",
+  },
+  offer: {
+    lane: "border-white/55 bg-emerald-100/35",
+    iconTile: "bg-emerald-100 text-emerald-700",
+    count: "bg-white/75 text-emerald-700",
+  },
+  closed: {
+    lane: "border-white/55 bg-rose-100/35",
+    iconTile: "bg-rose-100 text-rose-700",
+    count: "bg-white/75 text-rose-700",
+  },
+};
+
+const CUSTOM_STAGE_THEME: StageTheme = {
+  lane: "border-white/55 bg-cyan-100/35",
+  iconTile: "bg-cyan-100 text-cyan-700",
+  count: "bg-white/75 text-cyan-700",
+};
+
+const DEFAULT_STAGE_THEME: StageTheme = {
+  lane: "border-white/55 bg-zinc-100/35",
+  iconTile: "bg-zinc-200/80 text-zinc-700",
+  count: "bg-white/75 text-zinc-700",
+};
+
+function stageTheme(id: string): StageTheme {
+  return STAGE_THEME[id] ?? (id.startsWith("custom:") ? CUSTOM_STAGE_THEME : DEFAULT_STAGE_THEME);
+}
+
 const EMPTY_FORM: ManualTrackerInput = {
   role: "",
   company: "",
@@ -109,7 +158,6 @@ const EMPTY_FORM: ManualTrackerInput = {
 // `outline` (a separate property) so they never fight the glass box-shadow. Text stays
 // dark ink on the light glass, and cards stay solid pastel — both for readability.
 const TRACKER_PANEL_CLASS = "liquid-glass";
-const TRACKER_LANE_CLASS = "liquid-glass";
 const TRACKER_CONTROL_CLASS = "glass-chip";
 const TRACKER_CONTROL_FOCUS_CLASS =
   "focus:outline focus:outline-2 focus:outline-offset-2 focus:outline-brand-600";
@@ -128,6 +176,15 @@ const TRACKER_CHIP_SHADOW_CLASS = "shadow-[inset_0_1px_0_rgba(255,255,255,0.6)]"
 
 function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+}
+
+/** Translucent fill from a palette hex so cards read as frosted glass over the lane/gradient. */
+function withAlpha(hex: string, alpha: number) {
+  const value = hex.replace("#", "");
+  const r = parseInt(value.slice(0, 2), 16);
+  const g = parseInt(value.slice(2, 4), 16);
+  const b = parseInt(value.slice(4, 6), 16);
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 }
 
 function stageCount(items: TrackerItem[], stage: TrackerStage) {
@@ -726,19 +783,12 @@ function TrackerCard({
         onPointerDown={(event) => onCardPointerDown(item, event)}
         onPointerMove={onCardPointerMove}
         onPointerUp={onCardPointerUp}
-        style={
-          {
-            "--cbg": color.bg,
-            "--cbd": color.border,
-            "--cbdh": color.swatch,
-          } as React.CSSProperties
-        }
+        style={{ backgroundColor: withAlpha(color.bg, 0.72) }}
         className={cn(
-          "group cursor-grab touch-none rounded-2xl border bg-[var(--cbg)] p-3 outline-none transition-[transform,box-shadow,border-color] duration-200 ease-out active:cursor-grabbing",
-          "border-[var(--cbd)] shadow-[inset_0_1px_0_rgba(255,255,255,0.7)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600",
+          "group cursor-grab touch-none rounded-[1.25rem] border border-white/55 p-3 outline-none shadow-[inset_0_1px_0_rgba(255,255,255,0.85)] backdrop-blur-md transition-[transform,box-shadow,border-color] duration-200 ease-out active:cursor-grabbing focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600",
           dragging
-            ? "scale-[0.99] border-brand-300 shadow-[inset_0_1px_0_rgba(255,255,255,0.7),0_16px_30px_-18px_rgba(31,100,224,0.4)]"
-            : "hover:-translate-y-0.5 hover:border-[var(--cbdh)] hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.85),0_16px_30px_-18px_rgba(15,23,42,0.32)]",
+            ? "scale-[0.99] border-white/90 shadow-[inset_0_1px_0_rgba(255,255,255,0.9),0_16px_30px_-18px_rgba(31,100,224,0.4)]"
+            : "hover:-translate-y-0.5 hover:border-white/90 hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.95),0_18px_34px_-20px_rgba(16,47,102,0.28)]",
           busy && "cursor-default",
         )}
       >
@@ -806,6 +856,7 @@ function TrackerColumn({
   onCardPointerUp: (event: React.PointerEvent<HTMLElement>) => void;
 }) {
   const Icon = iconForStage(column.id);
+  const theme = stageTheme(column.id);
   const draggingOver = dragOverStage === column.id;
 
   return (
@@ -815,14 +866,14 @@ function TrackerColumn({
       onDragLeave={(event) => onColumnDragLeave(column.id, event)}
       onDrop={(event) => onColumnDrop(column.id, event)}
       className={cn(
-        "flex min-h-[20rem] min-w-0 flex-col rounded-2xl p-3 outline outline-2 -outline-offset-2 transition-[outline-color]",
-        TRACKER_LANE_CLASS,
+        "flex min-h-[20rem] min-w-0 flex-col rounded-[1.75rem] border p-3 outline outline-2 -outline-offset-2 backdrop-blur-2xl shadow-[inset_0_1px_0_rgba(255,255,255,0.8)] transition-[outline-color]",
+        theme.lane,
         draggingOver ? "outline-brand-400" : "outline-transparent",
       )}
     >
       <div className="mb-3 flex items-center justify-between gap-3 px-1">
         <div className="flex items-center gap-2">
-          <span className={cn("grid size-8 place-items-center rounded-xl bg-brand-50 text-brand-700", TRACKER_CHIP_SHADOW_CLASS)}>
+          <span className={cn("grid size-8 place-items-center rounded-xl", theme.iconTile, TRACKER_CHIP_SHADOW_CLASS)}>
             <Icon className="size-4" />
           </span>
           <div>
@@ -844,7 +895,7 @@ function TrackerColumn({
               <Trash2 className="size-4" />
             </button>
           )}
-          <span className={cn("rounded-full bg-white px-2.5 py-1 text-xs font-black text-ink", TRACKER_CHIP_SHADOW_CLASS)}>
+          <span className={cn("rounded-full px-2.5 py-1 text-xs font-black", theme.count, TRACKER_CHIP_SHADOW_CLASS)}>
             {items.length}
           </span>
         </div>
@@ -942,6 +993,33 @@ export function JobTrackerBoard({ initialPage }: { initialPage: TrackerPage }) {
   const setCardColor = useCallback((id: string, colorId: string) => {
     setCardColors((current) => ({ ...current, [id]: colorId }));
   }, []);
+
+  // Inline edit from the detail popup. PATCHes the item, then updates the board list and the
+  // open popup in place. Returns an error message for the dialog to show (the board's error
+  // banner sits behind the modal, so save errors must surface inside the dialog), or null.
+  async function saveDetailEdits(payload: TrackerEditPayload): Promise<string | null> {
+    if (!detailItem) return "Something went wrong. Reopen the role and try again.";
+    const id = detailItem.id;
+    setBusyId(id);
+    try {
+      const response = await fetch("/api/tracker/applications", {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ id, ...payload }),
+      });
+      const body = (await response.json()) as { ok: boolean; message?: string; item?: TrackerItem };
+      if (!response.ok || !body.ok || !body.item) {
+        return body.message || "Could not save those changes.";
+      }
+      upsertItem(body.item);
+      setDetailItem(body.item);
+      return null;
+    } catch {
+      return "Could not save those changes. Check your connection and try again.";
+    } finally {
+      setBusyId(null);
+    }
+  }
 
   useEffect(() => {
     const timer = window.setTimeout(() => setDebouncedQuery(query.trim()), 220);
@@ -1330,15 +1408,16 @@ export function JobTrackerBoard({ initialPage }: { initialPage: TrackerPage }) {
     <div className="relative w-full space-y-5">
       <div
         aria-hidden
-        className="pointer-events-none absolute inset-0 -z-10 overflow-hidden bg-gradient-to-br from-brand-50/60 via-white/0 to-mint/10"
+        className="pointer-events-none absolute inset-0 -z-10 overflow-hidden rounded-[1.75rem] bg-gradient-to-br from-brand-100 via-violet-100/45 to-rose-100/45"
       >
-        <div className="absolute -left-24 -top-28 size-80 rounded-full bg-brand-300/35 blur-3xl" />
-        <div className="absolute -right-16 top-16 size-72 rounded-full bg-mint/25 blur-3xl" />
-        <div className="absolute bottom-0 left-1/3 h-80 w-96 rounded-full bg-aqua/20 blur-3xl" />
-        <div className="absolute bottom-1/4 right-1/4 size-64 rounded-full bg-sun/12 blur-3xl" />
+        <div className="absolute -left-28 -top-32 h-[26rem] w-[26rem] rounded-full bg-brand-300/45 blur-[100px]" />
+        <div className="absolute left-1/3 -top-24 size-96 rounded-full bg-violet-300/35 blur-[110px]" />
+        <div className="absolute -right-20 top-8 size-96 rounded-full bg-rose-200/40 blur-[100px]" />
+        <div className="absolute -bottom-24 left-1/4 h-96 w-[30rem] rounded-full bg-aqua/30 blur-[110px]" />
+        <div className="absolute -bottom-10 right-1/4 size-72 rounded-full bg-mint/25 blur-[90px]" />
       </div>
 
-      <section className={cn("rounded-2xl p-4 sm:p-5", TRACKER_PANEL_CLASS)}>
+      <section className="px-1 pt-1">
         <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
           <div className="flex min-w-0 flex-col gap-1.5 sm:flex-row sm:items-baseline sm:gap-3">
             <h1 className="shrink-0 text-2xl font-extrabold tracking-[-0.03em] text-ink">Job tracker</h1>
@@ -1570,13 +1649,7 @@ export function JobTrackerBoard({ initialPage }: { initialPage: TrackerPage }) {
               void changeStage(target, stage);
             }}
             onColorChange={(colorId) => setCardColor(detailItem.id, colorId)}
-            onEdit={() => {
-              const target = detailItem;
-              setDetailItem(null);
-              setColumnPanelOpen(false);
-              setManualOpen(false);
-              setEditingItem(target);
-            }}
+            onSave={saveDetailEdits}
             onDelete={() => {
               const target = detailItem;
               setDetailItem(null);

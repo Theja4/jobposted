@@ -19,6 +19,7 @@ import {
   type CompanyAssetBackfillSummary,
 } from "./company-assets-backfill";
 import { enrichRawJobsWithCompanyAssets } from "./company-assets";
+import { purgeOldUnreferencedJobs, type JobRetentionSummary } from "./job-retention";
 import { countBoards, loadBoardConfig, type BoardConfig } from "./config";
 import { mapLimit } from "./util";
 
@@ -29,6 +30,12 @@ export interface IngestSummary {
   embedded: number;
   upserted: number;
   skippedWrite: boolean;
+}
+
+export interface IngestMaintenanceSummary {
+  backfill: BackfillSummary | null;
+  companyAssets: CompanyAssetBackfillSummary | null;
+  jobRetention: JobRetentionSummary | null;
 }
 
 export async function runIngest(
@@ -87,16 +94,13 @@ export async function runIngest(
   };
 }
 
-/** Web-standard handler for wiring into Vercel Cron (returns the run summary as JSON). */
-export async function cronHandler(): Promise<Response> {
-  const config = await loadBoardConfig();
-  const summary = await runIngest(config, { withQuestions: process.env.INGEST_QUESTIONS === "1" });
-
+export async function runIngestMaintenance(): Promise<IngestMaintenanceSummary> {
   // Self-heal: chip away at any jobs still missing an embedding (e.g. ingested before embeddings
   // were enabled, or whose batch failed). Bounded per run; set INGEST_BACKFILL_LIMIT=0 to disable.
   const backfillLimit = Number(process.env.INGEST_BACKFILL_LIMIT ?? 200);
   let backfill: BackfillSummary | null = null;
   let companyAssets: CompanyAssetBackfillSummary | null = null;
+  let jobRetention: JobRetentionSummary | null = null;
   if (Number.isFinite(backfillLimit) && backfillLimit > 0) {
     try {
       backfill = await runBackfill({ jobs: true, resumes: false, limit: backfillLimit });
@@ -114,7 +118,29 @@ export async function cronHandler(): Promise<Response> {
     }
   }
 
-  return new Response(JSON.stringify({ ...summary, backfill, companyAssets }), {
+  const jobRetentionDays = Number(process.env.INGEST_PURGE_CLOSED_AFTER_DAYS ?? 30);
+  const jobRetentionLimit = Number(process.env.INGEST_PURGE_CLOSED_LIMIT ?? 1000);
+  if (Number.isFinite(jobRetentionDays) && jobRetentionDays >= 0) {
+    try {
+      jobRetention = await purgeOldUnreferencedJobs({
+        retentionDays: jobRetentionDays,
+        limit: Number.isFinite(jobRetentionLimit) ? jobRetentionLimit : 1000,
+      });
+    } catch (err) {
+      console.error("[ingest] job retention failed:", (err as Error).message);
+    }
+  }
+
+  return { backfill, companyAssets, jobRetention };
+}
+
+/** Web-standard handler for wiring into Vercel Cron (returns the run summary as JSON). */
+export async function cronHandler(): Promise<Response> {
+  const config = await loadBoardConfig();
+  const summary = await runIngest(config, { withQuestions: process.env.INGEST_QUESTIONS === "1" });
+  const maintenance = await runIngestMaintenance();
+
+  return new Response(JSON.stringify({ ...summary, ...maintenance }), {
     headers: { "content-type": "application/json" },
   });
 }
@@ -130,7 +156,8 @@ async function main() {
     process.exit(1);
   }
   const summary = await runIngest(config, { withQuestions: process.env.INGEST_QUESTIONS === "1" });
-  console.info("[ingest] done:", summary);
+  const maintenance = await runIngestMaintenance();
+  console.info("[ingest] done:", { ...summary, ...maintenance });
 }
 
 // Run main() only when executed directly (not when imported, e.g. by the cron route).

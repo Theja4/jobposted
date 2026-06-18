@@ -6,6 +6,7 @@ export interface CompanyAssets {
 
 type ResolveOptions = {
   timeoutMs?: number;
+  useLogoDevNameFallback?: boolean;
 };
 
 const ATS_HOST_PATTERNS = [
@@ -16,6 +17,16 @@ const ATS_HOST_PATTERNS = [
   /(^|\.)workdayjobs\.com$/i,
   /(^|\.)smartrecruiters\.com$/i,
   /(^|\.)workable\.com$/i,
+];
+
+const GENERIC_JOB_HOST_PATTERNS = [
+  /(^|\.)linkedin\.com$/i,
+  /(^|\.)indeed\.com$/i,
+  /(^|\.)glassdoor\.com$/i,
+  /(^|\.)monster\.com$/i,
+  /(^|\.)ziprecruiter\.com$/i,
+  /(^|\.)wellfound\.com$/i,
+  /(^|\.)angel\.co$/i,
 ];
 
 const LOGO_META_KEYS = new Set([
@@ -90,6 +101,8 @@ export function companyCareerPageUrl(applyUrl: string | null | undefined): strin
     return new URL(`/${encodeURIComponent(firstPathSegment)}`, url.origin).toString();
   }
 
+  if (GENERIC_JOB_HOST_PATTERNS.some((pattern) => pattern.test(url.hostname))) return null;
+
   url.hash = "";
   url.search = "";
   return url.toString();
@@ -97,8 +110,54 @@ export function companyCareerPageUrl(applyUrl: string | null | undefined): strin
 
 export function inferCompanyDomainFromUrl(value: string | null | undefined): string | null {
   const url = parseUrl(value);
-  if (!url || ATS_HOST_PATTERNS.some((pattern) => pattern.test(url.hostname))) return null;
+  if (
+    !url ||
+    ATS_HOST_PATTERNS.some((pattern) => pattern.test(url.hostname)) ||
+    GENERIC_JOB_HOST_PATTERNS.some((pattern) => pattern.test(url.hostname))
+  ) {
+    return null;
+  }
   return stripWww(url.hostname);
+}
+
+function logoDevPublishableKey() {
+  const env = (globalThis as unknown as {
+    process?: { env?: Record<string, string | undefined> };
+  }).process?.env;
+  return (
+    env?.LOGO_DEV_PUBLISHABLE_KEY ||
+    env?.LOGO_DEV_TOKEN ||
+    env?.NEXT_PUBLIC_LOGO_DEV_PUBLISHABLE_KEY ||
+    ""
+  ).trim();
+}
+
+function logoDevImageUrl(kind: "domain" | "name", value: string | null | undefined) {
+  const token = logoDevPublishableKey();
+  const cleanValue = (value ?? "").trim();
+  if (!token || !cleanValue) return null;
+  const path =
+    kind === "domain"
+      ? encodeURIComponent(stripWww(cleanValue))
+      : `name/${encodeURIComponent(cleanValue.slice(0, 120))}`;
+  const url = new URL(`https://img.logo.dev/${path}`);
+  url.searchParams.set("token", token);
+  url.searchParams.set("size", "64");
+  url.searchParams.set("format", "webp");
+  url.searchParams.set("theme", "light");
+  url.searchParams.set("fallback", "404");
+  return url.toString();
+}
+
+function logoDevFallbackUrl(args: {
+  companyDomain: string | null | undefined;
+  companyName: string | null | undefined;
+  useNameFallback: boolean;
+}) {
+  return (
+    logoDevImageUrl("domain", args.companyDomain) ??
+    (args.useNameFallback ? logoDevImageUrl("name", args.companyName) : null)
+  );
 }
 
 function attrValue(tag: string, attr: string) {
@@ -169,19 +228,30 @@ export function parseCompanyAssetsFromHtml(html: string, pageUrl: string): Compa
 export async function resolveCompanyAssetsFromJobUrl(
   args: {
     applyUrl: string | null | undefined;
+    companyName?: string | null | undefined;
   },
   options: ResolveOptions = {},
 ): Promise<CompanyAssets> {
   const pageUrl = companyCareerPageUrl(args.applyUrl);
+  const fallbackDomain = inferCompanyDomainFromUrl(args.applyUrl);
+  const useLogoDevNameFallback = options.useLogoDevNameFallback !== false;
   const fallback: CompanyAssets = {
-    companyDomain: inferCompanyDomainFromUrl(args.applyUrl),
-    companyLogoUrl: null,
+    companyDomain: fallbackDomain,
+    companyLogoUrl: logoDevFallbackUrl({
+      companyDomain: fallbackDomain,
+      companyName: args.companyName,
+      useNameFallback: useLogoDevNameFallback,
+    }),
     companyLogoResolvedAt: new Date().toISOString(),
   };
+  if (fallback.companyLogoUrl) return fallback;
   if (!pageUrl) return fallback;
 
+  const timeoutMs = options.timeoutMs ?? 3500;
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), options.timeoutMs ?? 3500);
+  const timer = setTimeout(() => {
+    controller.abort(new Error(`Company asset lookup timed out after ${timeoutMs}ms`));
+  }, timeoutMs);
   try {
     let current = safeFetchUrl(pageUrl);
     if (!current) return fallback;
@@ -207,9 +277,15 @@ export async function resolveCompanyAssetsFromJobUrl(
     if (contentType && !/text\/html|application\/xhtml\+xml/i.test(contentType)) return fallback;
     const html = await response.text();
     const parsed = parseCompanyAssetsFromHtml(html.slice(0, 500_000), current.toString());
+    const companyDomain = parsed.companyDomain ?? fallback.companyDomain;
+    const logoDevUrl = logoDevFallbackUrl({
+      companyDomain,
+      companyName: args.companyName,
+      useNameFallback: useLogoDevNameFallback,
+    });
     return {
-      companyDomain: parsed.companyDomain ?? fallback.companyDomain,
-      companyLogoUrl: parsed.companyLogoUrl,
+      companyDomain,
+      companyLogoUrl: logoDevUrl ?? parsed.companyLogoUrl,
       companyLogoResolvedAt: parsed.companyLogoResolvedAt,
     };
   } catch {

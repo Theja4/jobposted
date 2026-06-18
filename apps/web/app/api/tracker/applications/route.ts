@@ -190,8 +190,12 @@ export async function POST(request: Request) {
   const writeClient = getServiceRoleClient();
   const client = writeClient ?? supabase;
   let jobId: string | null = payload.jobId ?? null;
-  const companyAssets = payload.jobUrl
-    ? await resolveCompanyAssetsFromJobUrl({ applyUrl: payload.jobUrl }, { timeoutMs: 2500 })
+  const shouldResolveCompanyAssets = Boolean(payload.jobUrl && payload.source === "job_board");
+  const companyAssets = shouldResolveCompanyAssets
+    ? await resolveCompanyAssetsFromJobUrl(
+        { applyUrl: payload.jobUrl, companyName: payload.source === "job_board" ? payload.company : null },
+        { timeoutMs: 2500 },
+      )
     : { companyDomain: null, companyLogoUrl: null, companyLogoResolvedAt: null };
   const { data: profile } = await supabase
     .from("profiles")
@@ -395,8 +399,12 @@ export async function PATCH(request: Request) {
 
   const nextFieldMap = { ...asRecord(loaded.row.field_map) };
   const manual = { ...asRecord(nextFieldMap.manual) };
-  const nextCompanyAssets = payload.jobUrl
-    ? await resolveCompanyAssetsFromJobUrl({ applyUrl: payload.jobUrl }, { timeoutMs: 2500 })
+  const job = joinedJob(loaded.row.jobs);
+  const nextCompanyAssets = payload.jobUrl && job?.source !== "manual"
+    ? await resolveCompanyAssetsFromJobUrl(
+        { applyUrl: payload.jobUrl, companyName: payload.company ?? job?.company ?? null },
+        { timeoutMs: 2500 },
+      )
     : null;
   if (payload.role !== undefined) nextFieldMap.role = payload.role;
   if (payload.company !== undefined) nextFieldMap.company = payload.company;
@@ -430,7 +438,6 @@ export async function PATCH(request: Request) {
   }
 
   const writeClient = getServiceRoleClient();
-  const job = joinedJob(loaded.row.jobs);
   const jobCanBeEdited = job?.id && job.source === "manual";
   const jobUpdate: Record<string, unknown> = {};
   if (payload.role !== undefined) jobUpdate.title = payload.role;

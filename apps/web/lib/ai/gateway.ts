@@ -59,8 +59,11 @@ export async function callGatewayJSON<T>(args: {
   const provider = providerConfig(args.model);
   if (!provider.apiKey) throw new GatewayError("AI provider is not configured.");
 
+  const timeoutMs = args.timeoutMs ?? 60_000;
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), args.timeoutMs ?? 60_000);
+  const timeout = setTimeout(() => {
+    controller.abort(new GatewayError(`${provider.name} request timed out after ${timeoutMs}ms.`));
+  }, timeoutMs);
   try {
     const response = await fetch(`${provider.baseUrl}/chat/completions`, {
       method: "POST",

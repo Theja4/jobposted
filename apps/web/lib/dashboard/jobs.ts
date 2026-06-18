@@ -390,6 +390,63 @@ function mapJobRow(row: JobRow): JobListing {
   };
 }
 
+type CompanyAssetRow = {
+  company: string | null;
+  company_domain?: string | null;
+  company_logo_url?: string | null;
+};
+
+function companyAssetKey(company: string | null | undefined) {
+  return cleanText(company).toLowerCase();
+}
+
+function rememberCompanyAsset(
+  assets: Map<string, { domain: string | null; logoUrl: string | null }>,
+  row: CompanyAssetRow,
+) {
+  const key = companyAssetKey(row.company);
+  if (!key) return;
+  const current = assets.get(key);
+  if (current?.logoUrl) return;
+  const logoUrl = row.company_logo_url ?? null;
+  const domain = row.company_domain ?? current?.domain ?? null;
+  if (logoUrl || domain) assets.set(key, { domain, logoUrl });
+}
+
+async function hydrateRowsWithKnownCompanyAssets(
+  supabase: Awaited<ReturnType<typeof createSupabaseServerClient>>,
+  rows: JobRow[],
+): Promise<JobRow[]> {
+  const assets = new Map<string, { domain: string | null; logoUrl: string | null }>();
+  for (const row of rows) rememberCompanyAsset(assets, row);
+
+  const companies = Array.from(
+    new Set(rows.map((row) => cleanText(row.company)).filter(Boolean)),
+  ).filter((company) => !assets.get(companyAssetKey(company))?.logoUrl);
+
+  if (companies.length > 0) {
+    const { data, error } = await supabase
+      .from("jobs")
+      .select("company,company_domain,company_logo_url")
+      .in("company", companies)
+      .not("company_logo_url", "is", null)
+      .limit(500);
+    if (!error && Array.isArray(data)) {
+      for (const row of data as CompanyAssetRow[]) rememberCompanyAsset(assets, row);
+    }
+  }
+
+  return rows.map((row) => {
+    const asset = assets.get(companyAssetKey(row.company));
+    if (!asset) return row;
+    return {
+      ...row,
+      company_domain: row.company_domain ?? asset.domain,
+      company_logo_url: row.company_logo_url ?? asset.logoUrl,
+    };
+  });
+}
+
 async function fetchJobRows(
   supabase: Awaited<ReturnType<typeof createSupabaseServerClient>>,
   filters: JobBoardFilters,
@@ -585,7 +642,8 @@ export async function getJobBoardListings(
 
   const total = count ?? 0;
   const totalPages = Math.max(1, Math.ceil(total / filters.pageSize));
-  const listings = rows.filter((row) => row.id && (row.title || row.company)).map(mapJobRow);
+  const hydratedRows = await hydrateRowsWithKnownCompanyAssets(supabase, rows);
+  const listings = hydratedRows.filter((row) => row.id && (row.title || row.company)).map(mapJobRow);
 
   return {
     jobs: listings,

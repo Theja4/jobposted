@@ -27,7 +27,7 @@ export async function enrichRawJobsWithCompanyAssets(jobs: RawJob[]): Promise<Ra
     let request = cache.get(key);
     if (!request) {
       request = resolveCompanyAssetsFromJobUrl(
-        { applyUrl: job.applyUrl },
+        { applyUrl: job.applyUrl, companyName: job.company },
         { timeoutMs: Number.isFinite(timeoutMs) ? timeoutMs : 3500 },
       );
       cache.set(key, request);

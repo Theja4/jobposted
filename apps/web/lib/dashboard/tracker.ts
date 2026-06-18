@@ -89,6 +89,12 @@ type TrackerPageRpcRow = {
   total_count: number | string | null;
 };
 
+type CompanyAssetRow = {
+  company: string | null;
+  company_domain?: string | null;
+  company_logo_url?: string | null;
+};
+
 function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)
@@ -97,6 +103,23 @@ function asRecord(value: unknown): Record<string, unknown> {
 
 function asString(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
+}
+
+function companyAssetKey(company: string | null | undefined) {
+  return asString(company).replace(/\s+/g, " ").toLowerCase();
+}
+
+function rememberCompanyAsset(
+  assets: Map<string, { domain: string | null; logoUrl: string | null }>,
+  row: CompanyAssetRow,
+) {
+  const key = companyAssetKey(row.company);
+  if (!key) return;
+  const current = assets.get(key);
+  if (current?.logoUrl) return;
+  const logoUrl = row.company_logo_url ?? null;
+  const domain = row.company_domain ?? current?.domain ?? null;
+  if (logoUrl || domain) assets.set(key, { domain, logoUrl });
 }
 
 function asNumber(value: unknown) {
@@ -232,6 +255,46 @@ export function mapTrackerApplicationRow(row: TrackerApplicationRow): TrackerIte
   };
 }
 
+async function hydrateItemsWithKnownCompanyAssets(
+  supabase: Awaited<ReturnType<typeof createSupabaseServerClient>>,
+  items: TrackerItem[],
+): Promise<TrackerItem[]> {
+  const assets = new Map<string, { domain: string | null; logoUrl: string | null }>();
+  for (const item of items) {
+    rememberCompanyAsset(assets, {
+      company: item.company,
+      company_domain: item.companyDomain,
+      company_logo_url: item.companyLogoUrl,
+    });
+  }
+
+  const companies = Array.from(
+    new Set(items.map((item) => item.company.trim()).filter(Boolean)),
+  ).filter((company) => !assets.get(companyAssetKey(company))?.logoUrl);
+
+  if (companies.length > 0) {
+    const { data, error } = await supabase
+      .from("jobs")
+      .select("company,company_domain,company_logo_url")
+      .in("company", companies)
+      .not("company_logo_url", "is", null)
+      .limit(500);
+    if (!error && Array.isArray(data)) {
+      for (const row of data as CompanyAssetRow[]) rememberCompanyAsset(assets, row);
+    }
+  }
+
+  return items.map((item) => {
+    const asset = assets.get(companyAssetKey(item.company));
+    if (!asset) return item;
+    return {
+      ...item,
+      companyDomain: item.companyDomain ?? asset.domain,
+      companyLogoUrl: item.companyLogoUrl ?? asset.logoUrl,
+    };
+  });
+}
+
 async function exactCount(
   query: PromiseLike<{ count: number | null; error: unknown }>,
   label: string,
@@ -319,8 +382,9 @@ export async function getTrackerPage(options: TrackerPageOptions = {}): Promise<
 
   const rows = Array.isArray(data) ? (data as unknown as TrackerPageRpcRow[]) : [];
   const total = rows.length > 0 ? totalFrom(rows[0]?.total_count) : 0;
+  const items = rows.map((row) => mapTrackerApplicationRow(rowFromRpc(row)));
   return {
-    items: rows.map((row) => mapTrackerApplicationRow(rowFromRpc(row))),
+    items: await hydrateItemsWithKnownCompanyAssets(supabase, items),
     total,
     limit,
     offset,

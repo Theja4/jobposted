@@ -128,7 +128,7 @@ export async function POST(request: Request) {
     const company = asString(payload.company) || "Unknown company";
     const role = asString(payload.role) || "Unknown role";
     const companyAssets = jobUrl
-      ? await resolveCompanyAssetsFromJobUrl({ applyUrl: jobUrl }, { timeoutMs: 2500 })
+      ? await resolveCompanyAssetsFromJobUrl({ applyUrl: jobUrl, companyName: company }, { timeoutMs: 2500 })
       : { companyDomain: null, companyLogoUrl: null, companyLogoResolvedAt: null };
     let jobId = asString(payload.jobId) || null;
     const { data: profile } = await auth.supabase

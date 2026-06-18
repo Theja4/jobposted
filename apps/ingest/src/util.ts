@@ -34,7 +34,9 @@ export async function fetchJson<T>(
   let lastErr: unknown;
   for (let attempt = 0; attempt <= retries; attempt++) {
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    const timer = setTimeout(() => {
+      controller.abort(new Error(`Timed out fetching ${url} after ${timeoutMs}ms`));
+    }, timeoutMs);
     try {
       const res = await fetch(url, {
         headers: { Accept: "application/json", "User-Agent": USER_AGENT },

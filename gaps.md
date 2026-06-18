@@ -166,6 +166,16 @@ Remaining true subsystem work:
 - Optional follow-up to §17: merge duplicate `jobs` rows into one canonical row at upsert (reduces
   row count); the apply-time guard already prevents the double-apply outcome regardless.
 
+Database retention guardrails:
+- Keep company logos as URLs only, not image blobs. Store small provider/source URLs such as
+  `logo.dev` 64px WebP URLs, and let the UI fall back to initials when a logo is unavailable.
+- Purge only closed, unreferenced jobs. A job is safe to delete only after it is closed/stale and
+  no `applications` or `documents` row points at it.
+- Do not purge applications or tracker rows unless there is an explicit user-facing retention
+  control, export path, and clear product copy.
+- Keep `description_md` only for active/recent jobs in practice: after old closed, unreferenced
+  jobs are purged, their large descriptions disappear with them.
+
 The PDF/DOCX renderer with page-fit is now implemented: `lib/tailor/pdf.ts` lays content out as
 measurable blocks, estimates a target page count from experience span + content volume, and
 binary-searches a density scale that packs content to just under the target boundary (condense a

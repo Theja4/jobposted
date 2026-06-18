@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { motion, useReducedMotion } from "framer-motion";
 import {
   Building2,
@@ -13,10 +13,12 @@ import {
   Gauge,
   Globe,
   ListChecks,
+  Loader2,
   MapPin,
   Pencil,
   PencilLine,
   Puzzle,
+  Save,
   ServerCog,
   Trash2,
   X,
@@ -33,9 +35,20 @@ import {
 } from "@/lib/dashboard/tracker-model";
 import { CompanyAvatar } from "./CompanyAvatar";
 
+/** The fields editable inline from the popup. Persisted via the tracker PATCH endpoint. */
+export type TrackerEditPayload = {
+  role: string;
+  company: string;
+  location: string;
+  jobUrl: string;
+  notes: string;
+};
+
 const PANEL_SHADOW =
   "shadow-[0_44px_96px_-32px_rgba(11,18,32,0.55),0_20px_44px_-26px_rgba(16,47,102,0.32),inset_0_1px_0_rgba(255,255,255,0.92)]";
 const EASE = [0.22, 1, 0.36, 1] as const;
+const EDIT_INPUT_CLASS =
+  "h-11 w-full rounded-xl bg-white px-3 text-sm font-semibold text-ink outline-none ring-1 ring-zinc-200 transition focus:ring-2 focus:ring-brand-500 placeholder:text-zinc-500 disabled:opacity-60";
 
 const SOURCE_ICONS: Record<TrackerSource, typeof Globe> = {
   extension: Puzzle,
@@ -89,6 +102,21 @@ function DetailRow({
   );
 }
 
+function EditField({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <label className="block">
+      <span className="mb-1.5 block text-xs font-bold text-ink">{label}</span>
+      {children}
+    </label>
+  );
+}
+
 export function TrackerDetailDialog({
   item,
   color,
@@ -97,7 +125,7 @@ export function TrackerDetailDialog({
   onClose,
   onStageChange,
   onColorChange,
-  onEdit,
+  onSave,
   onDelete,
 }: {
   item: TrackerItem;
@@ -107,7 +135,7 @@ export function TrackerDetailDialog({
   onClose: () => void;
   onStageChange: (stage: TrackerStage) => void;
   onColorChange: (colorId: string) => void;
-  onEdit: () => void;
+  onSave: (payload: TrackerEditPayload) => Promise<string | null>;
   onDelete: () => void;
 }) {
   const reduce = useReducedMotion();
@@ -117,9 +145,57 @@ export function TrackerDetailDialog({
   const SourceIcon = SOURCE_ICONS[item.source] ?? Globe;
   const quality = matchQuality(item.matchScore);
 
+  const [editing, setEditing] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
+  const [form, setForm] = useState<TrackerEditPayload>({
+    role: item.role,
+    company: item.company,
+    location: item.location ?? "",
+    jobUrl: item.jobUrl ?? "",
+    notes: item.notes ?? "",
+  });
+  const editingRef = useRef(editing);
+  editingRef.current = editing;
+
+  function startEdit() {
+    setForm({
+      role: item.role,
+      company: item.company,
+      location: item.location ?? "",
+      jobUrl: item.jobUrl ?? "",
+      notes: item.notes ?? "",
+    });
+    setFormError(null);
+    setEditing(true);
+  }
+
+  async function handleSave(event: React.FormEvent) {
+    event.preventDefault();
+    if (saving) return;
+    if (!form.role.trim() || !form.company.trim()) {
+      setFormError("Role and company are required.");
+      return;
+    }
+    setSaving(true);
+    setFormError(null);
+    const error = await onSave({
+      role: form.role.trim(),
+      company: form.company.trim(),
+      location: form.location.trim(),
+      jobUrl: form.jobUrl.trim(),
+      notes: form.notes.trim(),
+    });
+    setSaving(false);
+    if (error) setFormError(error);
+    else setEditing(false);
+  }
+
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
+      if (event.key !== "Escape") return;
+      if (editingRef.current) setEditing(false);
+      else onClose();
     };
     document.addEventListener("keydown", onKey);
     const prevOverflow = document.body.style.overflow;
@@ -158,204 +234,314 @@ export function TrackerDetailDialog({
           PANEL_SHADOW,
         )}
       >
-        <header
-          className="flex items-start gap-3.5 px-5 pb-5 pt-5 sm:px-6"
-          style={{ backgroundColor: color.bg }}
-        >
-          <CompanyAvatar
-            company={item.company}
-            logoUrl={item.companyLogoUrl}
-            colorSeed={item.source === "manual" ? item.id : undefined}
-            size="lg"
-            className="border border-white/80 bg-white"
-          />
-          <div className="min-w-0 flex-1 pr-8">
-            <h2
-              id={titleId}
-              className="text-lg font-extrabold leading-tight tracking-[-0.02em] text-ink"
-            >
-              {item.role}
-            </h2>
-            <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[13px] font-bold text-ink/70">
-              <span className="inline-flex items-center gap-1.5">
-                <Building2 className="size-3.5" aria-hidden />
-                {item.company}
+        {editing ? (
+          <form onSubmit={handleSave}>
+            <header className="flex items-center gap-3.5 border-b border-zinc-100 px-5 py-4 sm:px-6">
+              <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-brand-50 text-brand-700">
+                <Pencil className="size-[18px]" aria-hidden />
               </span>
-              {item.location && (
-                <>
-                  <span className="text-ink/30" aria-hidden>
-                    ·
-                  </span>
-                  <span className="inline-flex items-center gap-1.5">
-                    <MapPin className="size-3.5" aria-hidden />
-                    {item.location}
-                  </span>
-                </>
-              )}
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Close details"
-            className="absolute right-4 top-4 grid size-8 place-items-center rounded-lg text-ink/55 transition-colors hover:bg-white/70 hover:text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600"
-          >
-            <X className="size-4" />
-          </button>
-        </header>
+              <div className="flex-1">
+                <h2 id={titleId} className="text-base font-extrabold tracking-[-0.02em] text-ink">
+                  Edit role
+                </h2>
+                <p className="mt-0.5 text-[13px] font-semibold text-muted">
+                  Changes save to this application only.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setEditing(false)}
+                aria-label="Cancel editing"
+                className="grid size-8 shrink-0 place-items-center rounded-lg text-muted transition-colors hover:bg-zinc-100 hover:text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600"
+              >
+                <X className="size-4" />
+              </button>
+            </header>
 
-        <div className="space-y-5 px-5 py-5 sm:px-6">
-          <div>
-            <p className="mb-2 text-[11px] font-black uppercase tracking-[0.08em] text-muted">Stage</p>
-            <div className="flex flex-wrap gap-1.5">
-              {stages.map((stage) => {
-                const active = stage.id === item.stage;
-                return (
-                  <button
-                    key={stage.id}
-                    type="button"
-                    disabled={busy || active}
-                    onClick={() => onStageChange(stage.id)}
-                    aria-pressed={active}
-                    className={cn(
-                      "inline-flex items-center rounded-full px-3 py-1.5 text-xs font-black transition-[background-color,color,box-shadow] disabled:cursor-default",
-                      active
-                        ? "bg-brand-600 text-white"
-                        : "bg-white text-ink ring-1 ring-zinc-200 hover:bg-brand-50 hover:text-brand-700 hover:ring-brand-200 disabled:opacity-60",
-                    )}
-                  >
-                    {labelForTrackerStage(stage.id)}
-                  </button>
-                );
-              })}
+            <div className="space-y-4 px-5 py-5 sm:px-6">
+              <EditField label="Role">
+                <input
+                  required
+                  autoFocus
+                  value={form.role}
+                  onChange={(e) => setForm((next) => ({ ...next, role: e.target.value }))}
+                  className={EDIT_INPUT_CLASS}
+                  placeholder="Product Manager"
+                />
+              </EditField>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <EditField label="Company">
+                  <input
+                    required
+                    value={form.company}
+                    onChange={(e) => setForm((next) => ({ ...next, company: e.target.value }))}
+                    className={EDIT_INPUT_CLASS}
+                    placeholder="Acme"
+                  />
+                </EditField>
+                <EditField label="Location">
+                  <input
+                    value={form.location}
+                    onChange={(e) => setForm((next) => ({ ...next, location: e.target.value }))}
+                    className={EDIT_INPUT_CLASS}
+                    placeholder="Remote"
+                  />
+                </EditField>
+              </div>
+              <EditField label="Job URL">
+                <input
+                  type="url"
+                  value={form.jobUrl}
+                  onChange={(e) => setForm((next) => ({ ...next, jobUrl: e.target.value }))}
+                  className={EDIT_INPUT_CLASS}
+                  placeholder="https://"
+                />
+              </EditField>
+              <EditField label="Notes">
+                <textarea
+                  value={form.notes}
+                  onChange={(e) => setForm((next) => ({ ...next, notes: e.target.value }))}
+                  rows={3}
+                  className={cn(EDIT_INPUT_CLASS, "h-auto resize-none py-2.5 leading-6")}
+                  placeholder="Recruiter, referral, follow-up…"
+                />
+              </EditField>
+
+              {formError && <p className="text-sm font-semibold text-red-600">{formError}</p>}
+
+              <div className="flex items-center gap-2 pt-1">
+                <button
+                  type="submit"
+                  disabled={saving}
+                  className="inline-flex h-11 flex-1 items-center justify-center gap-2 rounded-xl bg-brand-600 px-4 text-sm font-black text-white shadow-[0_14px_30px_-18px_rgba(31,100,224,0.7)] transition-colors hover:bg-brand-700 disabled:pointer-events-none disabled:opacity-60"
+                >
+                  {saving ? <Loader2 className="size-4 animate-spin" /> : <Save className="size-4" />}
+                  Save changes
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setEditing(false)}
+                  disabled={saving}
+                  className="inline-flex h-11 items-center justify-center rounded-xl px-4 text-sm font-bold text-muted ring-1 ring-zinc-200 transition-colors hover:bg-zinc-50 hover:text-ink disabled:pointer-events-none disabled:opacity-60"
+                >
+                  Cancel
+                </button>
+              </div>
             </div>
-          </div>
-
-          <div>
-            <DetailRow
-              icon={SourceIcon}
-              label="Source"
-              value={item.platform ? `${item.sourceLabel} · ${item.platform}` : item.sourceLabel}
-            />
-            <DetailRow icon={CalendarDays} label="Applied" value={formatFullDate(item.appliedOn)} />
-            <DetailRow icon={Clock3} label="Last update" value={relativeTime(item.updatedAt)} />
-            {item.totalFields > 0 && (
-              <DetailRow
-                icon={ListChecks}
-                label="Form fields"
-                value={`${item.fieldsFilled} / ${item.totalFields} filled`}
+          </form>
+        ) : (
+          <>
+            <header
+              className="flex items-start gap-3.5 px-5 pb-5 pt-5 sm:px-6"
+              style={{ backgroundColor: color.bg }}
+            >
+              <CompanyAvatar
+                company={item.company}
+                logoUrl={item.companyLogoUrl}
+                colorSeed={item.source === "manual" ? item.id : undefined}
+                size="lg"
+                className="border border-white/80 bg-white"
               />
-            )}
-            <DetailRow
-              icon={Gauge}
-              label="Match"
-              value={
-                item.matchScore > 0 ? (
+              <div className="min-w-0 flex-1 pr-8">
+                <h2
+                  id={titleId}
+                  className="text-lg font-extrabold leading-tight tracking-[-0.02em] text-ink"
+                >
+                  {item.role}
+                </h2>
+                <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[13px] font-bold text-ink/70">
                   <span className="inline-flex items-center gap-1.5">
-                    {item.matchScore}%
-                    {quality && <span className="font-semibold text-muted">· {quality}</span>}
+                    <Building2 className="size-3.5" aria-hidden />
+                    {item.company}
                   </span>
-                ) : (
-                  "—"
-                )
-              }
-            />
-          </div>
-
-          <div className="flex items-center gap-3 rounded-2xl bg-panel px-3.5 py-3 ring-1 ring-zinc-100">
-            <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-brand-50 text-brand-700">
-              <FileText className="size-[18px]" aria-hidden />
-            </span>
-            <div className="min-w-0 flex-1">
-              <p className="truncate text-[13px] font-bold text-ink">
-                {hasResume ? item.resumeName : "No resume attached"}
-              </p>
-              <p className="mt-0.5 text-[11px] font-semibold text-muted">
-                {hasResume ? "Tailored resume sent with this application" : "Applied without a stored resume file"}
-              </p>
-            </div>
-            {hasResume && (
-              <a
-                href={item.resumeUrl}
-                target="_blank"
-                rel="noreferrer"
-                aria-label="Download the resume sent"
-                className="grid size-9 shrink-0 place-items-center rounded-xl text-brand-700 transition-colors hover:bg-brand-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600"
+                  {item.location && (
+                    <>
+                      <span className="text-ink/30" aria-hidden>
+                        ·
+                      </span>
+                      <span className="inline-flex items-center gap-1.5">
+                        <MapPin className="size-3.5" aria-hidden />
+                        {item.location}
+                      </span>
+                    </>
+                  )}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={onClose}
+                aria-label="Close details"
+                className="absolute right-4 top-4 grid size-8 place-items-center rounded-lg text-ink/55 transition-colors hover:bg-white/70 hover:text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600"
               >
-                <Download className="size-[18px]" />
-              </a>
-            )}
-          </div>
+                <X className="size-4" />
+              </button>
+            </header>
 
-          <div>
-            <p className="mb-2 text-[11px] font-black uppercase tracking-[0.08em] text-muted">Card colour</p>
-            <div className="flex flex-wrap gap-2">
-              {TRACKER_CARD_COLORS.map((swatch) => {
-                const selected = swatch.id === color.id;
-                return (
-                  <button
-                    key={swatch.id}
-                    type="button"
-                    onClick={() => onColorChange(swatch.id)}
-                    aria-label={`${swatch.name} card colour`}
-                    aria-pressed={selected}
-                    style={{ backgroundColor: swatch.swatch }}
-                    className={cn(
-                      "grid size-7 place-items-center rounded-full transition-transform hover:scale-110 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600",
-                      selected
-                        ? "ring-2 ring-ink/70 ring-offset-2 ring-offset-white"
-                        : "ring-1 ring-black/5",
-                    )}
+            <div className="space-y-5 px-5 py-5 sm:px-6">
+              <div>
+                <p className="mb-2 text-[11px] font-black uppercase tracking-[0.08em] text-muted">Stage</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {stages.map((stage) => {
+                    const active = stage.id === item.stage;
+                    return (
+                      <button
+                        key={stage.id}
+                        type="button"
+                        disabled={busy || active}
+                        onClick={() => onStageChange(stage.id)}
+                        aria-pressed={active}
+                        className={cn(
+                          "inline-flex items-center rounded-full px-3 py-1.5 text-xs font-black transition-[background-color,color,box-shadow] disabled:cursor-default",
+                          active
+                            ? "bg-brand-600 text-white"
+                            : "bg-white text-ink ring-1 ring-zinc-200 hover:bg-brand-50 hover:text-brand-700 hover:ring-brand-200 disabled:opacity-60",
+                        )}
+                      >
+                        {labelForTrackerStage(stage.id)}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div>
+                <DetailRow
+                  icon={SourceIcon}
+                  label="Source"
+                  value={item.platform ? `${item.sourceLabel} · ${item.platform}` : item.sourceLabel}
+                />
+                <DetailRow icon={CalendarDays} label="Applied" value={formatFullDate(item.appliedOn)} />
+                <DetailRow icon={Clock3} label="Last update" value={relativeTime(item.updatedAt)} />
+                {item.totalFields > 0 && (
+                  <DetailRow
+                    icon={ListChecks}
+                    label="Form fields"
+                    value={`${item.fieldsFilled} / ${item.totalFields} filled`}
+                  />
+                )}
+                <DetailRow
+                  icon={Gauge}
+                  label="Match"
+                  value={
+                    item.matchScore > 0 ? (
+                      <span className="inline-flex items-center gap-1.5">
+                        {item.matchScore}%
+                        {quality && <span className="font-semibold text-muted">· {quality}</span>}
+                      </span>
+                    ) : (
+                      "—"
+                    )
+                  }
+                />
+              </div>
+
+              <div className="flex items-center gap-3 rounded-2xl bg-panel px-3.5 py-3 ring-1 ring-zinc-100">
+                <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-brand-50 text-brand-700">
+                  <FileText className="size-[18px]" aria-hidden />
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-[13px] font-bold text-ink">
+                    {hasResume ? item.resumeName : "No resume attached"}
+                  </p>
+                  <p className="mt-0.5 text-[11px] font-semibold text-muted">
+                    {hasResume
+                      ? "Tailored resume sent with this application"
+                      : "Applied without a stored resume file"}
+                  </p>
+                </div>
+                {hasResume && (
+                  <a
+                    href={item.resumeUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    aria-label="Download the resume sent"
+                    className="grid size-9 shrink-0 place-items-center rounded-xl text-brand-700 transition-colors hover:bg-brand-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600"
                   >
-                    {selected && <Check className="size-3.5 text-ink/75" aria-hidden />}
-                  </button>
-                );
-              })}
+                    <Download className="size-[18px]" />
+                  </a>
+                )}
+              </div>
+
+              {item.notes && (
+                <div>
+                  <p className="mb-1.5 text-[11px] font-black uppercase tracking-[0.08em] text-muted">Notes</p>
+                  <p className="whitespace-pre-line rounded-2xl bg-panel px-3.5 py-3 text-sm leading-6 text-ink/80 ring-1 ring-zinc-100">
+                    {item.notes}
+                  </p>
+                </div>
+              )}
+
+              <div>
+                <p className="mb-2 text-[11px] font-black uppercase tracking-[0.08em] text-muted">Card colour</p>
+                <div className="flex flex-wrap gap-2">
+                  {TRACKER_CARD_COLORS.map((swatch) => {
+                    const selected = swatch.id === color.id;
+                    return (
+                      <button
+                        key={swatch.id}
+                        type="button"
+                        onClick={() => onColorChange(swatch.id)}
+                        aria-label={`${swatch.name} card colour`}
+                        aria-pressed={selected}
+                        style={{ backgroundColor: swatch.swatch }}
+                        className={cn(
+                          "grid size-7 place-items-center rounded-full transition-transform hover:scale-110 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600",
+                          selected
+                            ? "ring-2 ring-ink/70 ring-offset-2 ring-offset-white"
+                            : "ring-1 ring-black/5",
+                        )}
+                      >
+                        {selected && <Check className="size-3.5 text-ink/75" aria-hidden />}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 pt-1">
+                {item.jobUrl ? (
+                  <a
+                    href={item.jobUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex h-11 flex-1 items-center justify-center gap-2 rounded-xl bg-brand-600 px-4 text-sm font-black text-white shadow-[0_14px_30px_-18px_rgba(31,100,224,0.7)] transition-[background-color,box-shadow] hover:bg-brand-700"
+                  >
+                    <ExternalLink className="size-4" />
+                    Open posting
+                  </a>
+                ) : (
+                  <span className="inline-flex h-11 flex-1 items-center justify-center gap-2 rounded-xl bg-zinc-100 px-4 text-sm font-black text-zinc-400">
+                    <ExternalLink className="size-4" />
+                    No link
+                  </span>
+                )}
+                <button
+                  type="button"
+                  onClick={startEdit}
+                  disabled={busy}
+                  className="inline-flex h-11 items-center justify-center gap-2 rounded-xl px-4 text-sm font-black text-muted ring-1 ring-zinc-200 transition-colors hover:bg-zinc-50 hover:text-ink disabled:pointer-events-none disabled:opacity-60"
+                >
+                  <Pencil className="size-4" />
+                  Edit
+                </button>
+                <button
+                  type="button"
+                  onClick={onDelete}
+                  disabled={busy}
+                  aria-label={`Delete ${item.role} at ${item.company}`}
+                  className="grid size-11 shrink-0 place-items-center rounded-xl text-muted ring-1 ring-zinc-200 transition-colors hover:bg-red-50 hover:text-red-600 hover:ring-red-200 disabled:pointer-events-none disabled:opacity-60"
+                >
+                  <Trash2 className="size-4" />
+                </button>
+              </div>
+
+              <p className="flex items-center justify-center gap-1.5 text-[11px] font-semibold text-muted">
+                <ExternalLink className="size-3" aria-hidden />
+                The full job description lives on the original posting.
+              </p>
             </div>
-          </div>
-
-          <div className="flex items-center gap-2 pt-1">
-            {item.jobUrl ? (
-              <a
-                href={item.jobUrl}
-                target="_blank"
-                rel="noreferrer"
-                className="inline-flex h-11 flex-1 items-center justify-center gap-2 rounded-xl bg-brand-600 px-4 text-sm font-black text-white shadow-[0_14px_30px_-18px_rgba(31,100,224,0.7)] transition-[background-color,box-shadow] hover:bg-brand-700"
-              >
-                <ExternalLink className="size-4" />
-                Open posting
-              </a>
-            ) : (
-              <span className="inline-flex h-11 flex-1 items-center justify-center gap-2 rounded-xl bg-zinc-100 px-4 text-sm font-black text-zinc-400">
-                <ExternalLink className="size-4" />
-                No link
-              </span>
-            )}
-            <button
-              type="button"
-              onClick={onEdit}
-              disabled={busy}
-              className="inline-flex h-11 items-center justify-center gap-2 rounded-xl px-4 text-sm font-black text-muted ring-1 ring-zinc-200 transition-colors hover:bg-zinc-50 hover:text-ink disabled:pointer-events-none disabled:opacity-60"
-            >
-              <Pencil className="size-4" />
-              Edit
-            </button>
-            <button
-              type="button"
-              onClick={onDelete}
-              disabled={busy}
-              aria-label={`Delete ${item.role} at ${item.company}`}
-              className="grid size-11 shrink-0 place-items-center rounded-xl text-muted ring-1 ring-zinc-200 transition-colors hover:bg-red-50 hover:text-red-600 hover:ring-red-200 disabled:pointer-events-none disabled:opacity-60"
-            >
-              <Trash2 className="size-4" />
-            </button>
-          </div>
-
-          <p className="flex items-center justify-center gap-1.5 text-[11px] font-semibold text-muted">
-            <ExternalLink className="size-3" aria-hidden />
-            The full job description lives on the original posting.
-          </p>
-        </div>
+          </>
+        )}
       </motion.div>
     </motion.div>
   );

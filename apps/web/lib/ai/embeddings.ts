@@ -23,7 +23,9 @@ export async function embedText(text: string): Promise<number[] | null> {
   if (!apiKey || !input) return null;
 
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 20_000);
+  const timeout = setTimeout(() => {
+    controller.abort(new Error("Embedding request timed out after 20000ms."));
+  }, 20_000);
   try {
     const res = await fetch(`${OPENAI_BASE}/embeddings`, {
       method: "POST",
