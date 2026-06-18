@@ -57,6 +57,7 @@ export type OnboardingConfig = {
       github: string;
     };
     workAuth: {
+      authorizedToWork: boolean | null;
       needsSponsorship: boolean | null;
       relocationOk: boolean | null;
       currentSalaryMin: number | null;
@@ -78,6 +79,7 @@ export type OnboardingConfig = {
       travelOk: boolean | null;
       relocationOk: boolean | null;
       spokenLanguages: string[];
+      knowsCompanyEmployee: boolean | null;
       dateOfBirth: string;
       gpa: string;
       over18: boolean | null;
@@ -169,6 +171,7 @@ export function defaultOnboardingConfig(email = ""): OnboardingConfig {
         github: "",
       },
       workAuth: {
+        authorizedToWork: null,
         needsSponsorship: null,
         relocationOk: null,
         currentSalaryMin: null,
@@ -190,6 +193,7 @@ export function defaultOnboardingConfig(email = ""): OnboardingConfig {
         travelOk: null,
         relocationOk: null,
         spokenLanguages: [],
+        knowsCompanyEmployee: false,
         dateOfBirth: "",
         gpa: "",
         over18: null,
@@ -296,6 +300,8 @@ export function sanitizeOnboardingConfig(value: unknown, email = ""): Onboarding
   const genderIdentity = genderIdentityFieldsFrom(screening.genderIdentity, screening.genderIdentityDetail);
   const final = rec(row.final);
   const writingStyle = rec(final.writingStyle);
+  const needsSponsorship = asBool(workAuth.needsSponsorship);
+  const authorizedToWork = asBool(workAuth.authorizedToWork) ?? (needsSponsorship === false ? true : null);
 
   return {
     search: {
@@ -337,7 +343,8 @@ export function sanitizeOnboardingConfig(value: unknown, email = ""): Onboarding
         github: asString(links.github),
       },
       workAuth: {
-        needsSponsorship: asBool(workAuth.needsSponsorship),
+        authorizedToWork,
+        needsSponsorship,
         relocationOk: asBool(workAuth.relocationOk),
         currentSalaryMin: asMoney(workAuth.currentSalaryMin),
         currentSalaryMax: asMoney(workAuth.currentSalaryMax),
@@ -358,6 +365,7 @@ export function sanitizeOnboardingConfig(value: unknown, email = ""): Onboarding
         travelOk: asBool(screening.travelOk),
         relocationOk: asBool(screening.relocationOk),
         spokenLanguages: stringArray(screening.spokenLanguages, 6),
+        knowsCompanyEmployee: asBool(screening.knowsCompanyEmployee) ?? false,
         dateOfBirth: asString(screening.dateOfBirth),
         gpa: asString(screening.gpa),
         over18: asBool(screening.over18),
@@ -402,7 +410,18 @@ function yesNo(value: boolean | null) {
 
 export function reusableAnswersFromOnboarding(config: OnboardingConfig): ReusableProfileAnswerInput[] {
   const s = config.profile.screening;
+  const w = config.profile.workAuth;
   const answers: ReusableProfileAnswerInput[] = [
+    {
+      key: "workAuth.authorized_to_work",
+      prompt: "Are you legally authorized to work in your resident country?",
+      value: yesNo(w.authorizedToWork),
+    },
+    {
+      key: "workAuth.needs_sponsorship",
+      prompt: "Will you now or in the future require visa sponsorship?",
+      value: yesNo(w.needsSponsorship),
+    },
     {
       key: "screening.hybrid_remote_preference",
       prompt: "What is your remote, hybrid, or on-site preference?",
@@ -417,6 +436,26 @@ export function reusableAnswersFromOnboarding(config: OnboardingConfig): Reusabl
       key: "screening.relocation_open",
       prompt: "Are you comfortable relocating?",
       value: yesNo(s.relocationOk),
+    },
+    {
+      key: "screening.company_employee_connection",
+      prompt: "Do you know anyone related working in this company?",
+      value: yesNo(s.knowsCompanyEmployee),
+    },
+    {
+      key: "screening.company_contact_connection",
+      prompt: "Do you know anyone at this company?",
+      value: yesNo(s.knowsCompanyEmployee),
+    },
+    {
+      key: "screening.company_relative_connection",
+      prompt: "Do you have any relatives working for this company?",
+      value: yesNo(s.knowsCompanyEmployee),
+    },
+    {
+      key: "screening.current_employee_connection",
+      prompt: "Do you know any current employees at this company?",
+      value: yesNo(s.knowsCompanyEmployee),
     },
     {
       key: "screening.languages",

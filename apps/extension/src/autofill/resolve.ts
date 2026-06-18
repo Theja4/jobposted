@@ -1,5 +1,6 @@
 import {
   FIELD_RULES,
+  matchCompanyConnectionAnswer,
   valueForKey,
   type ExtensionFieldContext,
   type ExtensionFieldMapping,
@@ -35,6 +36,16 @@ export function toFieldContext(
 
 function answerMapping(field: FieldDescriptor, profile: MasterProfile): ExtensionFieldMapping | null {
   const text = fieldText(field);
+  const companyConnectionAnswer = matchCompanyConnectionAnswer(text, profile);
+  if (companyConnectionAnswer) {
+    return {
+      canonicalKey: `answers.${companyConnectionAnswer.key}`,
+      value: companyConnectionAnswer.value,
+      confidence: 0.84,
+      source: "answer",
+      reason: "Matched the company connection setup answer.",
+    };
+  }
   const answer = profile.answers.find((item) => {
     const key = normalizeText(item.key);
     const prompt = normalizeText(item.prompt);

@@ -41,4 +41,32 @@ describe("buildMasterProfile", () => {
 
     expect(profile.demographics?.gender).toBe("Non-binary");
   });
+
+  it("hydrates explicit work authorization separately from sponsorship", () => {
+    const profile = buildMasterProfile({
+      authEmail: "casey@example.com",
+      profileRow: {
+        email: "casey@example.com",
+        work_authorization: "not_authorized",
+        needs_sponsorship: true,
+      },
+    });
+
+    expect(profile.workAuth.authorizedToWork).toBe(false);
+    expect(profile.workAuth.requiresSponsorship).toBe(true);
+  });
+
+  it("keeps authorized-to-work true when sponsorship is also needed", () => {
+    const profile = buildMasterProfile({
+      authEmail: "dev@example.com",
+      profileRow: {
+        email: "dev@example.com",
+        work_authorization: "authorized",
+        needs_sponsorship: true,
+      },
+    });
+
+    expect(profile.workAuth.authorizedToWork).toBe(true);
+    expect(profile.workAuth.requiresSponsorship).toBe(true);
+  });
 });

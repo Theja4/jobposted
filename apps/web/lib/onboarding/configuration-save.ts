@@ -44,6 +44,19 @@ function isMissingConflictTarget(error: unknown) {
   return text.includes("42p10") || text.includes("no unique") || text.includes("on conflict");
 }
 
+export function onboardingConfigurationFailureCode(error: unknown) {
+  const text = dbErrorText(error);
+  if (
+    text.includes("pgrst205") ||
+    text.includes("42p01") ||
+    (text.includes("could not find the table") && text.includes("onboarding_configurations")) ||
+    (text.includes("schema cache") && text.includes("onboarding_configurations"))
+  ) {
+    return "missing_table";
+  }
+  return "write_failed";
+}
+
 function payloadsFor(options: SaveOnboardingConfigurationOptions) {
   const now = options.updatedAt ?? new Date().toISOString();
   const base = {

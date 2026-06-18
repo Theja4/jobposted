@@ -45,6 +45,22 @@ describe("worker field-resolver (mirror of @jobposted/shared)", () => {
     expect(plan.fills.some((f) => f.canonicalKey === "workAuth.authorizedToWork")).toBe(true);
   });
 
+  it("maps company employee connection questions to the setup answer", () => {
+    const r = resolveFieldValue(
+      field({ label: "Do you have any relatives currently employed by this organization?" }),
+      profile({
+        answers: [
+          { key: "screening.company_employee_connection", prompt: "Do you know anyone at this company?", value: "No" },
+        ],
+      }),
+      { demographicsEnabled: false },
+    );
+
+    expect(r.source).toBe("answer");
+    expect(r.canonicalKey).toBe("answers.screening.company_employee_connection");
+    expect(r.value).toBe("No");
+  });
+
   it("answers current and expected salary questions separately; generic salary stays review-only", () => {
     const withSalary = profile({ compensation: { currentMin: 90000, expectedMin: 130000 } });
     const current = planFormFill([field({ label: "Current package", required: true })], withSalary, { demographicsEnabled: false });

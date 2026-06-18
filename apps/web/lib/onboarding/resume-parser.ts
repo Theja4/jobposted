@@ -354,6 +354,11 @@ function profileFromResumeData(data: ResumeData, sourceText = ""): ParsedResumeP
     /\b(?:require|need|seeking)\s+(?:visa\s+)?sponsorship\b|\bsponsorship\s*:\s*yes\b/i,
     /\b(?:do\s+not|don't|does\s+not|no)\s+(?:require|need)\s+(?:visa\s+)?sponsorship\b|\bno\s+(?:visa\s+)?sponsorship\s+(?:required|needed)\b|\bwithout\s+(?:visa\s+)?sponsorship\b|\bsponsorship\s*:\s*no\b/i,
   );
+  const authorizedToWork = explicitBoolean(
+    text,
+    /\b(?:legally\s+)?authorized\s+to\s+work\b|\bright\s+to\s+work\b|\beligible\s+to\s+work\b|\bwork authorization\s*:\s*(?:yes|authorized)\b/i,
+    /\bnot\s+(?:legally\s+)?authorized\s+to\s+work\b|\bnot\s+eligible\s+to\s+work\b|\bno\s+work authorization\b|\bwork authorization\s*:\s*no\b/i,
+  );
   const currentSalary = extractSalary(text, "current");
   const expectedSalary = extractSalary(text, "expected");
   const inferredCurrency = inferCurrencyFromLocale(rawLocation, text);
@@ -382,6 +387,7 @@ function profileFromResumeData(data: ResumeData, sourceText = ""): ParsedResumeP
       github,
     },
     workAuth: {
+      authorizedToWork,
       needsSponsorship,
       relocationOk,
       ...(inferredCurrency
@@ -535,6 +541,10 @@ export function mergeParsedIntoOnboarding(
       },
       workAuth: {
         ...next.profile.workAuth,
+        authorizedToWork:
+          typeof parsedWorkAuth.authorizedToWork === "boolean"
+            ? parsedWorkAuth.authorizedToWork
+            : next.profile.workAuth.authorizedToWork,
         needsSponsorship:
           typeof parsedWorkAuth.needsSponsorship === "boolean"
             ? parsedWorkAuth.needsSponsorship
@@ -570,6 +580,10 @@ export function mergeParsedIntoOnboarding(
         spokenLanguages: parsedScreening.spokenLanguages?.length
           ? parsedScreening.spokenLanguages
           : next.profile.screening.spokenLanguages,
+        knowsCompanyEmployee:
+          typeof parsedScreening.knowsCompanyEmployee === "boolean"
+            ? parsedScreening.knowsCompanyEmployee
+            : next.profile.screening.knowsCompanyEmployee,
         dateOfBirth: parsedScreening.dateOfBirth || next.profile.screening.dateOfBirth,
         gpa: parsedScreening.gpa || next.profile.screening.gpa,
         over18:

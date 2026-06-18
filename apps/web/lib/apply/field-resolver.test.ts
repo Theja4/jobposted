@@ -47,6 +47,22 @@ describe("resolveFieldValue", () => {
     expect(r.value).toBe("Yes");
   });
 
+  it("maps company employee connection questions to the setup answer", () => {
+    const r = resolveFieldValue(
+      field({ label: "Do you have any relatives currently employed by this organization?" }),
+      profile({
+        answers: [
+          { key: "screening.company_employee_connection", prompt: "Do you know anyone at this company?", value: "No" },
+        ],
+      }),
+      { demographicsEnabled: false },
+    );
+
+    expect(r.source).toBe("answer");
+    expect(r.canonicalKey).toBe("answers.screening.company_employee_connection");
+    expect(r.value).toBe("No");
+  });
+
   it("does not resolve demographics unless enabled", () => {
     const off = resolveFieldValue(field({ label: "Gender" }), profile(), { demographicsEnabled: false });
     expect(off.canonicalKey).toBe("unknown");

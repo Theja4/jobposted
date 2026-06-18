@@ -127,11 +127,6 @@ const CURRENCIES = [
   "MXN",
 ];
 const CURRENCY_OPTIONS = CURRENCIES.map((code) => ({ value: code, label: code }));
-const SPONSORSHIP_OPTIONS = [
-  { value: "", label: "Prefer not to say" },
-  { value: "no", label: "Authorized, no sponsorship needed" },
-  { value: "yes", label: "Needs visa sponsorship" },
-];
 const RACIAL_ETHNIC_BACKGROUND_OPTIONS = [
   "American Indian or Alaska Native",
   "Asian",
@@ -270,6 +265,10 @@ function mergeParsed(config: OnboardingConfig, parsed: ParsedResumeProfile): Onb
       },
       workAuth: {
         ...config.profile.workAuth,
+        authorizedToWork:
+          typeof parsedWorkAuth.authorizedToWork === "boolean"
+            ? parsedWorkAuth.authorizedToWork
+            : config.profile.workAuth.authorizedToWork,
         needsSponsorship:
           typeof parsedWorkAuth.needsSponsorship === "boolean"
             ? parsedWorkAuth.needsSponsorship
@@ -305,6 +304,10 @@ function mergeParsed(config: OnboardingConfig, parsed: ParsedResumeProfile): Onb
         spokenLanguages: parsedScreening.spokenLanguages?.length
           ? parsedScreening.spokenLanguages
           : config.profile.screening.spokenLanguages,
+        knowsCompanyEmployee:
+          typeof parsedScreening.knowsCompanyEmployee === "boolean"
+            ? parsedScreening.knowsCompanyEmployee
+            : config.profile.screening.knowsCompanyEmployee,
         dateOfBirth: parsedScreening.dateOfBirth || config.profile.screening.dateOfBirth,
         gpa: parsedScreening.gpa || config.profile.screening.gpa,
         over18:
@@ -558,8 +561,8 @@ export function OnboardingWizard({
         headers: { "content-type": "application/json" },
         body: JSON.stringify(config),
       });
-      const json = (await res.json()) as { ok: boolean; error?: string };
-      if (!res.ok || !json.ok) throw new Error(json.error || "Could not save onboarding.");
+      const json = (await res.json()) as { ok: boolean; error?: string; message?: string };
+      if (!res.ok || !json.ok) throw new Error(json.message || json.error || "Could not save onboarding.");
       router.refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not save onboarding.");
@@ -1192,30 +1195,18 @@ function StepProfile({
           <Field label="LinkedIn" optional value={config.profile.links.linkedin} onChange={(linkedin) => patchLinks({ linkedin })} />
           <Field label="Portfolio / website" optional value={config.profile.links.portfolio} onChange={(portfolio) => patchLinks({ portfolio })} />
           <Field label="GitHub" optional value={config.profile.links.github} onChange={(github) => patchLinks({ github })} />
-          <div>
-            <span className={labelCls}>
-              Sponsorship
-              <OptionalBadge />
-            </span>
-            <SearchableSelect
-              value={
-                config.profile.workAuth.needsSponsorship === true
-                  ? "yes"
-                  : config.profile.workAuth.needsSponsorship === false
-                    ? "no"
-                    : ""
-              }
-              options={SPONSORSHIP_OPTIONS}
-              onChange={(value) =>
-                patchWorkAuth({
-                  needsSponsorship:
-                    value === "yes" ? true : value === "no" ? false : null,
-                })
-              }
-              ariaLabel="Sponsorship"
-              inputClassName={selectButtonCls}
-            />
-          </div>
+          <BooleanChoice
+            label="Authorized to work in resident country?"
+            optional
+            value={config.profile.workAuth.authorizedToWork}
+            onChange={(authorizedToWork) => patchWorkAuth({ authorizedToWork })}
+          />
+          <BooleanChoice
+            label="Need sponsorship now or later?"
+            optional
+            value={config.profile.workAuth.needsSponsorship}
+            onChange={(needsSponsorship) => patchWorkAuth({ needsSponsorship })}
+          />
         </div>
         <div className="mt-4">
           <div className="mb-2 max-w-3xl">
@@ -1368,6 +1359,11 @@ function StepProfile({
               patchWorkAuth({ relocationOk });
             }}
           />
+          <BooleanChoice
+            label="Know anyone at this company?"
+            value={config.profile.screening.knowsCompanyEmployee}
+            onChange={(knowsCompanyEmployee) => patchScreening({ knowsCompanyEmployee })}
+          />
           <TagInput
             label="Fluent languages"
             max={6}
@@ -1473,6 +1469,8 @@ function StepFinal({
   patchFinal: (patch: Partial<OnboardingConfig["final"]>) => void;
   setConfig: React.Dispatch<React.SetStateAction<OnboardingConfig>>;
 }) {
+  const preview = writingStylePreview(config.final.writingStyle);
+
   return (
     <div className="grid gap-3">
       <Panel title="The Process" hint="Choose the workflow you want to start with.">
@@ -1554,15 +1552,88 @@ function StepFinal({
         </div>
         <div className="mt-3 rounded-xl bg-brand-50 p-3 ring-1 ring-inset ring-brand-100">
           <p className="text-xs font-black text-brand-700">Preview</p>
-          <p className="mt-2 text-sm font-semibold leading-6 text-brand-950">
-            I&apos;m comfortable working cross-functionally, clarifying ambiguous requirements, and moving
-            quickly while keeping stakeholders aligned.
-          </p>
+          <p className="mt-2 text-sm font-semibold leading-6 text-brand-950">{preview}</p>
         </div>
       </Panel>
 
     </div>
   );
+}
+
+function writingStylePreview(style: OnboardingConfig["final"]["writingStyle"]) {
+  const sentenceLength = style.sentenceLength;
+  const tone = style.tone;
+  const vocabulary = style.vocabulary;
+
+  if (sentenceLength === "Short and direct") {
+    if (tone === "Formal") {
+      if (vocabulary === "More technical") return "I align stakeholders, resolve ambiguity, and keep execution on track.";
+      if (vocabulary === "Balanced professional") return "I coordinate well, clarify priorities, and deliver reliably.";
+      return "I work well with teams, make things clear, and get work done.";
+    }
+    if (tone === "Warm and confident") {
+      if (vocabulary === "More technical") return "I bring teams together, clarify tradeoffs, and drive steady delivery.";
+      if (vocabulary === "Balanced professional") return "I help teams stay aligned, focused, and moving forward.";
+      return "I keep people aligned and make progress easy to follow.";
+    }
+    if (vocabulary === "More technical") return "I clarify requirements, unblock teams, and support fast execution.";
+    if (vocabulary === "Balanced professional") return "I clarify priorities, work across teams, and keep delivery moving.";
+    return "I work across teams, clear up confusion, and keep things moving.";
+  }
+
+  if (sentenceLength === "Detailed when useful") {
+    if (tone === "Formal") {
+      if (vocabulary === "More technical") {
+        return "I collaborate across product, design, and engineering to translate ambiguous requirements into executable plans, then track risks, tradeoffs, and delivery milestones.";
+      }
+      if (vocabulary === "Balanced professional") {
+        return "I work across teams to clarify goals, organize priorities, and make sure stakeholders have the context they need to move decisions forward.";
+      }
+      return "I work with different teams to understand what matters, explain next steps clearly, and help everyone stay focused on delivery.";
+    }
+    if (tone === "Warm and confident") {
+      if (vocabulary === "More technical") {
+        return "I enjoy partnering across functions, turning open-ended requirements into practical plans, and helping teams move through tradeoffs with confidence.";
+      }
+      if (vocabulary === "Balanced professional") {
+        return "I like bringing people together, making priorities clear, and helping teams move quickly without losing sight of quality or stakeholder needs.";
+      }
+      return "I like working with people across teams, making confusing problems easier to understand, and helping everyone keep momentum.";
+    }
+    if (vocabulary === "More technical") {
+      return "I work cross-functionally to clarify requirements, evaluate tradeoffs, and support delivery through clear planning, execution, and stakeholder communication.";
+    }
+    if (vocabulary === "Balanced professional") {
+      return "I work cross-functionally to clarify priorities, keep stakeholders aligned, and help teams move from ambiguity to clear execution.";
+    }
+    return "I work with different teams to make unclear problems easier, keep everyone on the same page, and help work move forward smoothly.";
+  }
+
+  if (tone === "Formal") {
+    if (vocabulary === "More technical") {
+      return "I collaborate across functions to clarify requirements, manage tradeoffs, and maintain execution momentum.";
+    }
+    if (vocabulary === "Balanced professional") {
+      return "I work across teams to clarify priorities, align stakeholders, and support reliable delivery.";
+    }
+    return "I work well across teams, make priorities clear, and help deliver work reliably.";
+  }
+  if (tone === "Warm and confident") {
+    if (vocabulary === "More technical") {
+      return "I bring teams together, turn ambiguity into clear requirements, and keep delivery moving with practical tradeoffs.";
+    }
+    if (vocabulary === "Balanced professional") {
+      return "I bring people together, clarify what matters, and help teams move quickly with confidence.";
+    }
+    return "I help teams work together, make confusing things clear, and keep progress moving.";
+  }
+  if (vocabulary === "More technical") {
+    return "I work cross-functionally, clarify requirements, evaluate tradeoffs, and keep delivery aligned with stakeholder goals.";
+  }
+  if (vocabulary === "Balanced professional") {
+    return "I work cross-functionally, clarify priorities, and keep teams aligned while moving delivery forward.";
+  }
+  return "I'm comfortable working across teams, making unclear requirements easier to understand, and keeping people aligned.";
 }
 
 function Panel({

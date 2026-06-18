@@ -35,6 +35,14 @@ export type ServiceClient = {
 };
 type Client = ServiceClient;
 
+function authorizedToWorkFromProfile(workAuthorization: string, needsSponsorship: boolean | null) {
+  const normalized = workAuthorization.toLowerCase().replace(/[\s_]+/g, "-");
+  if (normalized === "not-authorized" || normalized === "not-authorised") return false;
+  if (normalized && normalized !== "needs-sponsorship" && normalized !== "requires-sponsorship") return true;
+  if (needsSponsorship === false) return true;
+  return null;
+}
+
 function startOfUtcDay(date: Date) {
   return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
 }
@@ -307,7 +315,7 @@ export function createRunnerDb(client: Client): RunnerDb {
       const needsSponsorship = typeof p.needs_sponsorship === "boolean" ? p.needs_sponsorship : null;
       const workAuthorization = str(p.work_authorization);
       // We only assert "authorized to work" when the user actually supplied work-auth info.
-      const authorizedToWork = workAuthorization || needsSponsorship !== null ? needsSponsorship === false : null;
+      const authorizedToWork = authorizedToWorkFromProfile(workAuthorization, needsSponsorship);
       const answers: ReusableAnswer[] = (Array.isArray(answersData) ? answersData : [])
         .map((a) => {
           const r = asRecord(a);

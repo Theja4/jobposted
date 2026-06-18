@@ -73,6 +73,7 @@ describe("resume onboarding parser mapping", () => {
       resume,
       [
         "GitHub: github.com/aisha",
+        "Work authorization: yes",
         "No visa sponsorship required",
         "Open to travel",
         "Relocation: no",
@@ -105,6 +106,7 @@ describe("resume onboarding parser mapping", () => {
       expect.arrayContaining(["Roadmapping", "Product analytics", "SQL", "Python", "Machine learning"]),
     );
     expect(parsed.workAuth).toMatchObject({
+      authorizedToWork: true,
       needsSponsorship: false,
       relocationOk: false,
       currentSalaryMin: 120000,
@@ -159,6 +161,7 @@ describe("resume onboarding parser mapping", () => {
     expect(merged.filters.languages).toEqual(["English", "Hindi"]);
     expect(merged.profile.basics.email).toBe("aisha@example.com");
     expect(merged.profile.screening.spokenLanguages).toEqual(["English", "Hindi"]);
+    expect(merged.profile.workAuth.authorizedToWork).toBe(true);
     expect(merged.profile.workAuth.needsSponsorship).toBe(false);
   });
 

@@ -60,8 +60,33 @@ function normalizeText(value: string): string {
   return (value ?? "").toLowerCase().replace(/\s+/g, " ").trim();
 }
 
-function includesAny(text: string, patterns: RegExp[]): boolean {
+function includesAny(text: string, patterns: readonly RegExp[]): boolean {
   return patterns.some((p) => p.test(text));
+}
+
+const COMPANY_CONNECTION_ANSWER_KEYS = [
+  "screening.company_employee_connection",
+  "screening.company_contact_connection",
+  "screening.company_relative_connection",
+  "screening.current_employee_connection",
+] as const;
+
+const COMPANY_CONNECTION_PATTERNS = [
+  /\b(?:know|knows)\s+(?:anyone|someone|any\s+current\s+employees?|a\s+current\s+employee|an?\s+employee|employees?)\b/,
+  /\b(?:related|relative|relatives|family|family member|family members|spouse|partner)\b.*\b(?:work|works|working|employed|employee|employees)\b/,
+  /\b(?:work|works|working|employed|employee|employees)\b.*\b(?:related|relative|relatives|family|family member|family members|spouse|partner)\b/,
+  /\b(?:referred|referral)\b.*\b(?:employee|employees|someone|anyone|current)\b/,
+  /\b(?:relationship|personal relationship)\b.*\b(?:employee|employees|company|organization|organisation)\b/,
+] as const;
+
+function matchCompanyConnectionAnswer(text: string, profile: MasterProfile) {
+  const normalized = normalizeText(text);
+  if (!includesAny(normalized, COMPANY_CONNECTION_PATTERNS)) return null;
+  return (
+    profile.answers.find((answer) =>
+      COMPANY_CONNECTION_ANSWER_KEYS.includes(answer.key as (typeof COMPANY_CONNECTION_ANSWER_KEYS)[number]),
+    ) ?? null
+  );
 }
 
 type Rule = { key: string; confidence: number; patterns: RegExp[]; needsDemographics?: boolean };
@@ -227,6 +252,15 @@ export type ResolvedField = { canonicalKey: string; value: string | string[] | b
 
 function matchReusableAnswer(field: ResolvableField, profile: MasterProfile): ResolvedField | null {
   const text = normalizeText(`${field.label} ${field.context ?? ""} ${(field.options ?? []).join(" ")}`);
+  const companyConnectionAnswer = matchCompanyConnectionAnswer(text, profile);
+  if (companyConnectionAnswer) {
+    return {
+      canonicalKey: `answers.${companyConnectionAnswer.key}`,
+      value: companyConnectionAnswer.value,
+      confidence: 0.84,
+      source: "answer",
+    };
+  }
   const answer = profile.answers.find((item) => {
     const key = normalizeText(item.key);
     const prompt = normalizeText(item.prompt);

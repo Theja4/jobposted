@@ -44,6 +44,14 @@ function fallbackNameFromPath(path: string) {
   return path ? decodeURIComponent(path.split("/").pop() || "Resume") : null;
 }
 
+function authorizedToWorkFromProfile(workAuthorization: string, needsSponsorship: unknown) {
+  const normalized = workAuthorization.toLowerCase().replace(/[\s_]+/g, "-");
+  if (normalized === "not-authorized" || normalized === "not-authorised") return false;
+  if (normalized && normalized !== "needs-sponsorship" && normalized !== "requires-sponsorship") return true;
+  if (typeof needsSponsorship === "boolean" && needsSponsorship === false) return true;
+  return null;
+}
+
 function applyExistingProfile(
   config: OnboardingConfig,
   args: { profile: unknown; content: unknown; docPath: string; sourceDocument: unknown },
@@ -51,6 +59,7 @@ function applyExistingProfile(
   const row = rec(args.profile);
   const content = rec(args.content);
   const links = rec(content.links);
+  const workAuthorization = str(row.work_authorization);
   const sourceDocument =
     sourceDocumentFrom(args.sourceDocument) ||
     sourceDocumentFrom(content.sourceDocument) ||
@@ -75,6 +84,9 @@ function applyExistingProfile(
       },
       workAuth: {
         ...config.profile.workAuth,
+        authorizedToWork:
+          config.profile.workAuth.authorizedToWork ??
+          authorizedToWorkFromProfile(workAuthorization, row.needs_sponsorship),
         needsSponsorship:
           config.profile.workAuth.needsSponsorship ??
           (typeof row.needs_sponsorship === "boolean" ? row.needs_sponsorship : null),

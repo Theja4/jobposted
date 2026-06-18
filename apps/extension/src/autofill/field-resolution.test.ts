@@ -93,4 +93,33 @@ describe("field resolution", () => {
       expect.arrayContaining(["identity.firstName", "identity.lastName", "identity.email", "workAuth.requiresSponsorship", "answers.why_company"]),
     );
   });
+
+  it("maps company employee connection questions to the setup answer", async () => {
+    const { document } = parseHTML("<input />");
+    const mapping = await resolveField({
+      field: {
+        id: "company-connection",
+        element: document.querySelector("input") as HTMLElement,
+        label: "Do you have any relatives currently employed by this organization?",
+        context: "",
+        type: "radio",
+        required: true,
+        options: ["Yes", "No"],
+        signature: "company-connection",
+      },
+      profile: {
+        ...profile,
+        answers: [
+          { key: "screening.company_employee_connection", prompt: "Do you know anyone at this company?", value: "No" },
+        ],
+      },
+      platform: "generic",
+      url: "",
+      demographicsEnabled: false,
+    });
+
+    expect(mapping.source).toBe("answer");
+    expect(mapping.canonicalKey).toBe("answers.screening.company_employee_connection");
+    expect(mapping.value).toBe("No");
+  });
 });

@@ -29,6 +29,14 @@ function moneyOf(value: unknown): number | null {
   return Number.isFinite(n) && n >= 0 ? Math.round(n) : null;
 }
 
+function authorizedToWorkFromProfile(workAuthorization: string, needsSponsorship: boolean | null) {
+  const normalized = workAuthorization.toLowerCase().replace(/[\s_]+/g, "-");
+  if (normalized === "not-authorized" || normalized === "not-authorised") return false;
+  if (normalized && normalized !== "needs-sponsorship" && normalized !== "requires-sponsorship") return true;
+  if (needsSponsorship === false) return true;
+  return null;
+}
+
 function splitName(fullName: string | null | undefined, email: string | null | undefined) {
   const fallback = email?.split("@")[0]?.replace(/[._-]+/g, " ") ?? "";
   const usable = (fullName || fallback).trim();
@@ -156,8 +164,7 @@ export function buildMasterProfile(args: {
   const workAuthorization = asString(row.work_authorization);
   const needsSponsorship =
     typeof row.needs_sponsorship === "boolean" ? row.needs_sponsorship : null;
-  const authorizedToWork =
-    workAuthorization || needsSponsorship !== null ? needsSponsorship === false : null;
+  const authorizedToWork = authorizedToWorkFromProfile(workAuthorization, needsSponsorship);
 
   const links = asRecord(content.links);
   const profile: MasterProfile = {

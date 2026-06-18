@@ -26,6 +26,7 @@ export async function POST(request: Request) {
   const workAuth = rec(body.workAuth);
 
   const needsSponsorship = bool(workAuth.needsSponsorship);
+  const authorizedToWork = bool(workAuth.authorizedToWork) ?? (needsSponsorship === false ? true : null);
 
   // 1) profile row (identity, contact, links, work auth, prefs)
   const { error: profileError } = await supabase.from("profiles").upsert(
@@ -37,7 +38,14 @@ export async function POST(request: Request) {
       location: str(basics.location) || null,
       linkedin_url: str(links.linkedin) || null,
       portfolio_url: str(links.portfolio) || null,
-      work_authorization: needsSponsorship === true ? "needs_sponsorship" : needsSponsorship === false ? "authorized" : null,
+      work_authorization:
+        authorizedToWork === true
+          ? "authorized"
+          : authorizedToWork === false
+            ? "not_authorized"
+            : needsSponsorship === true
+              ? "needs_sponsorship"
+              : null,
       needs_sponsorship: needsSponsorship,
       relocation_ok: bool(workAuth.relocationOk),
       current_salary_min: num(workAuth.currentSalaryMin),

@@ -4,7 +4,10 @@ import {
   reusableAnswersFromOnboarding,
   sanitizeOnboardingConfig,
 } from "@/lib/onboarding/model";
-import { saveOnboardingConfiguration } from "@/lib/onboarding/configuration-save";
+import {
+  onboardingConfigurationFailureCode,
+  saveOnboardingConfiguration,
+} from "@/lib/onboarding/configuration-save";
 import { embedResumeContent, vectorToSql } from "@/lib/ai/embeddings";
 import { reportError } from "@/lib/observability/report";
 import { requireProApi } from "@/lib/billing/access";
@@ -48,6 +51,7 @@ export async function POST(request: Request) {
   const links = rec(profilePayload.links);
   const workAuth = rec(profilePayload.workAuth);
   const needsSponsorship = bool(workAuth.needsSponsorship);
+  const authorizedToWork = bool(workAuth.authorizedToWork) ?? (needsSponsorship === false ? true : null);
   const now = new Date().toISOString();
 
   const profileRow: Record<string, unknown> = {
@@ -59,7 +63,13 @@ export async function POST(request: Request) {
     linkedin_url: str(links.linkedin) || null,
     portfolio_url: str(links.portfolio) || null,
     work_authorization:
-      needsSponsorship === true ? "needs_sponsorship" : needsSponsorship === false ? "authorized" : null,
+      authorizedToWork === true
+        ? "authorized"
+        : authorizedToWork === false
+          ? "not_authorized"
+          : needsSponsorship === true
+            ? "needs_sponsorship"
+            : null,
     needs_sponsorship: needsSponsorship,
     relocation_ok: bool(workAuth.relocationOk),
     current_salary_min: num(workAuth.currentSalaryMin),
@@ -175,6 +185,16 @@ export async function POST(request: Request) {
   });
   if (!configResult.ok) {
     await reportError("onboarding configuration upsert failed", configResult.error, { userId: user.id });
+    if (onboardingConfigurationFailureCode(configResult.error) === "missing_table") {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: "onboarding_storage_missing",
+          message: "Supabase is missing the onboarding setup table. Run the JobPosted onboarding migration.",
+        },
+        { status: 500 },
+      );
+    }
     return NextResponse.json({ ok: false, error: "configuration_save_failed" }, { status: 500 });
   }
 
