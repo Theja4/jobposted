@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server";
+import { saveOnboardingConfiguration } from "@/lib/onboarding/configuration-save";
 import { sanitizeOnboardingConfig } from "@/lib/onboarding/model";
 import { reportError } from "@/lib/observability/report";
 import { requireProApi } from "@/lib/billing/access";
+import { getServiceRoleClient } from "@/lib/supabase/service-role";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
@@ -89,16 +91,13 @@ export async function POST(request: Request) {
   const onboarding = sanitizeOnboardingConfig(rec(onboardingRow).data, user.email ?? "");
   onboarding.final.applicationMode = mode;
 
-  const { error: onboardingError } = await supabase.from("onboarding_configurations").upsert(
-    {
-      user_id: user.id,
-      data: onboarding,
-      updated_at: new Date().toISOString(),
-    },
-    { onConflict: "user_id" },
-  );
-  if (onboardingError) {
-    await reportError("onboarding application_mode mirror failed", onboardingError, { userId: user.id, mode });
+  const configClient = getServiceRoleClient() ?? supabase;
+  const onboardingResult = await saveOnboardingConfiguration(configClient, {
+    userId: user.id,
+    config: onboarding,
+  });
+  if (!onboardingResult.ok) {
+    await reportError("onboarding application_mode mirror failed", onboardingResult.error, { userId: user.id, mode });
   }
 
   return NextResponse.json({ ok: true, mode });

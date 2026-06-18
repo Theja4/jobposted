@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { PDFDocument, StandardFonts } from "pdf-lib";
 import type { ResumeData } from "@/lib/rezoomed-resume-parser/types";
 import { defaultOnboardingConfig } from "./model";
@@ -215,5 +215,32 @@ describe("resume onboarding parser mapping", () => {
       fullName: "Aisha Raman",
       email: "aisha@example.com",
     });
+  });
+
+  it("still rejects truly image-only PDFs as scanned", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const pdf = await PDFDocument.create();
+    const page = pdf.addPage([612, 792]);
+    const pixel = await pdf.embedPng(
+      Buffer.from(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=",
+        "base64",
+      ),
+    );
+    page.drawImage(pixel, { x: 72, y: 72, width: 200, height: 200 });
+
+    try {
+      await expect(
+        parseResumeProfileFromBuffer({
+          buffer: Buffer.from(await pdf.save()),
+          fileName: "image-only.pdf",
+          contentType: "application/pdf",
+        }),
+      ).rejects.toMatchObject({ code: "scanned_pdf" });
+    } finally {
+      warn.mockRestore();
+      error.mockRestore();
+    }
   });
 });

@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import type { Route } from "next";
 import { useRouter } from "next/navigation";
 import { Loader2 } from "lucide-react";
+import { buildPostLoginPath } from "@/lib/auth/redirects";
 import { createClient } from "@/lib/supabase/client";
 import { track } from "@/lib/analytics";
 
@@ -158,7 +159,7 @@ function GoogleIdTokenButton({
             return;
           }
           track("auth_google");
-          router.push(redirectTo as Route);
+          router.push(buildPostLoginPath(redirectTo) as Route);
           router.refresh();
         },
       });

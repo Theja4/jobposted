@@ -254,10 +254,16 @@ function extractOver18(text: string): boolean | null {
 }
 
 function extractHybridPreference(text: string, workLocations: WorkLocationPreference[]) {
-  if (/\bremote\s+only\b|\bfully\s+remote\b/i.test(text)) return "I only want full remote";
-  if (/\bopen to hybrid\b|\bhybrid preferred\b/i.test(text)) return "Open to hybrid";
-  if (/\bon[-\s]?site\b|\bin[-\s]?office\b/i.test(text)) return "Open to hybrid";
-  if (workLocations.includes("remote")) return "Open to hybrid";
+  if (/\b(?:5|five)\s*(?:day|days)\s*(?:wfo|work\s+from\s+office)\b|\bwfo\b|\bwork\s+from\s+office\b/i.test(text)) {
+    return "5 day WFO";
+  }
+  if (/\bremote\s+only\b|\bfully\s+remote\b/i.test(text)) return "Full remote";
+  if (/\bopen to hybrid\b/i.test(text)) return "Full remote, Hybrid";
+  if (/\bhybrid preferred\b|\bhybrid\b/i.test(text)) return "Hybrid";
+  if (/\bon[-\s]?site\b|\bin[-\s]?office\b/i.test(text)) return "Hybrid";
+  if (workLocations.includes("remote") && workLocations.includes("onsite_hybrid")) return "Full remote, Hybrid";
+  if (workLocations.includes("remote")) return "Full remote";
+  if (workLocations.includes("onsite_hybrid")) return "Hybrid";
   return "";
 }
 
@@ -449,7 +455,7 @@ export async function parseResumeProfileFromBuffer({
       throw new ResumeParseError("password_protected_pdf", "password_protected_pdf");
     }
 
-    if (result.failureReason === "scanned_pdf" || (fileType === PDF_MIME_TYPE && result.sourceTextLength < 20)) {
+    if (result.failureReason === "scanned_pdf") {
       throw new ResumeParseError("scanned_pdf", "scanned_pdf");
     }
 

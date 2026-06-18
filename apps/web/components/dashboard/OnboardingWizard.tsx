@@ -20,6 +20,7 @@ import {
   Settings2,
   ShieldCheck,
   Sparkles,
+  Trash2,
   UploadCloud,
   UserRound,
   X,
@@ -41,6 +42,7 @@ import {
 } from "@/lib/onboarding/model";
 import { POPULAR_JOB_TITLE_QUICK_PICKS, POPULAR_JOB_TITLES } from "@/lib/onboarding/job-titles";
 import { LANGUAGE_QUICK_PICKS, TOP_SPOKEN_LANGUAGES } from "@/lib/onboarding/languages";
+import { ONBOARDING_LOCATION_OPTIONS } from "@/lib/onboarding/locations";
 import type { SourceDocument } from "@/lib/profile/resume-version";
 
 type WizardStep = 0 | 1 | 2 | 3;
@@ -101,6 +103,7 @@ const JOB_TYPES: Array<{ value: JobTypePreference; label: string }> = [
 const SENIORITY = ["Entry Level", "Associate Level", "Mid-to-Senior Level", "Director Level and above"];
 const TIME_ZONES = ["US overlap", "Europe overlap", "India", "APAC", "Fully async"];
 const INDUSTRIES = ["SaaS", "Fintech", "Healthcare", "Consumer", "AI", "Developer tools", "E-commerce"];
+const REMOTE_PREFERENCES = ["Full remote", "Hybrid", "5 day WFO"];
 const CURRENCIES = [
   "USD",
   "EUR",
@@ -392,6 +395,37 @@ function emptyExperience(): OnboardingExperience {
 
 function emptyEducation(): OnboardingEducation {
   return { school: "", degree: "", field: "", startDate: "", endDate: "", gpa: "" };
+}
+
+function remotePreferenceValues(value: string) {
+  const normalized = value.toLowerCase();
+  const values: string[] = [];
+
+  if (
+    normalized.includes("full remote") ||
+    normalized.includes("remote only") ||
+    normalized.includes("i only want full remote") ||
+    normalized.includes("open to hybrid")
+  ) {
+    values.push("Full remote");
+  }
+  if (normalized.includes("hybrid") || normalized.includes("open to hybrid")) {
+    values.push("Hybrid");
+  }
+  if (
+    normalized.includes("5 day wfo") ||
+    normalized.includes("five day wfo") ||
+    normalized.includes("wfo") ||
+    normalized.includes("work from office")
+  ) {
+    values.push("5 day WFO");
+  }
+
+  return REMOTE_PREFERENCES.filter((option) => values.includes(option));
+}
+
+function serializeRemotePreferences(values: string[]) {
+  return REMOTE_PREFERENCES.filter((option) => values.includes(option)).join(", ");
 }
 
 export function OnboardingWizard({
@@ -885,10 +919,11 @@ function StepSearch({
             value={config.search.remoteScope}
             onChange={(value) => patchSearch({ remoteScope: value })}
           />
-          <Field
+          <LocationField
             label="On-site / hybrid location"
             value={config.search.onsiteLocation}
             onChange={(value) => patchSearch({ onsiteLocation: value })}
+            placeholder="City, state, region, or country"
           />
         </div>
       </Panel>
@@ -1147,7 +1182,13 @@ function StepProfile({
           <Field label="Full name" value={config.profile.basics.fullName} onChange={(fullName) => patchBasics({ fullName })} />
           <Field label="Email" type="email" value={config.profile.basics.email} onChange={(email) => patchBasics({ email })} />
           <Field label="Phone" optional value={config.profile.basics.phone} onChange={(phone) => patchBasics({ phone })} />
-          <Field label="Location" optional value={config.profile.basics.location} onChange={(location) => patchBasics({ location })} />
+          <LocationField
+            label="Location"
+            optional
+            value={config.profile.basics.location}
+            onChange={(location) => patchBasics({ location })}
+            placeholder="City, state, region, or country"
+          />
           <Field label="LinkedIn" optional value={config.profile.links.linkedin} onChange={(linkedin) => patchLinks({ linkedin })} />
           <Field label="Portfolio / website" optional value={config.profile.links.portfolio} onChange={(portfolio) => patchLinks({ portfolio })} />
           <Field label="GitHub" optional value={config.profile.links.github} onChange={(github) => patchLinks({ github })} />
@@ -1313,11 +1354,11 @@ function StepProfile({
         attention={reviewPromptActive && !commonScreeningComplete}
       >
         <div className="grid gap-3 sm:grid-cols-2">
-          <ChoiceGroup
+          <MultiChoiceGroup
             label="Remote preference"
-            value={config.profile.screening.hybridPreference}
-            options={["Open to hybrid", "I only want full remote"]}
-            onChange={(hybridPreference) => patchScreening({ hybridPreference })}
+            values={remotePreferenceValues(config.profile.screening.hybridPreference)}
+            options={REMOTE_PREFERENCES}
+            onChange={(values) => patchScreening({ hybridPreference: serializeRemotePreferences(values) })}
           />
           <BooleanChoice
             label="Comfortable relocating?"
@@ -2066,6 +2107,38 @@ function SearchableField({
   );
 }
 
+function LocationField({
+  label,
+  value,
+  onChange,
+  placeholder,
+  optional = false,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  placeholder?: string;
+  optional?: boolean;
+}) {
+  return (
+    <label className="block">
+      <span className={labelCls}>
+        {label}
+        {optional && <OptionalBadge />}
+      </span>
+      <SearchableSelect
+        value={value}
+        options={ONBOARDING_LOCATION_OPTIONS}
+        onChange={onChange}
+        ariaLabel={label}
+        placeholder={placeholder}
+        allowCustom
+        maxMenuHeight={340}
+      />
+    </label>
+  );
+}
+
 function SelectField({
   label,
   value,
@@ -2169,9 +2242,15 @@ function TagInput({
   max?: number;
   onChange: (value: string[]) => void;
 }) {
+  const generatedId = useId().replace(/:/g, "");
+  const listboxId = `tag-input-${generatedId}-listbox`;
+  const wrapperRef = useRef<HTMLDivElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
   const [input, setInput] = useState("");
   const [focused, setFocused] = useState(false);
   const [activeIndex, setActiveIndex] = useState(0);
+  const [mounted, setMounted] = useState(false);
+  const [position, setPosition] = useState<SearchMenuPosition | null>(null);
   const remaining = Math.max(0, max - value.length);
   const suggestionList = useMemo(
     () => (suggestions ?? []).filter((item) => !value.includes(item)).slice(0, remaining || 0),
@@ -2190,10 +2269,59 @@ function TagInput({
       .map(({ title }) => title);
   }, [autocompleteSuggestions, input, max, remaining, value]);
   const showDropdown = focused && dropdownSuggestions.length > 0;
+  const activeOptionId = showDropdown ? `${listboxId}-option-${activeIndex}` : undefined;
+
+  const updatePosition = useCallback(() => {
+    const wrapper = wrapperRef.current;
+    if (!wrapper) return;
+    const rect = wrapper.getBoundingClientRect();
+    const viewportWidth = window.innerWidth;
+    const viewportHeight = window.innerHeight;
+    const width = Math.min(Math.max(rect.width, SEARCH_MENU_MIN_WIDTH), Math.max(SEARCH_MENU_MIN_WIDTH, viewportWidth - 24));
+    const maxLeft = Math.max(12, viewportWidth - width - 12);
+    const left = Math.min(Math.max(rect.left, 12), maxLeft);
+    const below = viewportHeight - rect.bottom - 12;
+    const above = rect.top - 12;
+    const opensUp = below < 190 && above > below;
+    const available = Math.max(132, Math.min(288, opensUp ? above - SEARCH_MENU_GAP : below - SEARCH_MENU_GAP));
+
+    setPosition({
+      left,
+      width,
+      maxHeight: available,
+      origin: opensUp ? "bottom" : "top",
+      ...(opensUp ? { bottom: viewportHeight - rect.top + SEARCH_MENU_GAP } : { top: rect.bottom + SEARCH_MENU_GAP }),
+    });
+  }, []);
+
+  useEffect(() => setMounted(true), []);
 
   useEffect(() => {
     setActiveIndex(0);
   }, [input]);
+
+  useLayoutEffect(() => {
+    if (showDropdown) updatePosition();
+  }, [input, showDropdown, updatePosition]);
+
+  useEffect(() => {
+    if (!showDropdown) return;
+
+    function onPointerDown(event: PointerEvent) {
+      const target = event.target as Node;
+      if (wrapperRef.current?.contains(target) || menuRef.current?.contains(target)) return;
+      setFocused(false);
+    }
+
+    document.addEventListener("pointerdown", onPointerDown);
+    window.addEventListener("resize", updatePosition);
+    window.addEventListener("scroll", updatePosition, true);
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown);
+      window.removeEventListener("resize", updatePosition);
+      window.removeEventListener("scroll", updatePosition, true);
+    };
+  }, [showDropdown, updatePosition]);
 
   useEffect(() => {
     if (activeIndex >= dropdownSuggestions.length) setActiveIndex(0);
@@ -2217,7 +2345,10 @@ function TagInput({
   return (
     <div>
       {label && <SectionLabel>{label}</SectionLabel>}
-      <div className="relative rounded-xl bg-white p-2 ring-1 ring-inset ring-zinc-200 focus-within:ring-2 focus-within:ring-brand-500">
+      <div
+        ref={wrapperRef}
+        className="relative rounded-xl bg-white p-2 ring-1 ring-inset ring-zinc-200 focus-within:ring-2 focus-within:ring-brand-500"
+      >
         <div className="flex flex-wrap gap-2">
           {value.map((item) => (
             <span
@@ -2231,10 +2362,17 @@ function TagInput({
             </span>
           ))}
           <input
+            role="combobox"
             value={input}
             disabled={value.length >= max}
-            onFocus={() => setFocused(true)}
-            onChange={(event) => setInput(event.target.value)}
+            onFocus={() => {
+              setFocused(true);
+              window.requestAnimationFrame(updatePosition);
+            }}
+            onChange={(event) => {
+              setInput(event.target.value);
+              window.requestAnimationFrame(updatePosition);
+            }}
             onKeyDown={(event) => {
               if (showDropdown && event.key === "ArrowDown") {
                 event.preventDefault();
@@ -2268,35 +2406,53 @@ function TagInput({
             placeholder={value.length >= max ? "Limit reached" : placeholder}
             aria-autocomplete={autocompleteSuggestions ? "list" : undefined}
             aria-expanded={autocompleteSuggestions ? showDropdown : undefined}
+            aria-controls={showDropdown ? listboxId : undefined}
+            aria-activedescendant={activeOptionId}
             className="h-8 min-w-[12rem] flex-1 bg-transparent px-1 text-sm font-semibold text-ink outline-none placeholder:text-zinc-500"
           />
         </div>
-        {showDropdown && (
-          <div
-            role="listbox"
-            className="absolute right-2 left-2 top-[calc(100%+0.5rem)] z-30 max-h-72 overflow-auto rounded-xl bg-white p-1.5 shadow-[0_16px_34px_rgba(15,23,42,0.16)] ring-1 ring-inset ring-zinc-200"
-          >
-            {dropdownSuggestions.map((item, index) => (
-              <button
-                key={item}
-                type="button"
-                role="option"
-                aria-selected={index === activeIndex}
-                onMouseEnter={() => setActiveIndex(index)}
-                onMouseDown={(event) => {
-                  event.preventDefault();
-                  add(item);
+        {mounted && showDropdown && position
+          ? createPortal(
+              <div
+                ref={menuRef}
+                id={listboxId}
+                role="listbox"
+                data-lenis-prevent
+                className="fixed z-[85] overflow-auto rounded-xl bg-white p-1.5 shadow-[0_24px_60px_rgba(7,26,51,0.18)] outline-none"
+                style={{
+                  left: position.left,
+                  width: position.width,
+                  maxHeight: position.maxHeight,
+                  transformOrigin: position.origin,
+                  top: position.top,
+                  bottom: position.bottom,
                 }}
-                className={cn(
-                  "flex w-full items-center rounded-lg px-3 py-2 text-left text-sm font-bold transition-colors",
-                  index === activeIndex ? "bg-brand-50 text-brand-800" : "text-ink hover:bg-zinc-50",
-                )}
               >
-                {item}
-              </button>
-            ))}
-          </div>
-        )}
+                {dropdownSuggestions.map((item, index) => (
+                  <button
+                    key={item}
+                    id={`${listboxId}-option-${index}`}
+                    type="button"
+                    role="option"
+                    aria-selected={index === activeIndex}
+                    onMouseEnter={() => setActiveIndex(index)}
+                    onMouseDown={(event) => {
+                      event.preventDefault();
+                      add(item);
+                      setFocused(false);
+                    }}
+                    className={cn(
+                      "flex w-full items-center rounded-lg px-3 py-2 text-left text-sm font-bold transition-colors",
+                      index === activeIndex ? "bg-brand-50 text-brand-800" : "text-ink hover:bg-zinc-50",
+                    )}
+                  >
+                    {item}
+                  </button>
+                ))}
+              </div>,
+              document.body,
+            )
+          : null}
       </div>
       {suggestionList.length > 0 && (
         <div className="mt-2 flex flex-wrap gap-2">
@@ -2393,6 +2549,49 @@ function ChoiceGroup({
   );
 }
 
+function MultiChoiceGroup({
+  label,
+  values,
+  options,
+  onChange,
+  optional = false,
+}: {
+  label: string;
+  values: string[];
+  options: string[];
+  onChange: (values: string[]) => void;
+  optional?: boolean;
+}) {
+  return (
+    <div>
+      <span className={labelCls}>
+        {label}
+        {optional && <OptionalBadge />}
+      </span>
+      <div className="flex flex-wrap gap-2">
+        {options.map((option) => {
+          const selected = values.includes(option);
+          return (
+            <Chip
+              key={option}
+              selected={selected}
+              onClick={() =>
+                onChange(
+                  selected
+                    ? values.filter((value) => value !== option)
+                    : options.filter((value) => value === option || values.includes(value)),
+                )
+              }
+            >
+              {option}
+            </Chip>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function RepeatingExperience({
   config,
   setConfig,
@@ -2400,23 +2599,54 @@ function RepeatingExperience({
   config: OnboardingConfig;
   setConfig: React.Dispatch<React.SetStateAction<OnboardingConfig>>;
 }) {
-  const experience = config.profile.experience.length > 0 ? config.profile.experience : [emptyExperience()];
+  const experience = config.profile.experience;
 
   function update(index: number, patch: Partial<OnboardingExperience>) {
     setConfig((current) => {
-      const list = (current.profile.experience.length > 0 ? current.profile.experience : [emptyExperience()]).map(
-        (item, i) => (i === index ? { ...item, ...patch } : item),
-      );
+      const list = current.profile.experience.map((item, i) => (i === index ? { ...item, ...patch } : item));
       return { ...current, profile: { ...current.profile, experience: list } };
     });
+  }
+
+  function remove(index: number) {
+    setConfig((current) => ({
+      ...current,
+      profile: {
+        ...current.profile,
+        experience: current.profile.experience.filter((_, i) => i !== index),
+      },
+    }));
+  }
+
+  function add() {
+    setConfig((current) => ({
+      ...current,
+      profile: { ...current.profile, experience: [...current.profile.experience, emptyExperience()] },
+    }));
   }
 
   return (
     <div>
       <h4 className="text-sm font-black text-ink">Experience</h4>
       <div className="mt-3 space-y-3">
+        {experience.length === 0 && (
+          <div className="rounded-2xl bg-white p-4 text-sm font-bold text-muted shadow-[0_12px_28px_-22px_rgba(15,23,42,0.45)]">
+            No experience added.
+          </div>
+        )}
         {experience.map((item, index) => (
           <div key={index} className="rounded-2xl bg-white p-4 ring-1 ring-inset ring-zinc-200">
+            <div className="mb-3 flex items-center justify-between gap-3">
+              <p className="text-xs font-black text-muted">Experience {index + 1}</p>
+              <button
+                type="button"
+                onClick={() => remove(index)}
+                aria-label={`Delete experience ${index + 1}`}
+                className="inline-flex size-9 items-center justify-center rounded-xl bg-white text-muted shadow-[0_10px_24px_-18px_rgba(15,23,42,0.5)] ring-1 ring-inset ring-zinc-200 transition hover:bg-red-50 hover:text-red-600 hover:ring-red-100"
+              >
+                <Trash2 className="size-4" />
+              </button>
+            </div>
             <div className="grid gap-3 sm:grid-cols-2">
               <Field label="Title" value={item.title} onChange={(title) => update(index, { title })} />
               <Field label="Company" value={item.company} onChange={(company) => update(index, { company })} />
@@ -2444,12 +2674,7 @@ function RepeatingExperience({
       </div>
       <button
         type="button"
-        onClick={() =>
-          setConfig((current) => ({
-            ...current,
-            profile: { ...current.profile, experience: [...current.profile.experience, emptyExperience()] },
-          }))
-        }
+        onClick={add}
         className="mt-3 inline-flex h-10 items-center rounded-xl bg-brand-50 px-3 text-sm font-black text-brand-700 ring-1 ring-inset ring-brand-100 hover:bg-brand-100"
       >
         Add experience
@@ -2465,40 +2690,68 @@ function RepeatingEducation({
   config: OnboardingConfig;
   setConfig: React.Dispatch<React.SetStateAction<OnboardingConfig>>;
 }) {
-  const education = config.profile.education.length > 0 ? config.profile.education : [emptyEducation()];
+  const education = config.profile.education;
 
   function update(index: number, patch: Partial<OnboardingEducation>) {
     setConfig((current) => {
-      const list = (current.profile.education.length > 0 ? current.profile.education : [emptyEducation()]).map(
-        (item, i) => (i === index ? { ...item, ...patch } : item),
-      );
+      const list = current.profile.education.map((item, i) => (i === index ? { ...item, ...patch } : item));
       return { ...current, profile: { ...current.profile, education: list } };
     });
+  }
+
+  function remove(index: number) {
+    setConfig((current) => ({
+      ...current,
+      profile: {
+        ...current.profile,
+        education: current.profile.education.filter((_, i) => i !== index),
+      },
+    }));
+  }
+
+  function add() {
+    setConfig((current) => ({
+      ...current,
+      profile: { ...current.profile, education: [...current.profile.education, emptyEducation()] },
+    }));
   }
 
   return (
     <div>
       <h4 className="text-sm font-black text-ink">Education</h4>
       <div className="mt-3 space-y-3">
+        {education.length === 0 && (
+          <div className="rounded-2xl bg-white p-4 text-sm font-bold text-muted shadow-[0_12px_28px_-22px_rgba(15,23,42,0.45)]">
+            No education added.
+          </div>
+        )}
         {education.map((item, index) => (
-          <div key={index} className="grid gap-3 rounded-2xl bg-white p-4 ring-1 ring-inset ring-zinc-200 sm:grid-cols-2">
-            <Field label="School" value={item.school} onChange={(school) => update(index, { school })} />
-            <Field label="Degree" value={item.degree} onChange={(degree) => update(index, { degree })} />
-            <Field label="Field" value={item.field} onChange={(field) => update(index, { field })} />
-            <Field label="Start" value={item.startDate} onChange={(startDate) => update(index, { startDate })} />
-            <Field label="End" value={item.endDate} onChange={(endDate) => update(index, { endDate })} />
-            <Field label="GPA" optional value={item.gpa} onChange={(gpa) => update(index, { gpa })} />
+          <div key={index} className="rounded-2xl bg-white p-4 ring-1 ring-inset ring-zinc-200">
+            <div className="mb-3 flex items-center justify-between gap-3">
+              <p className="text-xs font-black text-muted">Education {index + 1}</p>
+              <button
+                type="button"
+                onClick={() => remove(index)}
+                aria-label={`Delete education ${index + 1}`}
+                className="inline-flex size-9 items-center justify-center rounded-xl bg-white text-muted shadow-[0_10px_24px_-18px_rgba(15,23,42,0.5)] ring-1 ring-inset ring-zinc-200 transition hover:bg-red-50 hover:text-red-600 hover:ring-red-100"
+              >
+                <Trash2 className="size-4" />
+              </button>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Field label="School" value={item.school} onChange={(school) => update(index, { school })} />
+              <Field label="Degree" value={item.degree} onChange={(degree) => update(index, { degree })} />
+              <Field label="Field" value={item.field} onChange={(field) => update(index, { field })} />
+              <Field label="Start" value={item.startDate} onChange={(startDate) => update(index, { startDate })} />
+              <Field label="End" value={item.endDate} onChange={(endDate) => update(index, { endDate })} />
+              <Field label="GPA" optional value={item.gpa} onChange={(gpa) => update(index, { gpa })} />
+            </div>
           </div>
         ))}
       </div>
       <button
         type="button"
-        onClick={() =>
-          setConfig((current) => ({
-            ...current,
-            profile: { ...current.profile, education: [...current.profile.education, emptyEducation()] },
-          }))
-        }
+        onClick={add}
         className="mt-3 inline-flex h-10 items-center rounded-xl bg-brand-50 px-3 text-sm font-black text-brand-700 ring-1 ring-inset ring-brand-100 hover:bg-brand-100"
       >
         Add education

@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server";
+import { saveOnboardingConfiguration } from "@/lib/onboarding/configuration-save";
 import { sanitizeOnboardingConfig } from "@/lib/onboarding/model";
 import { reportError } from "@/lib/observability/report";
 import { requireProApi } from "@/lib/billing/access";
+import { getServiceRoleClient } from "@/lib/supabase/service-role";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
@@ -33,16 +35,13 @@ export async function POST(request: Request) {
   const onboarding = sanitizeOnboardingConfig(rec(onboardingRow).data, user.email ?? "");
   onboarding.final.tailorResume = body.tailorResume;
 
-  const { error } = await supabase.from("onboarding_configurations").upsert(
-    {
-      user_id: user.id,
-      data: onboarding,
-      updated_at: new Date().toISOString(),
-    },
-    { onConflict: "user_id" },
-  );
-  if (error) {
-    await reportError("tailoring preference save failed", error, { userId: user.id });
+  const configClient = getServiceRoleClient() ?? supabase;
+  const result = await saveOnboardingConfiguration(configClient, {
+    userId: user.id,
+    config: onboarding,
+  });
+  if (!result.ok) {
+    await reportError("tailoring preference save failed", result.error, { userId: user.id });
     return NextResponse.json({ ok: false, error: "save_failed" }, { status: 500 });
   }
 

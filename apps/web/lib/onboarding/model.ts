@@ -405,7 +405,7 @@ export function reusableAnswersFromOnboarding(config: OnboardingConfig): Reusabl
   const answers: ReusableProfileAnswerInput[] = [
     {
       key: "screening.hybrid_remote_preference",
-      prompt: "Are you open to hybrid remote positions or only full remote?",
+      prompt: "What is your remote, hybrid, or on-site preference?",
       value: s.hybridPreference,
     },
     {

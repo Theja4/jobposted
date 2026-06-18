@@ -8,6 +8,7 @@ import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { ArrowLeft, ArrowRight, Check, Eye, EyeOff, Loader2, Send, ShieldCheck } from "lucide-react";
 import { Logo } from "@/components/landing/Logo";
 import { GoogleSignIn } from "./GoogleSignIn";
+import { buildPostLoginPath } from "@/lib/auth/redirects";
 import { createClient } from "@/lib/supabase/client";
 import { track } from "@/lib/analytics";
 import { cn } from "@/lib/cn";
@@ -88,7 +89,7 @@ export function AuthScreen() {
         track("auth_signup", { email_domain: email.split("@")[1] ?? null });
         // Email-confirmation projects return a user but no active session.
         if (data.session) {
-          router.push((redirectTo ?? "/dashboard/jobs") as Route);
+          router.push(buildPostLoginPath(redirectTo ?? "/dashboard/jobs") as Route);
           router.refresh();
           return;
         }
@@ -100,7 +101,7 @@ export function AuthScreen() {
       const { error } = await supabase.auth.signInWithPassword({ email, password });
       if (error) throw error;
       track("auth_signin", { email_domain: email.split("@")[1] ?? null });
-      router.push((redirectTo ?? "/dashboard/jobs") as Route);
+      router.push(buildPostLoginPath(redirectTo ?? "/dashboard/jobs") as Route);
       router.refresh();
     } catch (err) {
       setStatus("error");

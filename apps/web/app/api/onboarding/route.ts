@@ -4,9 +4,11 @@ import {
   reusableAnswersFromOnboarding,
   sanitizeOnboardingConfig,
 } from "@/lib/onboarding/model";
+import { saveOnboardingConfiguration } from "@/lib/onboarding/configuration-save";
 import { embedResumeContent, vectorToSql } from "@/lib/ai/embeddings";
 import { reportError } from "@/lib/observability/report";
 import { requireProApi } from "@/lib/billing/access";
+import { getServiceRoleClient } from "@/lib/supabase/service-role";
 import {
   bool,
   num,
@@ -164,17 +166,15 @@ export async function POST(request: Request) {
     }
   }
 
-  const { error: configError } = await supabase.from("onboarding_configurations").upsert(
-    {
-      user_id: user.id,
-      data: config,
-      completed_at: now,
-      updated_at: now,
-    },
-    { onConflict: "user_id" },
-  );
-  if (configError) {
-    await reportError("onboarding configuration upsert failed", configError, { userId: user.id });
+  const configClient = getServiceRoleClient() ?? supabase;
+  const configResult = await saveOnboardingConfiguration(configClient, {
+    userId: user.id,
+    config,
+    completedAt: now,
+    updatedAt: now,
+  });
+  if (!configResult.ok) {
+    await reportError("onboarding configuration upsert failed", configResult.error, { userId: user.id });
     return NextResponse.json({ ok: false, error: "configuration_save_failed" }, { status: 500 });
   }
 

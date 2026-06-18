@@ -97,6 +97,89 @@ describe("scoreJobForConfig", () => {
     expect(decision.blockers).toContain("Not an ingest-owned job");
   });
 
+  it("keeps city-level on-site preferences specific", () => {
+    const value = config();
+    value.search.workLocations = ["onsite_hybrid"];
+    value.search.onsiteLocation = "Hyderabad, Telangana, India";
+
+    expect(
+      scoreJobForConfig(
+        job({ location: "Hyderabad, India", remote: "hybrid" }),
+        value,
+      ).eligible,
+    ).toBe(true);
+
+    const outside = scoreJobForConfig(
+      job({ location: "Bengaluru, Karnataka, India", remote: "hybrid" }),
+      value,
+    );
+    expect(outside.eligible).toBe(false);
+    expect(outside.blockers).toContain("Outside preferred on-site location");
+  });
+
+  it("still allows broad country-level on-site preferences", () => {
+    const value = config();
+    value.search.workLocations = ["onsite_hybrid"];
+    value.search.onsiteLocation = "India";
+
+    expect(
+      scoreJobForConfig(
+        job({ location: "Bengaluru, Karnataka, India", remote: "hybrid" }),
+        value,
+      ).eligible,
+    ).toBe(true);
+  });
+
+  it("matches multi-word city preferences as phrases", () => {
+    const value = config();
+    value.search.workLocations = ["onsite_hybrid"];
+    value.search.onsiteLocation = "San Francisco, California, United States";
+
+    expect(
+      scoreJobForConfig(
+        job({ location: "San Francisco, CA", remote: "hybrid" }),
+        value,
+      ).eligible,
+    ).toBe(true);
+
+    expect(
+      scoreJobForConfig(
+        job({ location: "San Jose, California", remote: "hybrid" }),
+        value,
+      ).eligible,
+    ).toBe(false);
+  });
+
+  it("keeps 5 day WFO strict to on-site roles in the preferred location", () => {
+    const value = config();
+    value.search.workLocations = ["onsite_hybrid"];
+    value.search.onsiteLocation = "Hyderabad, Telangana, India";
+    value.profile.screening.hybridPreference = "5 day WFO";
+
+    expect(
+      scoreJobForConfig(job({ location: "Hyderabad, India", remote: "on-site" }), value).eligible,
+    ).toBe(true);
+
+    const hybrid = scoreJobForConfig(job({ location: "Hyderabad, India", remote: "hybrid" }), value);
+    expect(hybrid.eligible).toBe(false);
+    expect(hybrid.blockers).toContain("Outside 5 day WFO preference");
+
+    const remote = scoreJobForConfig(job({ location: "Remote", remote: "remote" }), value);
+    expect(remote.eligible).toBe(false);
+    expect(remote.blockers).toContain("Outside 5 day WFO preference");
+  });
+
+  it("allows remote, hybrid, and WFO when all three work styles are selected", () => {
+    const value = config();
+    value.search.workLocations = ["remote", "onsite_hybrid"];
+    value.search.onsiteLocation = "Hyderabad, Telangana, India";
+    value.profile.screening.hybridPreference = "Full remote, Hybrid, 5 day WFO";
+
+    expect(scoreJobForConfig(job({ location: "Remote", remote: "remote" }), value).eligible).toBe(true);
+    expect(scoreJobForConfig(job({ location: "Hyderabad, India", remote: "hybrid" }), value).eligible).toBe(true);
+    expect(scoreJobForConfig(job({ location: "Hyderabad, India", remote: "on-site" }), value).eligible).toBe(true);
+  });
+
   it("blocks a frontend profile from a gameplay role on every fit setting, even with noise keywords", () => {
     const gameplay = job({
       title: "Software Engineer, Gameplay",

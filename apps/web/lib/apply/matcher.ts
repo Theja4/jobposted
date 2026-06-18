@@ -274,6 +274,94 @@ function includesAny(text: string, phrases: string[]) {
   return phrases.some((phrase) => phrase && includesPhrase(text, phrase));
 }
 
+function normalizeLocationText(text: string) {
+  return text
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+const BROAD_LOCATION_COMPONENTS = new Set([
+  "africa",
+  "asia pacific",
+  "australia",
+  "brazil",
+  "canada",
+  "europe",
+  "european union",
+  "great britain",
+  "india",
+  "middle east",
+  "north america",
+  "south america",
+  "united arab emirates",
+  "united kingdom",
+  "united kingdom uk",
+  "united states",
+  "united states us",
+  "uk",
+  "us",
+]);
+
+const BROAD_LOCATION_WORDS = new Set([
+  "africa",
+  "america",
+  "arab",
+  "asia",
+  "australia",
+  "brazil",
+  "britain",
+  "canada",
+  "east",
+  "emirates",
+  "europe",
+  "european",
+  "great",
+  "india",
+  "kingdom",
+  "middle",
+  "north",
+  "pacific",
+  "south",
+  "states",
+  "uk",
+  "union",
+  "united",
+  "us",
+]);
+
+function isBroadLocationComponent(component: string) {
+  if (BROAD_LOCATION_COMPONENTS.has(component)) return true;
+  const tokens = words(component);
+  return tokens.length > 0 && tokens.every((token) => BROAD_LOCATION_WORDS.has(token));
+}
+
+function preferredLocationNeedles(preferredLocation: string) {
+  if (!preferredLocation || /\banywhere\b/i.test(preferredLocation)) return [];
+
+  const components = unique(
+    preferredLocation
+      .split(/[,/|·]+/)
+      .map(normalizeLocationText)
+      .filter(Boolean),
+  );
+  const firstComponent = components[0];
+  if (components.length > 1 && firstComponent && !isBroadLocationComponent(firstComponent)) {
+    return [firstComponent];
+  }
+  const specificComponents = components.filter((component) => !isBroadLocationComponent(component));
+
+  if (specificComponents.length > 0) return specificComponents;
+
+  return unique(
+    components.flatMap((component) => [
+      component,
+      ...words(component).filter((word) => !["in", "anywhere"].includes(word)),
+    ]),
+  );
+}
+
 /** Weighted detection: weight = number of distinct family aliases present in the text. */
 function familyWeights(text: string): Map<StackFamily, number> {
   const norm = ` ${text.toLowerCase().replace(/[^a-z0-9+#./-]+/g, " ").replace(/\s+/g, " ")} `;
@@ -464,33 +552,87 @@ function seniorityPreferences(values: string[]) {
   );
 }
 
+function workStylePreferences(value: string) {
+  const normalized = value.toLowerCase();
+  const values = new Set<"remote" | "hybrid" | "wfo">();
+
+  if (
+    normalized.includes("full remote") ||
+    normalized.includes("remote only") ||
+    normalized.includes("i only want full remote") ||
+    normalized.includes("open to hybrid")
+  ) {
+    values.add("remote");
+  }
+  if (normalized.includes("hybrid") || normalized.includes("open to hybrid")) {
+    values.add("hybrid");
+  }
+  if (
+    normalized.includes("5 day wfo") ||
+    normalized.includes("five day wfo") ||
+    normalized.includes("wfo") ||
+    normalized.includes("work from office")
+  ) {
+    values.add("wfo");
+  }
+
+  return values;
+}
+
 function workLocationMatches(config: OnboardingConfig, job: JobRow, text: string) {
   const prefs = config.search.workLocations;
   if (prefs.length === 0) return { ok: true, reason: "No work-location restriction" };
 
   const remote = (job.remote ?? "unknown").toLowerCase();
   const location = (job.location ?? "").toLowerCase();
+  const combinedLocationText = `${location} ${text}`;
   const remoteish =
     remote.includes("remote") ||
-    /\b(remote|distributed|worldwide|anywhere)\b/.test(`${location} ${text}`);
+    /\b(remote|distributed|worldwide|anywhere)\b/.test(combinedLocationText);
+  const hybridish = remote.includes("hybrid") || /\bhybrid\b/.test(combinedLocationText);
   const onsiteish =
-    remote.includes("hybrid") ||
+    hybridish ||
     remote.includes("site") ||
     (!remoteish && remote === "unknown") ||
-    /\b(hybrid|on-site|onsite|office)\b/.test(`${location} ${text}`);
+    /\b(on-site|onsite|office)\b/.test(combinedLocationText);
+  const onsiteOnlyish =
+    !remoteish &&
+    !hybridish &&
+    (remote.includes("site") ||
+      remote.includes("office") ||
+      /\b(on-site|onsite|in[-\s]?office|office[-\s]?based|work\s+from\s+office|wfo)\b/.test(
+        combinedLocationText,
+      ));
+  const locationNeedles = preferredLocationNeedles(config.search.onsiteLocation);
+  const normalizedLocation = normalizeLocationText(location);
+  const locationMatched =
+    locationNeedles.length === 0 || locationNeedles.some((needle) => normalizedLocation.includes(needle));
+  const stylePrefs = workStylePreferences(config.profile.screening.hybridPreference);
+
+  if (stylePrefs.size > 0) {
+    const styleMatched =
+      (stylePrefs.has("remote") && remoteish) ||
+      (stylePrefs.has("hybrid") && hybridish) ||
+      (stylePrefs.has("wfo") && onsiteOnlyish);
+    if (!styleMatched) {
+      return {
+        ok: false,
+        reason:
+          stylePrefs.size === 1 && stylePrefs.has("wfo")
+            ? "Outside 5 day WFO preference"
+            : "Outside selected work-style preferences",
+      };
+    }
+  }
 
   if (prefs.includes("remote") && remoteish) {
     return { ok: true, reason: "Matches remote preference" };
   }
 
   if (prefs.includes("onsite_hybrid") && onsiteish) {
-    const preferredLocation = config.search.onsiteLocation.toLowerCase();
-    if (!preferredLocation || preferredLocation.includes("anywhere")) {
+    if (locationNeedles.length === 0) {
       return { ok: true, reason: "Matches on-site or hybrid preference" };
     }
-    const locationTokens = words(preferredLocation).filter((word) => !["in", "anywhere"].includes(word));
-    const locationMatched =
-      locationTokens.length === 0 || locationTokens.some((word) => location.includes(word));
     return {
       ok: locationMatched,
       reason: locationMatched
