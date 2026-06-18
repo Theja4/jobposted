@@ -38,6 +38,47 @@ const LOGO_META_KEYS = new Set([
   "image",
 ]);
 
+const KNOWN_COMPANY_DOMAINS = new Map<string, string>([
+  ["adobe", "adobe.com"],
+  ["airbnb", "airbnb.com"],
+  ["amazon", "amazon.com"],
+  ["anthropic", "anthropic.com"],
+  ["apple", "apple.com"],
+  ["atlassian", "atlassian.com"],
+  ["block", "block.xyz"],
+  ["canva", "canva.com"],
+  ["coinbase", "coinbase.com"],
+  ["databricks", "databricks.com"],
+  ["discord", "discord.com"],
+  ["doordash", "doordash.com"],
+  ["elevenlabs", "elevenlabs.io"],
+  ["figma", "figma.com"],
+  ["google", "google.com"],
+  ["hubspot", "hubspot.com"],
+  ["instacart", "instacart.com"],
+  ["linear", "linear.app"],
+  ["meta", "meta.com"],
+  ["microsoft", "microsoft.com"],
+  ["netflix", "netflix.com"],
+  ["notion", "notion.so"],
+  ["openai", "openai.com"],
+  ["paypal", "paypal.com"],
+  ["pinterest", "pinterest.com"],
+  ["reddit", "reddit.com"],
+  ["robinhood", "robinhood.com"],
+  ["salesforce", "salesforce.com"],
+  ["shopify", "shopify.com"],
+  ["slack", "slack.com"],
+  ["snowflake", "snowflake.com"],
+  ["spotify", "spotify.com"],
+  ["square", "squareup.com"],
+  ["stripe", "stripe.com"],
+  ["tiktok", "tiktok.com"],
+  ["twilio", "twilio.com"],
+  ["uber", "uber.com"],
+  ["zoom", "zoom.us"],
+]);
+
 function parseUrl(value: string | null | undefined): URL | null {
   if (!value) return null;
   try {
@@ -120,6 +161,22 @@ export function inferCompanyDomainFromUrl(value: string | null | undefined): str
   return stripWww(url.hostname);
 }
 
+function normalizeCompanyNameKey(value: string | null | undefined) {
+  return (value ?? "")
+    .toLowerCase()
+    .replace(/&/g, " and ")
+    .replace(/\b(incorporated|inc|llc|ltd|limited|corp|corporation|company|co|plc|gmbh|ag|sa|s\.a|pvt|private)\b/g, " ")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim()
+    .replace(/\s+/g, "");
+}
+
+export function inferCompanyDomainFromCompanyName(value: string | null | undefined): string | null {
+  const key = normalizeCompanyNameKey(value);
+  if (!key) return null;
+  return KNOWN_COMPANY_DOMAINS.get(key) ?? null;
+}
+
 function logoDevPublishableKey() {
   const env = (globalThis as unknown as {
     process?: { env?: Record<string, string | undefined> };
@@ -154,10 +211,23 @@ function logoDevFallbackUrl(args: {
   companyName: string | null | undefined;
   useNameFallback: boolean;
 }) {
+  const companyDomain = args.companyDomain ?? inferCompanyDomainFromCompanyName(args.companyName);
   return (
-    logoDevImageUrl("domain", args.companyDomain) ??
+    logoDevImageUrl("domain", companyDomain) ??
     (args.useNameFallback ? logoDevImageUrl("name", args.companyName) : null)
   );
+}
+
+export function logoDevCompanyLogoUrl(args: {
+  companyDomain?: string | null | undefined;
+  companyName?: string | null | undefined;
+  useNameFallback?: boolean;
+}) {
+  return logoDevFallbackUrl({
+    companyDomain: args.companyDomain ?? null,
+    companyName: args.companyName ?? null,
+    useNameFallback: args.useNameFallback !== false,
+  });
 }
 
 function attrValue(tag: string, attr: string) {

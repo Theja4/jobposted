@@ -1,7 +1,8 @@
 import "server-only";
 
+import { getBundledProEntitlement } from "./entitlements";
 import { computeUsageStatus, type UsageStatus } from "./usage";
-import { parsePlan, type BillingPlanId, type BillingStatus } from "./plans";
+import { CURRENT_BILLING_PLAN_ID, parsePlan, type BillingPlanId, type BillingStatus } from "./plans";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type SchemaScopedClient = { from: (table: string) => any; rpc?: (fn: string, args?: Record<string, unknown>) => any };
@@ -17,6 +18,31 @@ type UsageSnapshotRow = SubscriptionRow & {
   total_submitted: number | null;
   today_submitted: number | null;
 };
+
+function activeBundledSubscription() {
+  return {
+    plan: CURRENT_BILLING_PLAN_ID,
+    status: "active" as const,
+    dailyLimit: null,
+    trialApplicationsUsed: null,
+  };
+}
+
+async function applyBundledEntitlement(
+  supabase: SchemaScopedClient,
+  userId: string,
+  status: UsageStatus,
+  counts: { totalSubmitted: number; todaySubmitted: number },
+) {
+  if (status.reason !== "subscription_inactive") return status;
+  const entitlement = await getBundledProEntitlement(supabase, userId);
+  if (!entitlement.active) return status;
+  return computeUsageStatus({
+    subscription: activeBundledSubscription(),
+    totalSubmitted: counts.totalSubmitted,
+    todaySubmitted: counts.todaySubmitted,
+  });
+}
 
 function startOfUtcDay(date = new Date()) {
   return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
@@ -61,7 +87,9 @@ export async function getUsageStatus(
     if (!error && data) {
       const row = data as UsageSnapshotRow;
       const hasSubscription = Boolean(row.plan || row.status || row.daily_limit || row.trial_applications_used);
-      return computeUsageStatus({
+      const totalSubmitted = row.total_submitted ?? 0;
+      const todaySubmitted = row.today_submitted ?? 0;
+      const status = computeUsageStatus({
         subscription: hasSubscription
           ? {
               plan: parsePlan(row.plan) as BillingPlanId | null,
@@ -70,9 +98,10 @@ export async function getUsageStatus(
               trialApplicationsUsed: row.trial_applications_used,
             }
           : null,
-        totalSubmitted: row.total_submitted ?? 0,
-        todaySubmitted: row.today_submitted ?? 0,
+        totalSubmitted,
+        todaySubmitted,
       });
+      return applyBundledEntitlement(supabase, userId, status, { totalSubmitted, todaySubmitted });
     }
   }
 
@@ -86,7 +115,7 @@ export async function getUsageStatus(
   ]);
 
   const row = (subscription ?? null) as SubscriptionRow | null;
-  return computeUsageStatus({
+  const status = computeUsageStatus({
     subscription: row
       ? {
           plan: parsePlan(row.plan) as BillingPlanId | null,
@@ -98,6 +127,7 @@ export async function getUsageStatus(
     totalSubmitted,
     todaySubmitted,
   });
+  return applyBundledEntitlement(supabase, userId, status, { totalSubmitted, todaySubmitted });
 }
 
 export function usageLimitMessage(status: UsageStatus) {

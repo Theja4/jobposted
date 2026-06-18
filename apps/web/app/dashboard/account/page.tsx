@@ -4,9 +4,9 @@ import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { SignOutButton } from "@/components/dashboard/SignOutButton";
 import { ModeToggle } from "@/components/dashboard/ModeToggle";
 import { ManageBillingButton } from "@/components/dashboard/ManageBillingButton";
-import { hasActiveSubscription } from "@/lib/billing/access";
+import { getBundledProEntitlement } from "@/lib/billing/entitlements";
 import { getApplicationMode } from "@/lib/dashboard/applications";
-import { SUPPORT_EMAIL } from "@/lib/site";
+import { REZOOMED_ACCOUNT_URL, REZOOMED_URL, SUPPORT_EMAIL } from "@/lib/site";
 import { Mail, ShieldCheck, ExternalLink, ReceiptText } from "lucide-react";
 
 export const metadata: Metadata = { title: "Account" };
@@ -23,7 +23,8 @@ export default async function AccountPage() {
   } = await supabase.auth.getUser();
 
   const provider = user?.app_metadata?.provider ?? "email";
-  const isPro = user ? await hasActiveSubscription(supabase, user.id) : false;
+  const entitlement = user ? await getBundledProEntitlement(supabase, user.id) : null;
+  const isPro = entitlement?.active ?? false;
   const mode = isPro ? await getApplicationMode() : "review";
 
   return (
@@ -103,7 +104,7 @@ export default async function AccountPage() {
           library and templates there.
         </p>
         <a
-          href="https://rezoomed.com"
+          href={REZOOMED_URL}
           target="_blank"
           rel="noreferrer"
           className="mt-4 inline-flex items-center gap-1.5 rounded-full bg-white/70 px-4 py-2 text-sm font-bold text-brand-700 ring-1 ring-inset ring-brand-200/70 transition-colors hover:bg-brand-50"
@@ -114,12 +115,30 @@ export default async function AccountPage() {
 
       <section className="liquid-glass rounded-[1.75rem] p-6 sm:p-7">
         <h2 className="text-lg font-extrabold tracking-[-0.02em] text-ink">Billing and support</h2>
-        <p className="mt-1.5 text-sm leading-6 text-muted">
-          Manage invoices, payment method, and cancellation from the Creem customer portal. For
-          refund or account questions, contact JobPosted support.
-        </p>
+        {entitlement?.source === "rezoomed" ? (
+          <p className="mt-1.5 text-sm leading-6 text-muted">
+            Your Pro access is included through Rezoomed. Manage that subscription from your
+            Rezoomed account. JobPosted billing controls only apply to JobPosted purchases.
+          </p>
+        ) : (
+          <p className="mt-1.5 text-sm leading-6 text-muted">
+            Manage invoices, payment method, and cancellation from your JobPosted billing portal.
+            For refund or account questions, contact JobPosted support.
+          </p>
+        )}
         <div className="mt-4 flex flex-wrap gap-2">
-          <ManageBillingButton supportEmail={SUPPORT_EMAIL} />
+          {entitlement?.source === "rezoomed" ? (
+            <a
+              href={REZOOMED_ACCOUNT_URL}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center gap-1.5 rounded-full bg-brand-600 px-4 py-2 text-sm font-bold text-white shadow-[0_12px_26px_rgba(31,100,224,0.22)] transition-colors hover:bg-brand-700"
+            >
+              Open Rezoomed billing <ExternalLink className="size-3.5" />
+            </a>
+          ) : (
+            <ManageBillingButton supportEmail={SUPPORT_EMAIL} />
+          )}
           <a
             href={`mailto:${SUPPORT_EMAIL}`}
             className="inline-flex items-center gap-1.5 rounded-full bg-white/70 px-4 py-2 text-sm font-bold text-brand-700 ring-1 ring-inset ring-brand-200/70 transition-colors hover:bg-brand-50"

@@ -3,6 +3,10 @@ import { NextResponse } from "next/server";
 import { getServiceRoleClient } from "@/lib/supabase/service-role";
 import { creemPlanIdForProductId } from "@/lib/billing/creem";
 import {
+  JOBPOSTED_SHARED_PROFILE_PROVIDER,
+  isRezoomedProfileProEntitled,
+} from "@/lib/billing/entitlements";
+import {
   BILLING_PLANS,
   normalizeBillingStatus,
   parsePlan,
@@ -138,6 +142,74 @@ function normalizedEvent(payload: unknown) {
   };
 }
 
+type NormalizedBillingEvent = ReturnType<typeof normalizedEvent>;
+
+async function authEmailForUser(supabase: NonNullable<ReturnType<typeof getServiceRoleClient>>, userId: string) {
+  const { data } = await supabase.auth.admin.getUserById(userId);
+  return data.user?.email ?? null;
+}
+
+async function syncSharedProfileSubscription(
+  supabase: NonNullable<ReturnType<typeof getServiceRoleClient>>,
+  event: NormalizedBillingEvent,
+) {
+  const publicProfiles = supabase.schema("public").from("profiles");
+  const { data: existing, error: readError } = await publicProfiles
+    .select("id,email,plan,subscription_status,current_period_end,payment_provider")
+    .eq("id", event.userId)
+    .maybeSingle();
+
+  if (readError) return readError;
+
+  const existingProfile = (existing ?? null) as {
+    id?: string | null;
+    email?: string | null;
+    plan?: string | null;
+    subscription_status?: string | null;
+    current_period_end?: string | null;
+    payment_provider?: string | null;
+  } | null;
+  const eventIsActive = normalizeBillingStatus(event.status) === "active";
+
+  if (eventIsActive) {
+    if (
+      isRezoomedProfileProEntitled(existingProfile) &&
+      existingProfile?.payment_provider !== JOBPOSTED_SHARED_PROFILE_PROVIDER
+    ) {
+      return null;
+    }
+
+    const payload: Record<string, unknown> = {
+      id: event.userId,
+      plan: "pro",
+      subscription_status: event.status,
+      payment_provider: JOBPOSTED_SHARED_PROFILE_PROVIDER,
+      current_period_end: event.currentPeriodEnd,
+    };
+
+    if (!existingProfile?.id) {
+      payload.email = await authEmailForUser(supabase, event.userId);
+    }
+
+    const { error } = await publicProfiles.upsert(payload, { onConflict: "id" });
+    return error ?? null;
+  }
+
+  if (existingProfile?.payment_provider !== JOBPOSTED_SHARED_PROFILE_PROVIDER) {
+    return null;
+  }
+
+  const { error } = await publicProfiles
+    .update({
+      plan: "free",
+      subscription_status: event.status,
+      payment_provider: null,
+      current_period_end: event.currentPeriodEnd,
+    })
+    .eq("id", event.userId);
+  return error ?? null;
+}
+
 export async function POST(request: Request) {
   const rawBody = await request.text();
   const signature =
@@ -191,6 +263,12 @@ export async function POST(request: Request) {
   if (error) {
     console.error("billing webhook upsert failed", error);
     return NextResponse.json({ ok: false, error: "webhook_save_failed" }, { status: 500 });
+  }
+
+  const sharedProfileError = await syncSharedProfileSubscription(supabase, event);
+  if (sharedProfileError) {
+    console.error("shared billing profile sync failed", sharedProfileError);
+    return NextResponse.json({ ok: false, error: "shared_profile_sync_failed" }, { status: 500 });
   }
 
   return NextResponse.json({ ok: true });

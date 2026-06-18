@@ -87,7 +87,7 @@ export function OpportunityUnlock() {
   ];
 
   return (
-    <section ref={sectionRef} className="px-3 py-10 sm:px-5 sm:py-14">
+    <section id="features" ref={sectionRef} className="scroll-mt-24 px-3 py-10 sm:px-5 sm:py-14">
       <div className="relative overflow-hidden rounded-[2.5rem] bg-[#070c17] px-5 py-16 text-white shadow-[0_36px_90px_rgba(4,10,28,0.45)] sm:px-10 sm:py-24">
         <span
           aria-hidden

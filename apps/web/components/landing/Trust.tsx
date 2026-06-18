@@ -1,12 +1,12 @@
 "use client";
 
 import { motion, useReducedMotion } from "framer-motion";
-import { Ban, PauseCircle, type LucideIcon } from "lucide-react";
+import { Ban, CircleCheck, type LucideIcon } from "lucide-react";
 import { Reveal } from "@/components/ui/Reveal";
 
 const FACTS = [
   { icon: Ban, label: "Never spray and pray, always tailored" },
-  { icon: PauseCircle, label: "Powered by Rezoomed" },
+  { icon: CircleCheck, label: "Powered by Rezoomed" },
 ] as const;
 
 /** One shared loop so every element of the pipeline stays in sync. */

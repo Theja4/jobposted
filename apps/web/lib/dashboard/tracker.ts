@@ -1,5 +1,6 @@
 import "server-only";
 
+import { inferCompanyDomainFromCompanyName, logoDevCompanyLogoUrl } from "@jobposted/shared";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { reportError } from "@/lib/observability/report";
 import {
@@ -225,6 +226,11 @@ export function mapTrackerApplicationRow(row: TrackerApplicationRow): TrackerIte
   const fieldResumeName = asString(fieldMap.resumeName);
   const role = ((manualEditable && fieldRole) || job?.title || fieldRole) || "Unknown role";
   const company = ((manualEditable && fieldCompany) || job?.company || fieldCompany) || "Unknown company";
+  const companyDomain =
+    (job?.company_domain ?? fieldCompanyDomain) || inferCompanyDomainFromCompanyName(company);
+  const companyLogoUrl =
+    (job?.company_logo_url ?? fieldCompanyLogoUrl) ||
+    logoDevCompanyLogoUrl({ companyDomain, companyName: company });
   const location = ((manualEditable && fieldLocation) || job?.location || fieldLocation) || "Remote or unknown";
   const resumePath = asString(fieldMap.resumeUsed) || row.rendered_pdf_path || "";
   const counts = countFilled(row.field_map);
@@ -235,8 +241,8 @@ export function mapTrackerApplicationRow(row: TrackerApplicationRow): TrackerIte
     jobId: job?.id ?? null,
     role,
     company,
-    companyDomain: (job?.company_domain ?? fieldCompanyDomain) || null,
-    companyLogoUrl: (job?.company_logo_url ?? fieldCompanyLogoUrl) || null,
+    companyDomain,
+    companyLogoUrl,
     location,
     stage: trackerStageForStatus(row.status),
     status: row.status ?? "applied",

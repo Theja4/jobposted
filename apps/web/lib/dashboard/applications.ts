@@ -1,6 +1,7 @@
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { sanitizeOnboardingConfig } from "@/lib/onboarding/model";
 import { reportError } from "@/lib/observability/report";
+import { inferCompanyDomainFromCompanyName, logoDevCompanyLogoUrl } from "@jobposted/shared";
 import { type JobApplication } from "./sample-data";
 
 type ApplicationRow = {
@@ -160,8 +161,12 @@ function mapRow(row: ApplicationRow): JobApplication {
   const resumeUsed = asString(fieldMap.resumeUsed) || row.rendered_pdf_path || "#";
   const resumeDisplayName = asString(fieldMap.resumeName);
   const company = (row.jobs?.company ?? row.job_company ?? asString(fieldMap.company)) || "Unknown company";
-  const companyDomain = (row.jobs?.company_domain ?? row.job_company_domain ?? asString(fieldMap.companyDomain)) || null;
-  const companyLogoUrl = (row.jobs?.company_logo_url ?? row.job_company_logo_url ?? asString(fieldMap.companyLogoUrl)) || null;
+  const companyDomain =
+    (row.jobs?.company_domain ?? row.job_company_domain ?? asString(fieldMap.companyDomain)) ||
+    inferCompanyDomainFromCompanyName(company);
+  const companyLogoUrl =
+    (row.jobs?.company_logo_url ?? row.job_company_logo_url ?? asString(fieldMap.companyLogoUrl)) ||
+    logoDevCompanyLogoUrl({ companyDomain, companyName: company });
   const role = (row.jobs?.title ?? row.job_title ?? asString(fieldMap.role)) || "Unknown role";
   const location = (row.jobs?.location ?? row.job_location ?? asString(fieldMap.location)) || "Remote or unknown";
   return {

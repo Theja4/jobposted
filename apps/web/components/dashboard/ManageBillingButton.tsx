@@ -13,8 +13,12 @@ export function ManageBillingButton({ supportEmail }: { supportEmail: string }) 
 
     try {
       const response = await fetch("/api/billing/portal", { method: "POST" });
-      const payload = (await response.json().catch(() => null)) as { url?: string; message?: string } | null;
-      if (response.ok && payload?.url) {
+      const payload = (await response.json().catch(() => null)) as {
+        error?: string;
+        url?: string;
+        message?: string;
+      } | null;
+      if ((response.ok || payload?.error === "managed_by_rezoomed") && payload?.url) {
         window.location.assign(payload.url);
         return;
       }

@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import {
   BriefcaseBusiness,
   Clock3,
+  Crown,
   LayoutDashboard,
   ListChecks,
   Settings2,
@@ -25,7 +26,11 @@ const NAV_LINKS = [
   { href: "/dashboard/account", label: "Account", exact: false, icon: UserCircle2 },
 ] as const;
 
-export function DashboardNav() {
+type DashboardNavProps = {
+  hasActivePlan: boolean;
+};
+
+export function DashboardNav({ hasActivePlan }: DashboardNavProps) {
   const pathname = usePathname();
 
   return (
@@ -64,7 +69,17 @@ export function DashboardNav() {
           </div>
         </div>
 
-        <SignOutButton className="h-11 shrink-0 rounded-lg px-2.5 text-xs text-coral shadow-[0_10px_20px_-17px_rgba(255,102,94,0.42),0_2px_8px_-7px_rgba(15,23,42,0.12)] transition-[background-color,color,box-shadow] hover:bg-coral/10 hover:text-coral hover:shadow-[0_14px_26px_-19px_rgba(255,102,94,0.5)] max-[720px]:hidden" />
+        {hasActivePlan ? (
+          <SignOutButton className="h-11 shrink-0 rounded-lg px-2.5 text-xs text-coral shadow-[0_10px_20px_-17px_rgba(255,102,94,0.42),0_2px_8px_-7px_rgba(15,23,42,0.12)] transition-[background-color,color,box-shadow] hover:bg-coral/10 hover:text-coral hover:shadow-[0_14px_26px_-19px_rgba(255,102,94,0.5)] max-[720px]:hidden" />
+        ) : (
+          <Link
+            href="/pricing"
+            className="inline-flex h-11 shrink-0 items-center justify-center gap-2 rounded-lg bg-brand-600 px-3.5 text-xs font-extrabold text-white shadow-[0_14px_26px_-18px_rgba(31,100,224,0.7),0_3px_10px_-8px_rgba(15,23,42,0.18)] transition-[background-color,box-shadow,transform] duration-150 hover:-translate-y-0.5 hover:bg-brand-700 hover:shadow-[0_18px_32px_-20px_rgba(31,100,224,0.78)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 max-[720px]:hidden"
+          >
+            <Crown className="size-4" aria-hidden="true" />
+            Upgrade
+          </Link>
+        )}
       </nav>
     </header>
   );

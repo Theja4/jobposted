@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
+import { getBundledProEntitlement } from "@/lib/billing/entitlements";
 import { creemApiBase, readCreemUrl } from "@/lib/billing/creem";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { REZOOMED_ACCOUNT_URL } from "@/lib/site";
 
 export const runtime = "nodejs";
 
@@ -26,9 +28,22 @@ export async function POST() {
     return NextResponse.json({ ok: false, error: "unauthorized" }, { status: 401 });
   }
 
+  const entitlement = await getBundledProEntitlement(supabase, user.id);
+  if (entitlement.source === "rezoomed") {
+    return NextResponse.json(
+      {
+        ok: false,
+        error: "managed_by_rezoomed",
+        message: "This Pro subscription is managed in Rezoomed.",
+        url: REZOOMED_ACCOUNT_URL,
+      },
+      { status: 409 },
+    );
+  }
+
   const { data: subscription, error } = await supabase
     .from("subscriptions")
-    .select("provider_customer_id")
+    .select("provider,provider_customer_id")
     .eq("user_id", user.id)
     .maybeSingle();
 
@@ -38,6 +53,18 @@ export async function POST() {
 
   const customerId =
     typeof subscription?.provider_customer_id === "string" ? subscription.provider_customer_id.trim() : "";
+  const provider = typeof subscription?.provider === "string" ? subscription.provider.trim().toLowerCase() : "creem";
+
+  if (provider && provider !== "creem") {
+    return NextResponse.json(
+      {
+        ok: false,
+        error: "provider_portal_unavailable",
+        message: `This JobPosted subscription is managed through ${provider}. Email support if you need help with billing.`,
+      },
+      { status: 501 },
+    );
+  }
 
   if (!customerId) {
     return NextResponse.json(

@@ -1,7 +1,13 @@
 import { createClient } from "@supabase/supabase-js";
 import type { MasterProfile, MasterProfileEducation, MasterProfileExperience, ReusableAnswer } from "./field-resolver.js";
 import type { ApplicantProfile, ApplyJob, ResumeArtifact } from "./types.js";
-import { computeUsageStatus, parsePlan, type BillingStatus, type UsageStatus } from "./usage.js";
+import {
+  CURRENT_BILLING_PLAN_ID,
+  computeUsageStatus,
+  parsePlan,
+  type BillingStatus,
+  type UsageStatus,
+} from "./usage.js";
 
 /** Data access the runner needs. Interface so the orchestrator can be unit-tested with a fake. */
 export interface RunnerDb {
@@ -21,7 +27,12 @@ export interface RunnerDb {
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export type ServiceClient = { from: (t: string) => any; rpc: (fn: string, args?: Record<string, unknown>) => any; storage: any };
+export type ServiceClient = {
+  from: (t: string) => any;
+  rpc: (fn: string, args?: Record<string, unknown>) => any;
+  schema?: (schema: string) => ServiceClient;
+  storage: any;
+};
 type Client = ServiceClient;
 
 function startOfUtcDay(date: Date) {
@@ -40,6 +51,55 @@ function asRecord(value: unknown): Record<string, unknown> {
 
 function str(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
+}
+
+function periodStillOpen(value: unknown) {
+  const periodEnd = str(value);
+  if (!periodEnd) return true;
+  const time = Date.parse(periodEnd);
+  return Number.isNaN(time) || time > Date.now();
+}
+
+function rezoomedProfileIsPro(row: Record<string, unknown>) {
+  const plan = str(row.plan).toLowerCase();
+  const status = str(row.subscription_status).toLowerCase();
+  if (plan !== "pro") return false;
+  if (status === "active" || status === "paid" || status === "completed") return true;
+  if (status === "manual_grant") return true;
+  if (status === "comp_grace_30d") return periodStillOpen(row.current_period_end);
+  return false;
+}
+
+async function hasRezoomedProEntitlement(client: Client, userId: string) {
+  const publicClient = typeof client.schema === "function" ? client.schema("public") : null;
+  if (!publicClient) return false;
+  const { data, error } = await publicClient
+    .from("profiles")
+    .select("plan,subscription_status,current_period_end")
+    .eq("id", userId)
+    .maybeSingle();
+  if (error || !data) return false;
+  return rezoomedProfileIsPro(asRecord(data));
+}
+
+async function applyBundledEntitlement(
+  client: Client,
+  userId: string,
+  status: UsageStatus,
+  counts: { totalSubmitted: number; todaySubmitted: number },
+) {
+  if (status.reason !== "subscription_inactive") return status;
+  if (!(await hasRezoomedProEntitlement(client, userId))) return status;
+  return computeUsageStatus({
+    subscription: {
+      plan: CURRENT_BILLING_PLAN_ID,
+      status: "active",
+      dailyLimit: null,
+      trialApplicationsUsed: null,
+    },
+    totalSubmitted: counts.totalSubmitted,
+    todaySubmitted: counts.todaySubmitted,
+  });
 }
 
 function splitName(full: string): { first: string; last: string } {
@@ -162,7 +222,9 @@ export function createRunnerDb(client: Client): RunnerDb {
       if (!error && data) {
         const row = asRecord(data);
         const hasSubscription = Boolean(row.plan || row.status || row.daily_limit || row.trial_applications_used);
-        return computeUsageStatus({
+        const totalSubmitted = typeof row.total_submitted === "number" ? row.total_submitted : 0;
+        const todaySubmitted = typeof row.today_submitted === "number" ? row.today_submitted : 0;
+        const status = computeUsageStatus({
           subscription: hasSubscription
             ? {
                 plan: parsePlan(row.plan),
@@ -172,9 +234,10 @@ export function createRunnerDb(client: Client): RunnerDb {
                   typeof row.trial_applications_used === "number" ? row.trial_applications_used : null,
               }
             : null,
-          totalSubmitted: typeof row.total_submitted === "number" ? row.total_submitted : 0,
-          todaySubmitted: typeof row.today_submitted === "number" ? row.today_submitted : 0,
+          totalSubmitted,
+          todaySubmitted,
         });
+        return applyBundledEntitlement(client, userId, status, { totalSubmitted, todaySubmitted });
       }
 
       const [{ data: subscription }, totalSubmitted, todaySubmitted] = await Promise.all([
@@ -187,7 +250,7 @@ export function createRunnerDb(client: Client): RunnerDb {
       ]);
       const row = asRecord(subscription);
       const hasSubscription = Boolean(subscription);
-      return computeUsageStatus({
+      const status = computeUsageStatus({
         subscription: hasSubscription
           ? {
               plan: parsePlan(row.plan),
@@ -200,6 +263,7 @@ export function createRunnerDb(client: Client): RunnerDb {
         totalSubmitted,
         todaySubmitted,
       });
+      return applyBundledEntitlement(client, userId, status, { totalSubmitted, todaySubmitted });
     },
 
     async loadApplicant(userId, baseVersionId) {

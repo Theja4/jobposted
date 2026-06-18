@@ -1,6 +1,13 @@
 import "server-only";
 
-import { inferJobType, inferSeniority, type NormalizedJobType, type NormalizedSeniority } from "@jobposted/shared";
+import {
+  inferCompanyDomainFromCompanyName,
+  inferJobType,
+  inferSeniority,
+  logoDevCompanyLogoUrl,
+  type NormalizedJobType,
+  type NormalizedSeniority,
+} from "@jobposted/shared";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { reportError } from "@/lib/observability/report";
 import {
@@ -76,6 +83,7 @@ export type JobBoardListingPage = {
 const DEFAULT_PAGE_SIZE = 10;
 const MAX_PAGE_SIZE = 24;
 const LEGACY_CLIENT_FILTER_LIMIT = 2_000;
+const LOCAL_CAPTURE_SOURCES = new Set(["manual", "extension", "job_board"]);
 const OPTIONAL_JOB_BOARD_COLUMNS = [
   "job_type",
   "seniority",
@@ -256,6 +264,15 @@ function parseSort(value: unknown): JobBoardSort {
   return "recent";
 }
 
+function isJobBoardSource(source: string | null | undefined) {
+  const normalized = (source ?? "").trim().toLowerCase();
+  return !normalized || !LOCAL_CAPTURE_SOURCES.has(normalized);
+}
+
+function isJobBoardRow(row: Pick<JobRow, "source">) {
+  return isJobBoardSource(row.source);
+}
+
 export function parseJobBoardFilters(params: Record<string, unknown> = {}): JobBoardFilters {
   return {
     query: cleanQuery(params.q),
@@ -363,6 +380,9 @@ async function userIdForTrackedExclusion(
 function mapJobRow(row: JobRow): JobListing {
   const title = cleanText(row.title) || "Open role";
   const company = cleanText(row.company) || "Unknown company";
+  const companyDomain = row.company_domain ?? inferCompanyDomainFromCompanyName(company);
+  const companyLogoUrl =
+    row.company_logo_url ?? logoDevCompanyLogoUrl({ companyDomain, companyName: company });
   const description =
     cleanText(row.description_md).slice(0, 900) ||
     `${company} is hiring for ${title}. JobPosted will tailor your resume before you apply.`;
@@ -371,8 +391,8 @@ function mapJobRow(row: JobRow): JobListing {
     id: row.id,
     title,
     company,
-    companyDomain: row.company_domain ?? null,
-    companyLogoUrl: row.company_logo_url ?? null,
+    companyDomain,
+    companyLogoUrl,
     location: cleanText(row.location) || "Remote or unknown",
     workplace: workplaceFrom(row.remote),
     type: typeFrom(row),
@@ -460,7 +480,8 @@ async function fetchJobRows(
     .from("jobs")
     .select(select, { count: "exact" })
     .is("closed_at", null)
-    .not("apply_url", "is", null);
+    .not("apply_url", "is", null)
+    .or("source.is.null,source.not.in.(manual,extension,job_board)");
 
   if (filters.query) {
     const like = ilikeValue(filters.query);
@@ -528,7 +549,7 @@ async function fetchJobRows(
 
   const { data, error, count } = await query.range(from, to);
   return {
-    rows: Array.isArray(data) ? (data as unknown as JobRow[]) : [],
+    rows: Array.isArray(data) ? (data as unknown as JobRow[]).filter(isJobBoardRow) : [],
     error,
     count,
   };
@@ -560,7 +581,7 @@ async function fetchJobRowsRpc(
     p_offset: from,
   };
   const { data, error } = await supabase.rpc("job_board_listings_page", args);
-  const rows = Array.isArray(data) ? (data as unknown as JobBoardRpcRow[]) : [];
+  const rows = Array.isArray(data) ? (data as unknown as JobBoardRpcRow[]).filter(isJobBoardRow) : [];
   if (!error && rows.length === 0 && from > 0) {
     const { data: countProbe } = await supabase.rpc("job_board_listings_page", {
       ...args,
@@ -642,7 +663,8 @@ export async function getJobBoardListings(
 
   const total = count ?? 0;
   const totalPages = Math.max(1, Math.ceil(total / filters.pageSize));
-  const hydratedRows = await hydrateRowsWithKnownCompanyAssets(supabase, rows);
+  const visibleRows = rows.filter(isJobBoardRow);
+  const hydratedRows = await hydrateRowsWithKnownCompanyAssets(supabase, visibleRows);
   const listings = hydratedRows.filter((row) => row.id && (row.title || row.company)).map(mapJobRow);
 
   return {
