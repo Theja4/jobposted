@@ -29,9 +29,15 @@ NEXT_PUBLIC_SUPABASE_URL=
 NEXT_PUBLIC_SUPABASE_ANON_KEY=
 SUPABASE_SERVICE_ROLE_KEY=
 WORKER_CRON_SECRET=
+CRON_SECRET=
 INGEST_CRON_SECRET=
 INGEST_BOARDS_FILE=
+INGEST_BOARDS_JSON=
 ```
+
+Vercel Cron sends `Authorization: Bearer $CRON_SECRET` automatically when `CRON_SECRET` is set.
+Use `INGEST_BOARDS_JSON` on Vercel when possible; file paths such as `INGEST_BOARDS_FILE` are
+better suited to local runs or a persistent worker filesystem.
 
 Vercel plan check:
 

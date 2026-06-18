@@ -10,7 +10,13 @@ import {
   type FormQuestionType,
   type RawJob,
 } from "@jobposted/shared";
-import { fetchJson, humanizeSlug, mapLimit } from "../util";
+import {
+  companyDomainFromHints,
+  companyNameFromSlug,
+  fetchJson,
+  mapLimit,
+  type CompanyHints,
+} from "../util";
 
 const BASE = "https://boards-api.greenhouse.io/v1/boards";
 
@@ -80,12 +86,13 @@ function mapQuestions(questions: GhQuestion[] | undefined): FormQuestion[] {
   });
 }
 
-function toRawJob(boardToken: string, job: GhJobDetail): RawJob {
+function toRawJob(boardToken: string, job: GhJobDetail, hints: CompanyHints = {}): RawJob {
   return {
     source: "greenhouse",
     sourceJobId: String(job.id),
     atsType: "greenhouse",
-    company: humanizeSlug(boardToken),
+    company: companyNameFromSlug(boardToken, hints),
+    companyDomain: companyDomainFromHints(hints),
     title: job.title,
     location: job.location?.name ?? null,
     remoteRaw: job.location?.name ?? null,
@@ -106,14 +113,14 @@ function toRawJob(boardToken: string, job: GhJobDetail): RawJob {
  */
 export async function fetchGreenhouseBoard(
   boardToken: string,
-  opts: { withQuestions?: boolean; questionsLimit?: number } = {},
+  opts: { withQuestions?: boolean; questionsLimit?: number } & CompanyHints = {},
 ): Promise<RawJob[]> {
   const list = await fetchJson<GhListResponse>(
     `${BASE}/${encodeURIComponent(boardToken)}/jobs?content=true`,
   );
   const jobs = list.jobs ?? [];
 
-  if (!opts.withQuestions) return jobs.map((j) => toRawJob(boardToken, j));
+  if (!opts.withQuestions) return jobs.map((j) => toRawJob(boardToken, j, opts));
 
   const targets = opts.questionsLimit ? jobs.slice(0, opts.questionsLimit) : jobs;
   const detailed = await mapLimit(targets, 4, async (job) => {
@@ -121,13 +128,13 @@ export async function fetchGreenhouseBoard(
       const detail = await fetchJson<GhJobDetail>(
         `${BASE}/${encodeURIComponent(boardToken)}/jobs/${job.id}?questions=true`,
       );
-      return toRawJob(boardToken, detail);
+      return toRawJob(boardToken, detail, opts);
     } catch {
-      return toRawJob(boardToken, job); // fall back to the list row if questions fail
+      return toRawJob(boardToken, job, opts); // fall back to the list row if questions fail
     }
   });
 
   // Any jobs beyond the questions cap still get ingested (without questions).
-  const rest = jobs.slice(targets.length).map((j) => toRawJob(boardToken, j));
+  const rest = jobs.slice(targets.length).map((j) => toRawJob(boardToken, j, opts));
   return [...detailed, ...rest];
 }

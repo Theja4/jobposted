@@ -11,6 +11,9 @@ import { dedupeJobs, normalizeJob, type Job, type RawJob } from "@jobposted/shar
 import { fetchAshbyBoard } from "./sources/ashby";
 import { fetchGreenhouseBoard } from "./sources/greenhouse";
 import { fetchLeverCompany } from "./sources/lever";
+import { fetchSmartRecruitersCompany } from "./sources/smartrecruiters";
+import { fetchTeamtailorCompany } from "./sources/teamtailor";
+import { fetchWorkableAccount } from "./sources/workable";
 import { embedJobs } from "./embed";
 import { upsertJobs } from "./upsert";
 import { runBackfill, type BackfillSummary } from "./backfill";
@@ -20,8 +23,10 @@ import {
 } from "./company-assets-backfill";
 import { enrichRawJobsWithCompanyAssets } from "./company-assets";
 import { purgeOldUnreferencedJobs, type JobRetentionSummary } from "./job-retention";
-import { countBoards, loadBoardConfig, type BoardConfig } from "./config";
+import { countBoards, loadBoardConfig, targetsFor, type BoardConfig } from "./config";
 import { mapLimit } from "./util";
+
+export { countBoards, loadBoardConfig } from "./config";
 
 export interface IngestSummary {
   boards: number;
@@ -44,36 +49,83 @@ export async function runIngest(
 ): Promise<IngestSummary> {
   const raw: RawJob[] = [];
 
-  await mapLimit(config.greenhouse, 3, async (token) => {
+  await mapLimit(targetsFor(config, "greenhouse"), 3, async (target) => {
     try {
-      const jobs = await fetchGreenhouseBoard(token, {
+      const jobs = await fetchGreenhouseBoard(target.slug, {
         withQuestions: opts.withQuestions,
         questionsLimit: 25,
+        companyName: target.companyName,
+        companyDomain: target.companyDomain,
       });
       raw.push(...jobs);
-      console.info(`[greenhouse] ${token}: ${jobs.length} jobs`);
+      console.info(`[greenhouse] ${target.slug}: ${jobs.length} jobs`);
     } catch (err) {
-      console.error(`[greenhouse] ${token} failed:`, (err as Error).message);
+      console.error(`[greenhouse] ${target.slug} failed:`, (err as Error).message);
     }
   });
 
-  await mapLimit(config.lever, 3, async (slug) => {
+  await mapLimit(targetsFor(config, "lever"), 3, async (target) => {
     try {
-      const jobs = await fetchLeverCompany(slug);
+      const jobs = await fetchLeverCompany(target.slug, {
+        companyName: target.companyName,
+        companyDomain: target.companyDomain,
+      });
       raw.push(...jobs);
-      console.info(`[lever] ${slug}: ${jobs.length} jobs`);
+      console.info(`[lever] ${target.slug}: ${jobs.length} jobs`);
     } catch (err) {
-      console.error(`[lever] ${slug} failed:`, (err as Error).message);
+      console.error(`[lever] ${target.slug} failed:`, (err as Error).message);
     }
   });
 
-  await mapLimit(config.ashby, 3, async (org) => {
+  await mapLimit(targetsFor(config, "ashby"), 3, async (target) => {
     try {
-      const jobs = await fetchAshbyBoard(org);
+      const jobs = await fetchAshbyBoard(target.slug, {
+        companyName: target.companyName,
+        companyDomain: target.companyDomain,
+      });
       raw.push(...jobs);
-      console.info(`[ashby] ${org}: ${jobs.length} jobs`);
+      console.info(`[ashby] ${target.slug}: ${jobs.length} jobs`);
     } catch (err) {
-      console.error(`[ashby] ${org} failed:`, (err as Error).message);
+      console.error(`[ashby] ${target.slug} failed:`, (err as Error).message);
+    }
+  });
+
+  await mapLimit(targetsFor(config, "smartrecruiters"), 3, async (target) => {
+    try {
+      const jobs = await fetchSmartRecruitersCompany(target.slug, {
+        companyName: target.companyName,
+        companyDomain: target.companyDomain,
+      });
+      raw.push(...jobs);
+      console.info(`[smartrecruiters] ${target.slug}: ${jobs.length} jobs`);
+    } catch (err) {
+      console.error(`[smartrecruiters] ${target.slug} failed:`, (err as Error).message);
+    }
+  });
+
+  await mapLimit(targetsFor(config, "workable"), 3, async (target) => {
+    try {
+      const jobs = await fetchWorkableAccount(target.slug, {
+        companyName: target.companyName,
+        companyDomain: target.companyDomain,
+      });
+      raw.push(...jobs);
+      console.info(`[workable] ${target.slug}: ${jobs.length} jobs`);
+    } catch (err) {
+      console.error(`[workable] ${target.slug} failed:`, (err as Error).message);
+    }
+  });
+
+  await mapLimit(targetsFor(config, "teamtailor"), 3, async (target) => {
+    try {
+      const jobs = await fetchTeamtailorCompany(target.slug, {
+        companyName: target.companyName,
+        companyDomain: target.companyDomain,
+      });
+      raw.push(...jobs);
+      console.info(`[teamtailor] ${target.slug}: ${jobs.length} jobs`);
+    } catch (err) {
+      console.error(`[teamtailor] ${target.slug} failed:`, (err as Error).message);
     }
   });
 
@@ -137,10 +189,20 @@ export async function runIngestMaintenance(): Promise<IngestMaintenanceSummary> 
 /** Web-standard handler for wiring into Vercel Cron (returns the run summary as JSON). */
 export async function cronHandler(): Promise<Response> {
   const config = await loadBoardConfig();
+  if (countBoards(config) === 0) {
+    return new Response(
+      JSON.stringify({
+        ok: false,
+        error: "no_boards_configured",
+        message: "Set INGEST_BOARDS_JSON or INGEST_BOARDS_FILE before running ingest.",
+      }),
+      { status: 500, headers: { "content-type": "application/json" } },
+    );
+  }
   const summary = await runIngest(config, { withQuestions: process.env.INGEST_QUESTIONS === "1" });
   const maintenance = await runIngestMaintenance();
 
-  return new Response(JSON.stringify({ ...summary, ...maintenance }), {
+  return new Response(JSON.stringify({ ok: true, ...summary, ...maintenance }), {
     headers: { "content-type": "application/json" },
   });
 }

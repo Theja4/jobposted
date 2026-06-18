@@ -8,7 +8,12 @@
 
 import { createHash } from "node:crypto";
 import type { RawJob, SalaryRange } from "@jobposted/shared";
-import { fetchJson, humanizeSlug } from "../util";
+import {
+  companyDomainFromHints,
+  companyNameFromSlug,
+  fetchJson,
+  type CompanyHints,
+} from "../util";
 
 const BASE = "https://api.ashbyhq.com/posting-api/job-board";
 
@@ -99,13 +104,14 @@ function salary(job: AshbyJob): SalaryRange | null {
   };
 }
 
-function toRawJob(org: string, job: AshbyJob): RawJob {
+function toRawJob(org: string, job: AshbyJob, hints: CompanyHints = {}): RawJob {
   const applyUrl = job.applyUrl || job.jobUrl || "";
   return {
     source: "ashby",
     sourceJobId: stableId(org, job),
     atsType: "ashby",
-    company: humanizeSlug(org),
+    company: companyNameFromSlug(org, hints),
+    companyDomain: companyDomainFromHints(hints),
     title: job.title ?? "Untitled role",
     location: locationText(job),
     remoteRaw: remoteSignal(job),
@@ -119,11 +125,14 @@ function toRawJob(org: string, job: AshbyJob): RawJob {
 }
 
 /** Fetch all listed public postings for an Ashby organization slug. */
-export async function fetchAshbyBoard(organization: string): Promise<RawJob[]> {
+export async function fetchAshbyBoard(
+  organization: string,
+  hints: CompanyHints = {},
+): Promise<RawJob[]> {
   const response = await fetchJson<AshbyBoardResponse>(
     `${BASE}/${encodeURIComponent(organization)}`,
   );
   return (response.jobs ?? [])
     .filter((job) => job.title && job.isListed !== false && (job.applyUrl || job.jobUrl))
-    .map((job) => toRawJob(organization, job));
+    .map((job) => toRawJob(organization, job, hints));
 }

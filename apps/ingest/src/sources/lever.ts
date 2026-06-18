@@ -8,7 +8,12 @@
  */
 
 import type { RawJob, SalaryRange } from "@jobposted/shared";
-import { fetchJson, humanizeSlug } from "../util";
+import {
+  companyDomainFromHints,
+  companyNameFromSlug,
+  fetchJson,
+  type CompanyHints,
+} from "../util";
 
 const BASE = "https://api.lever.co/v0/postings";
 
@@ -34,12 +39,13 @@ function toSalary(range: LeverPosting["salaryRange"]): SalaryRange | null {
   };
 }
 
-function toRawJob(company: string, p: LeverPosting): RawJob {
+function toRawJob(company: string, p: LeverPosting, hints: CompanyHints = {}): RawJob {
   return {
     source: "lever",
     sourceJobId: p.id,
     atsType: "lever",
-    company: humanizeSlug(company),
+    company: companyNameFromSlug(company, hints),
+    companyDomain: companyDomainFromHints(hints),
     title: p.text,
     location: p.categories?.location ?? null,
     remoteRaw: p.workplaceType ?? p.categories?.location ?? null,
@@ -53,9 +59,12 @@ function toRawJob(company: string, p: LeverPosting): RawJob {
 }
 
 /** Fetch all public postings for a Lever company slug. */
-export async function fetchLeverCompany(company: string): Promise<RawJob[]> {
+export async function fetchLeverCompany(
+  company: string,
+  hints: CompanyHints = {},
+): Promise<RawJob[]> {
   const postings = await fetchJson<LeverPosting[]>(
     `${BASE}/${encodeURIComponent(company)}?mode=json`,
   );
-  return (postings ?? []).filter((p) => p.id && p.text).map((p) => toRawJob(company, p));
+  return (postings ?? []).filter((p) => p.id && p.text).map((p) => toRawJob(company, p, hints));
 }

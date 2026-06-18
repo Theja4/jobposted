@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { countBoards, loadBoardConfig } from "@jobposted/ingest";
 import { gatewayConfigured } from "@/lib/ai/gateway";
 import { hasTenureCreemProduct } from "@/lib/billing/creem";
 import { getServiceRoleClient } from "@/lib/supabase/service-role";
@@ -12,8 +13,18 @@ async function databaseStatus() {
   return error ? ("unavailable" as const) : ("ok" as const);
 }
 
+async function ingestBoardStatus() {
+  try {
+    const config = await loadBoardConfig();
+    return countBoards(config);
+  } catch {
+    return -1;
+  }
+}
+
 export async function GET() {
   const production = process.env.NODE_ENV === "production";
+  const ingestBoardCount = await ingestBoardStatus();
   const checks = {
     environment: process.env.NODE_ENV ?? "unknown",
     siteUrl: Boolean(process.env.NEXT_PUBLIC_SITE_URL),
@@ -21,7 +32,10 @@ export async function GET() {
     supabaseAnonKey: Boolean(process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY),
     serviceRole: Boolean(process.env.SUPABASE_SERVICE_ROLE_KEY),
     workerCronProtected: Boolean(process.env.WORKER_CRON_SECRET),
+    vercelCronSecret: Boolean(process.env.CRON_SECRET),
     ingestCronProtected: Boolean(process.env.CRON_SECRET || process.env.INGEST_CRON_SECRET || process.env.WORKER_CRON_SECRET),
+    ingestBoardsConfigured: ingestBoardCount > 0,
+    ingestBoardCount,
     billingWebhookSecret: Boolean(process.env.BILLING_WEBHOOK_SECRET || process.env.CREEM_WEBHOOK_SECRET),
     creemApiKey: Boolean(process.env.CREEM_API_KEY),
     creemMonthlyProduct: hasTenureCreemProduct("monthly"),
@@ -37,6 +51,7 @@ export async function GET() {
     checks.serviceRole &&
     checks.workerCronProtected &&
     checks.ingestCronProtected &&
+    checks.ingestBoardsConfigured &&
     checks.database === "ok";
   const productionOk =
     ok &&

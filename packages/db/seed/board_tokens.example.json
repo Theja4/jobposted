@@ -1,6 +1,43 @@
 {
-  "_comment": "Seed list of public ATS boards to ingest. Greenhouse uses a board token (boards.greenhouse.io/<token>); Lever uses jobs.lever.co/<company>; Ashby uses api.ashbyhq.com/posting-api/job-board/<organization>. These feeds are public and need no API key. Grow this list from companies you care about and from titles you ingest via aggregators. Copy to board_tokens.json (gitignored) before running ingest at scale.",
+  "_comment": "Seed list of public ATS boards to ingest. Direct arrays are supported for quick setup. The companies registry is preferred for curated India/global companies because it preserves the display name, domain, and country focus. These feeds are public and need no API key. Copy to board_tokens.json (gitignored) before running ingest at scale.",
   "greenhouse": ["stripe", "airbnb", "figma", "databricks", "discord"],
   "lever": ["netflix", "spotify", "plaid", "ramp"],
-  "ashby": ["ashby", "linear", "cursor"]
+  "ashby": ["ashby", "linear", "cursor"],
+  "smartrecruiters": ["SmartRecruiters"],
+  "workable": ["epignosis"],
+  "teamtailor": ["unleash"],
+  "companies": [
+    {
+      "name": "Razorpay",
+      "domain": "razorpay.com",
+      "careersUrl": "https://razorpay.com/jobs/",
+      "countryFocus": ["IN"],
+      "priority": "high",
+      "ats": [{ "type": "greenhouse", "slug": "razorpay" }]
+    },
+    {
+      "name": "Unleash",
+      "domain": "getunleash.io",
+      "careersUrl": "https://unleash.teamtailor.com/jobs",
+      "countryFocus": ["Remote"],
+      "priority": "medium",
+      "ats": [{ "type": "teamtailor", "slug": "unleash" }]
+    },
+    {
+      "name": "Epignosis",
+      "domain": "epignosishq.com",
+      "careersUrl": "https://apply.workable.com/epignosis/",
+      "countryFocus": ["Remote", "EU"],
+      "priority": "low",
+      "ats": [{ "type": "workable", "slug": "epignosis" }]
+    },
+    {
+      "name": "SmartRecruiters",
+      "domain": "smartrecruiters.com",
+      "careersUrl": "https://www.smartrecruiterscareers.com/",
+      "countryFocus": ["Remote", "Global"],
+      "priority": "low",
+      "ats": [{ "type": "smartrecruiters", "slug": "SmartRecruiters" }]
+    }
+  ]
 }

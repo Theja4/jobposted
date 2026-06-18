@@ -5,6 +5,9 @@
  *   pnpm --filter @jobposted/ingest run fetch -- --source lever --company netflix
  *   pnpm --filter @jobposted/ingest run fetch -- --source ashby --company ashby
  *   pnpm --filter @jobposted/ingest run fetch -- --source greenhouse --board stripe --questions
+ *   pnpm --filter @jobposted/ingest run fetch -- --source smartrecruiters --company SmartRecruiters
+ *   pnpm --filter @jobposted/ingest run fetch -- --source workable --company epignosis
+ *   pnpm --filter @jobposted/ingest run fetch -- --source teamtailor --company unleash
  *   pnpm --filter @jobposted/ingest run fetch -- --source greenhouse --board figma --limit 3 --json
  */
 
@@ -13,6 +16,9 @@ import { applyUrlDirectness, dedupeJobs, normalizeJob, type Job, type RawJob } f
 import { fetchAshbyBoard } from "./sources/ashby";
 import { fetchGreenhouseBoard } from "./sources/greenhouse";
 import { fetchLeverCompany } from "./sources/lever";
+import { fetchSmartRecruitersCompany } from "./sources/smartrecruiters";
+import { fetchTeamtailorCompany } from "./sources/teamtailor";
+import { fetchWorkableAccount } from "./sources/workable";
 import { enrichRawJobsWithCompanyAssets } from "./company-assets";
 
 interface Args {
@@ -87,8 +93,22 @@ async function main() {
       withQuestions: args.questions,
       questionsLimit: args.limit,
     });
+  } else if (args.source === "smartrecruiters") {
+    if (!args.company) return fail("--company <identifier> is required for --source smartrecruiters");
+    console.info(`Fetching SmartRecruiters postings for "${args.company}"…`);
+    raw = await fetchSmartRecruitersCompany(args.company);
+  } else if (args.source === "workable") {
+    if (!args.company) return fail("--company <account> is required for --source workable");
+    console.info(`Fetching Workable account "${args.company}"…`);
+    raw = await fetchWorkableAccount(args.company);
+  } else if (args.source === "teamtailor") {
+    if (!args.company) return fail("--company <subdomain> is required for --source teamtailor");
+    console.info(`Fetching Teamtailor feed "${args.company}"…`);
+    raw = await fetchTeamtailorCompany(args.company);
   } else {
-    return fail("Usage: --source <lever|ashby|greenhouse> --company <slug> | --board <token>");
+    return fail(
+      "Usage: --source <lever|ashby|greenhouse|smartrecruiters|workable|teamtailor> --company <slug> | --board <token>",
+    );
   }
 
   const enrichedRaw = await enrichRawJobsWithCompanyAssets(raw);

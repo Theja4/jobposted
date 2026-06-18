@@ -7,9 +7,7 @@ import {
   Crown,
   Gauge,
   ListChecks,
-  Search,
   Send,
-  Sparkles,
   Workflow,
   type LucideIcon,
 } from "lucide-react";
@@ -32,16 +30,38 @@ type DashboardStats = Awaited<ReturnType<typeof getDashboardStats>>;
 type DashboardQueue = Awaited<ReturnType<typeof getDashboardQueue>>;
 type TrackerPage = Awaited<ReturnType<typeof getTrackerPage>>;
 
-function firstName(email?: string) {
-  if (!email) return "there";
-  const handle = email.split("@")[0]?.split(/[._-]+/)[0];
-  if (!handle) return "there";
-  return handle.charAt(0).toUpperCase() + handle.slice(1);
+type DashboardUser = {
+  email?: string | null;
+  user_metadata?: Record<string, unknown> | null;
+};
+
+function text(value: unknown) {
+  return typeof value === "string" ? value.trim() : "";
 }
 
-function initials(email?: string) {
-  const name = firstName(email);
-  return name.slice(0, 2).toUpperCase();
+function userName(user?: DashboardUser | null) {
+  const metadata = user?.user_metadata ?? {};
+  const fromMetadata =
+    text(metadata.full_name) ||
+    text(metadata.name) ||
+    text(metadata.user_name) ||
+    text(metadata.preferred_username);
+  if (fromMetadata) return fromMetadata;
+
+  const handle = user?.email?.split("@")[0]?.trim();
+  if (!handle) return "Your workspace";
+  return handle.replace(/[._-]+/g, " ");
+}
+
+function userInitials(user?: DashboardUser | null) {
+  const parts = userName(user).split(/\s+/).filter(Boolean);
+  const letters = parts.length > 1 ? `${parts[0]?.[0] ?? ""}${parts[1]?.[0] ?? ""}` : parts[0]?.slice(0, 2);
+  return (letters || "JP").toUpperCase();
+}
+
+function userAvatarUrl(user?: DashboardUser | null) {
+  const metadata = user?.user_metadata ?? {};
+  return text(metadata.avatar_url) || text(metadata.picture) || null;
 }
 
 function formatDate(iso: string | null | undefined) {
@@ -122,26 +142,24 @@ function ApplicationStatusPill({ status }: { status: JobApplication["status"] })
   );
 }
 
-function DashboardSearch() {
+function UserProfileBadge({ user }: { user?: DashboardUser | null }) {
+  const avatarUrl = userAvatarUrl(user);
+  const name = userName(user);
   return (
-    <form
-      action="/dashboard/jobs"
-      className="flex min-h-14 flex-1 items-center gap-3 rounded-2xl bg-white px-4 shadow-[0_18px_40px_-30px_rgba(16,47,102,0.45),0_4px_14px_-12px_rgba(15,23,42,0.18)]"
-    >
-      <Search className="size-5 shrink-0 text-muted" aria-hidden="true" />
-      <input
-        name="q"
-        type="search"
-        placeholder="Search roles, companies, skills, or locations"
-        className="min-w-0 flex-1 bg-transparent text-sm font-semibold text-ink outline-none placeholder:text-muted"
-      />
-      <button
-        type="submit"
-        className="hidden h-9 items-center rounded-xl bg-ink px-3 text-xs font-extrabold text-white transition-colors hover:bg-brand-700 sm:inline-flex"
-      >
-        Search
-      </button>
-    </form>
+    <div className="inline-flex max-w-full items-center gap-3 rounded-2xl bg-panel px-3 py-2 ring-1 ring-inset ring-brand-100">
+      <span className="grid size-11 shrink-0 place-items-center overflow-hidden rounded-full bg-brand-50 text-sm font-black text-brand-700">
+        {avatarUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={avatarUrl} alt="" className="size-full object-cover" referrerPolicy="no-referrer" />
+        ) : (
+          userInitials(user)
+        )}
+      </span>
+      <div className="min-w-0">
+        <p className="truncate text-sm font-extrabold text-ink">{name}</p>
+        <p className="text-xs font-semibold text-muted">Signed in</p>
+      </div>
+    </div>
   );
 }
 
@@ -415,35 +433,17 @@ export default async function DashboardPage() {
 
   return (
     <div className="space-y-5">
-      <section className="rounded-[2rem] bg-white/72 p-3 shadow-[0_22px_60px_-48px_rgba(7,26,51,0.46)] backdrop-blur-xl">
-        <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
-          <DashboardSearch />
-          <div className="hidden items-center gap-3 rounded-2xl bg-white px-3 py-2 shadow-[0_14px_32px_-28px_rgba(7,26,51,0.4)] xl:flex">
-            <span className="grid size-10 place-items-center rounded-full bg-brand-50 text-sm font-black text-brand-700">
-              {initials(user?.email)}
-            </span>
-            <div className="min-w-0">
-              <p className="truncate text-sm font-extrabold text-ink">{firstName(user?.email)}</p>
-              <p className="truncate text-xs font-semibold text-muted">{user?.email}</p>
-            </div>
-          </div>
-        </div>
-      </section>
-
       <section className="rounded-[2rem] bg-white p-5 shadow-[0_24px_64px_-48px_rgba(7,26,51,0.48),0_8px_22px_-18px_rgba(15,23,42,0.16)] sm:p-7">
-        <div className="flex flex-wrap items-end justify-between gap-5">
+        <div className="flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between">
           <div>
-            <p className="inline-flex items-center gap-2 rounded-full bg-brand-50 px-3 py-1.5 text-xs font-black text-brand-700">
-              <Sparkles className="size-3.5" aria-hidden="true" />
-              JobPosted workspace
-            </p>
-            <h1 className="mt-4 text-4xl font-extrabold tracking-[-0.04em] text-ink sm:text-5xl">
+            <h1 className="text-4xl font-extrabold tracking-[-0.04em] text-ink sm:text-5xl">
               Dashboard
             </h1>
             <p className="mt-2 max-w-2xl text-base font-semibold leading-7 text-muted">
-              Search roles, review today&apos;s queue, and keep the tracker moving from one place.
+              Review today&apos;s queue and keep the tracker moving from one place.
             </p>
           </div>
+          <UserProfileBadge user={user} />
         </div>
 
         <div className="mt-7 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">

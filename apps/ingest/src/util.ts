@@ -11,6 +11,20 @@ export function humanizeSlug(slug: string): string {
     .replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
+export interface CompanyHints {
+  companyName?: string | null;
+  companyDomain?: string | null;
+}
+
+/** Prefer curated registry metadata, falling back to the ATS slug when none is provided. */
+export function companyNameFromSlug(slug: string, hints: CompanyHints = {}): string {
+  return hints.companyName?.trim() || humanizeSlug(slug);
+}
+
+export function companyDomainFromHints(hints: CompanyHints = {}): string | null {
+  return hints.companyDomain?.trim() || null;
+}
+
 export class HttpError extends Error {
   constructor(
     public status: number,
