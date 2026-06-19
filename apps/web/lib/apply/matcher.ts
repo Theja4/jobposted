@@ -708,6 +708,181 @@ function profileText(config: OnboardingConfig, resumeContent: unknown) {
   ].join(" ");
 }
 
+const MONTH_INDEX: Record<string, number> = {
+  jan: 0,
+  january: 0,
+  feb: 1,
+  february: 1,
+  mar: 2,
+  march: 2,
+  apr: 3,
+  april: 3,
+  may: 4,
+  jun: 5,
+  june: 5,
+  jul: 6,
+  july: 6,
+  aug: 7,
+  august: 7,
+  sep: 8,
+  sept: 8,
+  september: 8,
+  oct: 9,
+  october: 9,
+  nov: 10,
+  november: 10,
+  dec: 11,
+  december: 11,
+};
+
+const YEAR_WORDS: Record<string, number> = {
+  zero: 0,
+  one: 1,
+  two: 2,
+  three: 3,
+  four: 4,
+  five: 5,
+  six: 6,
+  seven: 7,
+  eight: 8,
+  nine: 9,
+  ten: 10,
+  eleven: 11,
+  twelve: 12,
+  thirteen: 13,
+  fourteen: 14,
+  fifteen: 15,
+  sixteen: 16,
+  seventeen: 17,
+  eighteen: 18,
+  nineteen: 19,
+  twenty: 20,
+};
+
+const YEAR_TOKEN = String.raw`(?:\d{1,2}|zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty)`;
+
+function parseYearNumber(value: string) {
+  const normalized = value.trim().toLowerCase();
+  const numeric = Number(normalized);
+  if (Number.isFinite(numeric)) return numeric;
+  return YEAR_WORDS[normalized] ?? null;
+}
+
+function dateFromParts(year: number, month: number, boundary: "start" | "end") {
+  if (boundary === "start") return new Date(Date.UTC(year, month, 1));
+  return new Date(Date.UTC(year, month + 1, 0, 23, 59, 59, 999));
+}
+
+function parseExperienceDate(value: unknown, boundary: "start" | "end", now: Date) {
+  const text = asString(value).toLowerCase();
+  if (!text) return null;
+  if (/\b(present|current|now)\b/.test(text)) return now;
+
+  const iso = text.match(/\b(19\d{2}|20\d{2})-(0?[1-9]|1[0-2])(?:-\d{1,2})?\b/);
+  if (iso) return dateFromParts(Number(iso[1]), Number(iso[2]) - 1, boundary);
+
+  const yearMonth = text.match(/\b(19\d{2}|20\d{2})[/.](0?[1-9]|1[0-2])\b/);
+  if (yearMonth) return dateFromParts(Number(yearMonth[1]), Number(yearMonth[2]) - 1, boundary);
+
+  const numericMonth = text.match(/\b(0?[1-9]|1[0-2])[/.](19\d{2}|20\d{2})\b/);
+  if (numericMonth) return dateFromParts(Number(numericMonth[2]), Number(numericMonth[1]) - 1, boundary);
+
+  const monthYear = text.match(
+    /\b(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t|tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\.?\s+(19\d{2}|20\d{2})\b/,
+  );
+  if (monthYear?.[1] && monthYear[2]) {
+    const month = MONTH_INDEX[monthYear[1].replace(".", "")];
+    if (month !== undefined) return dateFromParts(Number(monthYear[2]), month, boundary);
+  }
+
+  const year = text.match(/\b(19\d{2}|20\d{2})\b/);
+  if (year) return boundary === "start"
+    ? new Date(Date.UTC(Number(year[1]), 0, 1))
+    : new Date(Date.UTC(Number(year[1]), 11, 31, 23, 59, 59, 999));
+
+  return null;
+}
+
+function experienceRows(config: OnboardingConfig, resumeContent: unknown) {
+  const contentExperience = asRecord(resumeContent).experience;
+  const resumeExperience = Array.isArray(contentExperience) ? contentExperience : [];
+  return [...config.profile.experience, ...resumeExperience].map(asRecord);
+}
+
+function profileExperienceYears(config: OnboardingConfig, resumeContent: unknown, now = new Date()) {
+  const nowTime = now.getTime();
+  const intervals = experienceRows(config, resumeContent)
+    .map((row) => {
+      const start = parseExperienceDate(row.startDate, "start", now);
+      const explicitEnd = parseExperienceDate(row.endDate, "end", now);
+      const end = row.current === true || !asString(row.endDate) ? now : explicitEnd;
+      if (!start || !end) return null;
+      const startTime = start.getTime();
+      const endTime = Math.min(end.getTime(), nowTime);
+      if (!Number.isFinite(startTime) || !Number.isFinite(endTime) || endTime <= startTime) return null;
+      return { start: startTime, end: endTime };
+    })
+    .filter((interval): interval is { start: number; end: number } => Boolean(interval))
+    .sort((a, b) => a.start - b.start);
+
+  if (intervals.length === 0) return null;
+
+  const merged: Array<{ start: number; end: number }> = [];
+  for (const interval of intervals) {
+    const previous = merged.at(-1);
+    if (!previous || interval.start > previous.end) {
+      merged.push({ ...interval });
+    } else {
+      previous.end = Math.max(previous.end, interval.end);
+    }
+  }
+
+  const days = merged.reduce((sum, interval) => sum + (interval.end - interval.start) / 86_400_000, 0);
+  const years = days / 365.25;
+  return years > 0 ? years : null;
+}
+
+function explicitRequiredExperienceYears(text: string) {
+  const normalized = text.toLowerCase().replace(/[–—]/g, "-");
+  const candidates: number[] = [];
+
+  const rangePattern = new RegExp(String.raw`\b(${YEAR_TOKEN})\s*(?:-|to)\s*(${YEAR_TOKEN})\s*(?:years?|yrs?)\b.{0,80}\bexperience\b`, "gi");
+  for (const match of normalized.matchAll(rangePattern)) {
+    const value = parseYearNumber(match[1] ?? "");
+    if (value !== null) candidates.push(value);
+  }
+
+  const explicitPattern = new RegExp(
+    String.raw`\b(?:minimum|min\.?|at\s+least|least|over|more\s+than)\s+(${YEAR_TOKEN})\s*(?:\+|plus)?\s*(?:years?|yrs?)\b.{0,80}\bexperience\b`,
+    "gi",
+  );
+  for (const match of normalized.matchAll(explicitPattern)) {
+    const value = parseYearNumber(match[1] ?? "");
+    if (value !== null) candidates.push(value);
+  }
+
+  const genericPattern = new RegExp(String.raw`\b(${YEAR_TOKEN})\s*(?:\+|plus)?\s*(?:years?|yrs?)\b`, "gi");
+  for (const match of normalized.matchAll(genericPattern)) {
+    const raw = match[1] ?? "";
+    const value = parseYearNumber(raw);
+    if (value === null) continue;
+    const index = match.index ?? 0;
+    const before = normalized.slice(Math.max(0, index - 80), index);
+    const after = normalized.slice(index + match[0].length, index + match[0].length + 80);
+    if (new RegExp(String.raw`(?:-|to)\s*$`, "i").test(before)) continue;
+    if (new RegExp(String.raw`^\s*(?:-|to)\s*${YEAR_TOKEN}\b`, "i").test(after)) continue;
+    if (!/\bexperience(?:d)?\b/.test(`${before} ${after}`)) continue;
+    candidates.push(value);
+  }
+
+  const plausible = candidates.filter((value) => value >= 0 && value <= 30);
+  return plausible.length > 0 ? Math.max(...plausible) : null;
+}
+
+function formatYears(value: number) {
+  return Number.isInteger(value) ? `${value}` : value.toFixed(1).replace(/\.0$/, "");
+}
+
 function matchedSkillScore(config: OnboardingConfig, resumeContent: unknown, text: string) {
   const skills = unique([
     ...config.profile.skills,
@@ -816,6 +991,19 @@ export function scoreJobForConfig(
     }
   } else if (preferredSeniority.size === 0) {
     score += 5;
+  }
+
+  const requiredYears = explicitRequiredExperienceYears(text);
+  const profileYears = profileExperienceYears(config, resumeContent);
+  if (requiredYears !== null && profileYears !== null) {
+    if (profileYears + 0.5 < requiredYears) {
+      blockers.push(
+        `Requires ${formatYears(requiredYears)}+ years; profile shows about ${formatYears(profileYears)} years`,
+      );
+    } else {
+      score += 6;
+      reasons.push(`Experience level fits: ${formatYears(profileYears)} years`);
+    }
   }
 
   const industryMatches = config.filters.industries.filter((industry) =>

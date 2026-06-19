@@ -22,7 +22,7 @@ export default async function ApplicationsPage({
       <ProFeatureGate
         icon={Clock3}
         title="History unlocks with Pro"
-        description="Once JobPosted prepares applications for you, this page keeps the sent and review-ready work in one place."
+        description="Once JobPosted sends or logs applications for you, this page keeps that activity in one place."
         detail="Manual roles and job-board saves still live in Tracker."
       />
     );
@@ -36,8 +36,7 @@ export default async function ApplicationsPage({
           Job application history
         </h1>
         <p className="mt-1 text-sm font-semibold text-muted">
-          {page.total} JobPosted applications · manual tracker entries and extension
-          captures stay in Tracker.
+          {page.total} sent or closed JobPosted applications · pending review items stay in Queue and Tracker.
         </p>
       </div>
 

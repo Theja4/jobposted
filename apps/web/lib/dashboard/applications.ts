@@ -433,12 +433,15 @@ export async function getDashboardQueue(): Promise<{
     await reportError("dashboard queue rpc failed", error, { userId: user.id });
     const applications = await getDashboardApplications({ includeQueueStatuses: true });
     today = applications.filter((application) => {
-      if (application.appliedOn !== todayKey || application.applyPath !== "server") return false;
+      if (application.applyPath !== "server") return false;
       if (mode === "review") {
-        return ["ready_for_review", "filled", "queued", "submitting", "submitted"].includes(
-          application.rawStatus ?? "",
+        const status = application.rawStatus ?? "";
+        return (
+          ["ready_for_review", "filled"].includes(status) ||
+          (application.appliedOn === todayKey && ["queued", "submitting", "submitted"].includes(status))
         );
       }
+      if (application.appliedOn !== todayKey) return false;
       return ["queued", "submitting", "applied", "submitted"].includes(application.rawStatus ?? "");
     });
   } else {

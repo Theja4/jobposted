@@ -83,6 +83,9 @@ WORKER_CRON_LOCK_TTL_SECONDS=1800
 Each stage is independent: a render or apply failure is captured in the response (and error
 reporting) without failing the others. Use `POST /cron/run` for a persistent HTTP worker run, or
 use `pnpm --filter @jobposted/worker run cron:run` as a one-shot Railway Cron start command.
+Production runs require the `worker_locks` RPCs from migration `0025_worker_locks.sql`. If those
+RPCs are missing or unhealthy, cron/apply skips the run instead of running unlocked and risking
+overlapping submissions.
 
 ## Adapter validation (`POST /runner/validate`)
 

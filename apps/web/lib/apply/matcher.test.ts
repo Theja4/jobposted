@@ -234,6 +234,137 @@ describe("scoreJobForConfig", () => {
     }
   });
 
+  it("blocks jobs whose explicit years requirement is above the profile date span", () => {
+    const value = pmConfig();
+    value.profile.experience = [
+      {
+        company: "Ion Group",
+        title: "Analyst (Product)",
+        location: "",
+        startDate: "Oct 2021",
+        endDate: "Mar 2026",
+        current: false,
+        bullets: ["Owned product analytics workflows."],
+      },
+    ];
+
+    const decision = scoreJobForConfig(
+      job({
+        title: "Product Manager",
+        description_md:
+          "Requires 6+ years of product management experience building B2B SaaS products with analytics and roadmap ownership.",
+      }),
+      value,
+    );
+
+    expect(decision.eligible).toBe(false);
+    expect(decision.blockers.join(" ")).toContain("Requires 6+ years");
+  });
+
+  it("understands plus-word years requirements", () => {
+    const value = pmConfig();
+    value.profile.experience = [
+      {
+        company: "Ion Group",
+        title: "Analyst (Product)",
+        location: "",
+        startDate: "Oct 2021",
+        endDate: "Mar 2026",
+        current: false,
+        bullets: ["Owned product analytics workflows."],
+      },
+    ];
+
+    const decision = scoreJobForConfig(
+      job({
+        title: "Product Manager",
+        description_md:
+          "We need eight plus years of experience in product strategy, go to market planning, and roadmap execution.",
+      }),
+      value,
+    );
+
+    expect(decision.eligible).toBe(false);
+    expect(decision.blockers.join(" ")).toContain("Requires 8+ years");
+  });
+
+  it("does not double-count overlapping experience ranges", () => {
+    const value = pmConfig();
+    value.profile.experience = [
+      {
+        company: "Acme",
+        title: "Product Analyst",
+        location: "",
+        startDate: "Jan 2021",
+        endDate: "Dec 2024",
+        current: false,
+        bullets: ["Owned analytics roadmaps."],
+      },
+      {
+        company: "Beta",
+        title: "Associate Product Manager",
+        location: "",
+        startDate: "Jan 2023",
+        endDate: "Dec 2025",
+        current: false,
+        bullets: ["Managed product strategy."],
+      },
+    ];
+
+    const decision = scoreJobForConfig(
+      job({
+        title: "Product Manager",
+        description_md:
+          "Requires 6+ years of product management experience across roadmap, stakeholder, and analytics work.",
+      }),
+      value,
+    );
+
+    expect(decision.eligible).toBe(false);
+    expect(decision.blockers.join(" ")).toContain("Requires 6+ years");
+  });
+
+  it("allows explicit years requirements within the profile's experience span", () => {
+    const value = pmConfig();
+    value.profile.experience = [
+      {
+        company: "Ion Group",
+        title: "Analyst (Product)",
+        location: "",
+        startDate: "Oct 2021",
+        endDate: "Mar 2026",
+        current: false,
+        bullets: ["Owned product analytics workflows."],
+      },
+    ];
+
+    const decision = scoreJobForConfig(
+      job({
+        title: "Product Manager",
+        description_md:
+          "Requires 3+ years of product management experience building B2B SaaS products with analytics and roadmap ownership.",
+      }),
+      value,
+    );
+
+    expect(decision.eligible).toBe(true);
+    expect(decision.reasons.join(" ")).toContain("Experience level fits");
+  });
+
+  it("does not years-gate when the profile has no dated experience", () => {
+    const value = pmConfig();
+    const decision = scoreJobForConfig(
+      job({
+        title: "Product Manager",
+        description_md:
+          "Requires 8+ years of product management experience building B2B SaaS products with analytics and roadmap ownership.",
+      }),
+      value,
+    );
+
+    expect(decision.blockers.join(" ")).not.toContain("Requires 8+ years");
+  });
+
   it("blocks cross-discipline noise even on broader fit (PM vs backend SWE)", () => {
     const value = pmConfig();
     value.filters.match = "high";

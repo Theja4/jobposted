@@ -35,8 +35,6 @@ export async function POST() {
     .eq("user_id", user.id)
     .eq("apply_path", "server")
     .in("status", ["ready_for_review", "filled"])
-    .gte("created_at", day.start)
-    .lt("created_at", day.end)
     .select("id");
 
   if (error) {

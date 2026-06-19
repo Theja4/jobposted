@@ -55,11 +55,11 @@ async function releaseWorkerLock(client: ServiceClient, lockName: string, holder
   if (error) await reportError("worker lock release failed", error, { lockName });
 }
 
-async function withWorkerLock<T>(
+export async function withWorkerLock<T>(
   client: ServiceClient,
   lockName: string,
   ttlSeconds: number,
-  onLocked: () => T,
+  onSkipped: (error: "lock_held" | "lock_unavailable") => T,
   fn: () => Promise<T>,
 ) {
   if (process.env.WORKER_LOCKS_ENABLED === "0") return fn();
@@ -68,12 +68,10 @@ async function withWorkerLock<T>(
   try {
     acquired = await acquireWorkerLock(client, lockName, holder, ttlSeconds);
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    if (!message.includes("acquire_worker_lock")) throw error;
-    await reportError("worker lock unavailable; running without lock", error, { lockName });
-    return fn();
+    await reportError("worker lock unavailable; skipping unsafe run", error, { lockName });
+    return onSkipped("lock_unavailable");
   }
-  if (!acquired) return onLocked();
+  if (!acquired) return onSkipped("lock_held");
   try {
     return await fn();
   } finally {
@@ -118,7 +116,11 @@ export async function runApplyFromEnv(): Promise<Record<string, unknown>> {
     client,
     "apply-runner",
     envInt("APPLY_RUNNER_LOCK_TTL_SECONDS", 15 * 60),
-    () => ({ ok: false, skipped: true, error: "runner_lock_held" }),
+    (error) => ({
+      ok: false,
+      skipped: true,
+      error: error === "lock_held" ? "runner_lock_held" : "runner_lock_unavailable",
+    }),
     async () => {
       const summary = await runApplyBatch({
         db: createRunnerDb(client),
@@ -245,14 +247,31 @@ export async function runCronPipeline(): Promise<WorkerCronResult> {
   };
 
   try {
-    if (!lockClient) return run();
+    if (!lockClient) {
+      return {
+        status: 503,
+        body: {
+          ok: false,
+          error: "service_role_unavailable",
+          message: "Set SUPABASE_SERVICE_ROLE_KEY so the worker can acquire cron/apply locks safely.",
+        },
+      };
+    }
     return await withWorkerLock(
       lockClient,
       "cron-pipeline",
       envInt("WORKER_CRON_LOCK_TTL_SECONDS", 30 * 60),
-      () => ({
+      (error) => ({
         status: 202,
-        body: { ok: true, skipped: true, error: "cron_lock_held", message: "Another worker cron run is already active." },
+        body: {
+          ok: true,
+          skipped: true,
+          error: error === "lock_held" ? "cron_lock_held" : "cron_lock_unavailable",
+          message:
+            error === "lock_held"
+              ? "Another worker cron run is already active."
+              : "Worker lock is unavailable; skipped this run to avoid overlapping submissions.",
+        },
       }),
       run,
     );
