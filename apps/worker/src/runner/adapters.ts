@@ -16,9 +16,17 @@ declare const CSS: { escape(value: string): string };
  * In dry-run mode the adapter fills the form and screenshots it but never clicks the final submit.
  */
 
-function hostMatches(jobUrl: string, needles: string[]) {
-  const url = jobUrl.toLowerCase();
-  return needles.some((n) => url.includes(n));
+function hostname(jobUrl: string) {
+  try {
+    return new URL(jobUrl).hostname.toLowerCase();
+  } catch {
+    return jobUrl.toLowerCase();
+  }
+}
+
+function hostMatches(jobUrl: string, domains: string[]) {
+  const host = hostname(jobUrl);
+  return domains.some((domain) => host === domain || host.endsWith(`.${domain}`));
 }
 
 async function screenshot(page: any): Promise<Uint8Array | null> {
@@ -403,7 +411,7 @@ export const greenhouseAdapter: Adapter = {
   version: "2026-06-15",
   risk: "server_safe",
   matches: ({ platform, jobUrl }) =>
-    platform === "greenhouse" || hostMatches(jobUrl, ["greenhouse.io", "boards.greenhouse"]),
+    (platform === "greenhouse" || platform === "") && hostMatches(jobUrl, ["greenhouse.io"]),
   validate: (page, ctx) =>
     validateForm(page, ctx, {
       firstName: ["#first_name", "input[name='job_application[first_name]']", "input[name='first_name']", "input[autocomplete='given-name']"],
@@ -432,7 +440,8 @@ export const leverAdapter: Adapter = {
   id: "lever",
   version: "2026-06-15",
   risk: "server_safe",
-  matches: ({ platform, jobUrl }) => platform === "lever" || hostMatches(jobUrl, ["jobs.lever.co"]),
+  matches: ({ platform, jobUrl }) =>
+    (platform === "lever" || platform === "") && hostMatches(jobUrl, ["jobs.lever.co"]),
   validate: (page, ctx) =>
     validateForm(page, ctx, {
       firstName: [],
@@ -461,7 +470,8 @@ export const ashbyAdapter: Adapter = {
   id: "ashby",
   version: "2026-06-15",
   risk: "server_safe",
-  matches: ({ platform, jobUrl }) => platform === "ashby" || hostMatches(jobUrl, ["ashbyhq.com"]),
+  matches: ({ platform, jobUrl }) =>
+    (platform === "ashby" || platform === "") && hostMatches(jobUrl, ["ashbyhq.com"]),
   validate: (page, ctx) =>
     validateForm(page, ctx, {
       firstName: ["input[name='firstName']", "input[autocomplete='given-name']"],
@@ -511,10 +521,38 @@ function reviewOnlyAdapter(id: string, hosts: string[]): Adapter {
   };
 }
 
+function platformReviewOnlyAdapter(id: string, reason: string): Adapter {
+  return {
+    id,
+    version: "2026-06-15",
+    risk: "review_only",
+    matches: ({ platform }) => platform === id,
+    async validate() {
+      return {
+        ok: false,
+        confidence: 0,
+        blocker: "unsupported_flow",
+        reason,
+        requiredFields: [...REQUIRED_FIELDS],
+        missingRequired: [...REQUIRED_FIELDS],
+        submitFound: false,
+        resumeInputFound: false,
+        screenshot: null,
+      };
+    },
+    async submit() {
+      return { status: "failed", reason, permanent: true };
+    },
+  };
+}
+
 const ADAPTERS: Adapter[] = [
   greenhouseAdapter,
   leverAdapter,
   ashbyAdapter,
+  platformReviewOnlyAdapter("greenhouse", "hosted_greenhouse_apply_url_required"),
+  platformReviewOnlyAdapter("lever", "hosted_lever_apply_url_required"),
+  platformReviewOnlyAdapter("ashby", "hosted_ashby_apply_url_required"),
   reviewOnlyAdapter("workday", ["myworkdayjobs.com", "workdayjobs.com"]),
   reviewOnlyAdapter("linkedin", ["linkedin.com"]),
   reviewOnlyAdapter("icims", ["icims.com"]),

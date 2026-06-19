@@ -1,9 +1,10 @@
 import { createHash, randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
+import { embedResumeContent, vectorToSql } from "@/lib/ai/embeddings";
 import { reportError } from "@/lib/observability/report";
 import { requireProApi } from "@/lib/billing/access";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-import type { SourceDocument } from "@/lib/profile/resume-version";
+import { resumeContentFromProfilePayload, type SourceDocument } from "@/lib/profile/resume-version";
 import { checkRateLimit, RATE_LIMITS, rateLimitResponse } from "@/lib/rate-limit";
 
 export const runtime = "nodejs";
@@ -138,10 +139,59 @@ export async function POST(request: Request) {
     contentHash,
   };
 
+  const content = resumeContentFromProfilePayload(parsed.parsed, sourceDocument);
+  const embedding = await embedResumeContent(content).catch(async (error) => {
+    await reportError("onboarding resume embedding failed", error, { userId: user.id });
+    return null;
+  });
+  const { data: version, error: versionError } = await supabase
+    .from("resume_base_versions")
+    .insert({
+      id: versionId,
+      user_id: user.id,
+      content,
+      storage_path: path,
+      source_document: sourceDocument,
+      content_hash: contentHash,
+      embedding: vectorToSql(embedding),
+    })
+    .select("id")
+    .single();
+  if (versionError) {
+    await reportError("onboarding resume version insert failed", versionError, { userId: user.id });
+    await removeUploadedResume(supabase, path, user.id, "version_failed");
+    return NextResponse.json({ ok: false, error: "version_failed", message: "Could not save this resume." }, { status: 500 });
+  }
+
+  const { error: pointerError } = await supabase
+    .from("profiles")
+    .upsert(
+      { id: user.id, email: user.email ?? null, active_resume_version_id: version?.id ?? versionId },
+      { onConflict: "id" },
+    );
+  if (pointerError) {
+    await reportError("onboarding resume pointer update failed", pointerError, { userId: user.id, versionId: version?.id ?? versionId });
+  }
+
+  const { data: document, error: documentError } = await supabase
+    .from("documents")
+    .insert({
+      user_id: user.id,
+      type: "base_resume",
+      storage_path: path,
+    })
+    .select("id")
+    .single();
+  if (documentError) {
+    await reportError("onboarding base resume document insert failed", documentError, { userId: user.id });
+  }
+
   return NextResponse.json({
     ok: true,
     name: file.name,
     sourceDocument,
+    versionId: version?.id ?? versionId,
+    documentId: document?.id ?? null,
     parsed: parsed.parsed,
     diagnostics: parsed.diagnostics,
   });

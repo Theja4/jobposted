@@ -64,8 +64,35 @@ function resumeSourceText(resume: ResumeContent): string {
     resume.headline,
     resume.summary,
     ...resume.skills,
-    ...resume.experience.flatMap((e) => [e.company, e.title, ...e.bullets]),
-    ...resume.education.flatMap((e) => [e.school, e.degree ?? "", e.field ?? ""]),
+    ...resume.experience.flatMap((e) => [
+      e.company,
+      e.title,
+      e.location ?? "",
+      e.startDate ?? "",
+      e.endDate ?? "",
+      ...e.bullets,
+    ]),
+    ...resume.education.flatMap((e) => [
+      e.school,
+      e.degree ?? "",
+      e.field ?? "",
+      e.startDate ?? "",
+      e.endDate ?? "",
+      e.gpa ?? "",
+    ]),
+    ...resume.projects.flatMap((p) => [
+      p.name,
+      p.description ?? "",
+      p.url ?? "",
+      ...(p.technologies ?? []),
+      ...(p.bullets ?? []),
+    ]),
+    ...resume.certifications.flatMap((c) => [c.name, c.issuer ?? "", c.date ?? "", c.url ?? ""]),
+    ...resume.languages,
+    ...resume.awards.flatMap((a) => [a.title, a.issuer ?? "", a.date ?? "", a.url ?? ""]),
+    ...resume.publications.flatMap((p) => [p.title, p.publisher ?? "", p.date ?? "", p.url ?? ""]),
+    ...resume.interests,
+    ...resume.references,
   ]
     .filter(Boolean)
     .join("\n");
@@ -79,9 +106,39 @@ function resumeForPrompt(resume: ResumeContent) {
     experience: resume.experience.map((e) => ({
       company: e.company,
       title: e.title,
+      location: e.location,
+      startDate: e.startDate,
+      endDate: e.endDate,
+      current: e.current,
       bullets: e.bullets,
     })),
-    education: resume.education.map((e) => ({ school: e.school, degree: e.degree, field: e.field })),
+    education: resume.education.map((e) => ({
+      school: e.school,
+      degree: e.degree,
+      field: e.field,
+      startDate: e.startDate,
+      endDate: e.endDate,
+      gpa: e.gpa,
+    })),
+    projects: resume.projects.map((p) => ({
+      name: p.name,
+      description: p.description,
+      bullets: p.bullets ?? [],
+      technologies: p.technologies ?? [],
+    })),
+    certifications: resume.certifications.map((c) => ({
+      name: c.name,
+      issuer: c.issuer,
+      date: c.date,
+    })),
+    languages: resume.languages,
+    awards: resume.awards.map((a) => ({ title: a.title, issuer: a.issuer, date: a.date })),
+    publications: resume.publications.map((p) => ({
+      title: p.title,
+      publisher: p.publisher,
+      date: p.date,
+    })),
+    interests: resume.interests,
   };
 }
 

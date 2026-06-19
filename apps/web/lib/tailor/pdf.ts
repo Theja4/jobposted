@@ -2,9 +2,10 @@ import { PDFDocument, StandardFonts, rgb, type PDFFont } from "pdf-lib";
 import type { ResumeContent } from "@jobposted/shared";
 
 /**
- * Render a ResumeContent to a clean, ATS-safe PDF: US Letter, single column (stable parse order),
- * standard Helvetica (selectable/extractable text — no text-in-images), comma-listed skills (no
- * background-filled pills). Pure JS (pdf-lib), so it runs in a serverless Node route.
+ * Render a ResumeContent to a clean, ATS-safe PDF using Rezoomed's Jake-style
+ * "Timeless" template: centered serif header, black section rules, compact
+ * bullets, and inline skills. Pure JS (pdf-lib), so it runs in a serverless
+ * Node route without browser screenshot PDFs.
  *
  * Page-fit engine (robust to tailoring changing text length):
  *  - Content is laid out as measurable blocks with keep-together flags (a heading never sits alone
@@ -19,26 +20,24 @@ import type { ResumeContent } from "@jobposted/shared";
 
 const PAGE_W = 612; // 8.5in * 72
 const PAGE_H = 792; // 11in * 72
-const MARGIN = 54; // 0.75in
+const MARGIN = 42; // Jake-style compact margin, still readable on US Letter.
 const CONTENT_W = PAGE_W - MARGIN * 2;
 const USABLE_H = PAGE_H - MARGIN * 2;
 
-const MIN_DENSITY = 0.82;
-const MAX_DENSITY = 1.12;
+const MIN_DENSITY = 0.84;
+const MAX_DENSITY = 1.1;
 const DENSITY_STEPS = 20;
 
 const INK = rgb(0.04, 0.07, 0.13);
-const GRAY = rgb(0.32, 0.38, 0.45);
-const ACCENT = rgb(0.12, 0.25, 0.57);
-const RULE = rgb(0.8, 0.86, 0.95);
+const RULE = rgb(0, 0, 0);
 type Color = ReturnType<typeof rgb>;
 
-type Fonts = { regular: PDFFont; bold: PDFFont };
+type Fonts = { regular: PDFFont; bold: PDFFont; italic: PDFFont };
 
 type Style = {
   name: number; headline: number; contact: number; h2: number; summary: number;
   expTitle: number; expMeta: number; bullet: number; eduTitle: number; skills: number;
-  lineGap: number; summaryGap: number; bulletGap: number; metaGap: number; tight: number;
+  lineGap: number; summaryGap: number; bulletGap: number; metaGap: number; tight: number; itemTight: number;
   sectionBefore: number; sectionRuleGap: number; headingGap: number; itemAfter: number; contactGap: number;
 };
 
@@ -52,6 +51,19 @@ type Block =
       x: number;
       gapAfter: number;
       right?: { text: string; size: number; color: Color };
+      align?: "center";
+      keepWithNext?: boolean;
+    }
+  | {
+      t: "skillLine";
+      label: string;
+      text: string;
+      labelFont: PDFFont;
+      font: PDFFont;
+      size: number;
+      color: Color;
+      x: number;
+      gapAfter: number;
       keepWithNext?: boolean;
     }
   | { t: "rule"; gapBefore: number; gapAfter: number; keepWithNext?: boolean }
@@ -90,16 +102,81 @@ function makeStyle(d: number): Style {
   const f = (base: number, floor: number) => Math.max(floor, base * d);
   const g = (base: number) => Math.max(1.4, base * d);
   return {
-    name: f(20, 15), headline: f(11, 9.5), contact: f(9.5, 8), h2: f(10.5, 9), summary: f(10, 8.5),
-    expTitle: f(11, 9.5), expMeta: f(9.5, 8), bullet: f(10, 8.5), eduTitle: f(11, 9.5), skills: f(10, 8.5),
-    lineGap: g(3), summaryGap: g(3.5), bulletGap: g(2.5), metaGap: g(3), tight: g(2),
-    sectionBefore: g(10), sectionRuleGap: g(6), headingGap: g(4), itemAfter: g(6), contactGap: g(2),
+    name: f(25.5, 20),
+    headline: f(10.4, 9),
+    contact: f(9.8, 8.6),
+    h2: f(12.8, 10.5),
+    summary: f(9.9, 8.7),
+    expTitle: f(11.2, 9.7),
+    expMeta: f(9.8, 8.5),
+    bullet: f(9.8, 8.5),
+    eduTitle: f(11.2, 9.7),
+    skills: f(9.8, 8.5),
+    lineGap: g(2),
+    summaryGap: g(2.6),
+    bulletGap: g(1.6),
+    metaGap: g(1.8),
+    tight: g(1),
+    itemTight: g(3.2),
+    sectionBefore: g(9),
+    sectionRuleGap: g(4.2),
+    headingGap: g(3.2),
+    itemAfter: g(5),
+    contactGap: g(1.6),
   };
 }
 
 function dateRange(start?: string, end?: string, current?: boolean): string {
   const right = current ? "Present" : end ?? "";
   return [start ?? "", right].filter(Boolean).join(" - ");
+}
+
+const SKILL_GROUPS: Array<{ label: string; pattern: RegExp }> = [
+  {
+    label: "Product",
+    pattern:
+      /\b(product|roadmap|prds?|user stor(?:y|ies)|user research|acceptance criteria|backlog|mvp|discovery|success metrics?|a\/b|agile|scrum|stakeholder|go[- ]?to[- ]?market|gtm)\b/i,
+  },
+  {
+    label: "Data & AI",
+    pattern:
+      /\b(sql|python|rag|vector|embedding|prompt|llm|ai|machine learning|analytics|tableau|experiment|evaluation)\b/i,
+  },
+  {
+    label: "Engineering",
+    pattern:
+      /\b(api|rest|microservices?|linux|debug|git|backend|frontend|cloud|system|architecture|integration)\b/i,
+  },
+  {
+    label: "Tools",
+    pattern:
+      /\b(jira|confluence|postman|figma|excel|powerpoint|notion|slack|ms\s|microsoft)\b/i,
+  },
+];
+
+function groupedSkillSections(skills: string[]) {
+  const seen = new Set<string>();
+  const buckets = new Map(SKILL_GROUPS.map((group) => [group.label, [] as string[]]));
+  const other: string[] = [];
+
+  for (const raw of skills) {
+    const skill = clean(raw);
+    const key = skill.toLowerCase();
+    if (!skill || seen.has(key)) continue;
+    seen.add(key);
+
+    const group = SKILL_GROUPS.find((candidate) => candidate.pattern.test(skill));
+    if (group) buckets.get(group.label)?.push(skill);
+    else other.push(skill);
+  }
+
+  const sections: Array<{ label: string; values: string[] }> = [];
+  for (const group of SKILL_GROUPS) {
+    const values = buckets.get(group.label) ?? [];
+    if (values.length > 0) sections.push({ label: group.label, values });
+  }
+  if (other.length > 0) sections.push({ label: "Additional", values: other });
+  return sections;
 }
 
 const yearOf = (s?: string): number | null => {
@@ -125,20 +202,128 @@ export function estimateExperienceYears(resume: ResumeContent): number {
 /** Build the ordered, measurable block list for a given density style. */
 function layout(resume: ResumeContent, st: Style, fonts: Fonts): Block[] {
   const blocks: Block[] = [];
-  const para = (text: string, font: PDFFont, size: number, color: Color, gap: number, x = MARGIN, width = CONTENT_W) => {
-    for (const line of wrap(text, font, size, width)) blocks.push({ t: "line", text: line, font, size, color, x, gapAfter: gap });
+  const para = (
+    text: string,
+    font: PDFFont,
+    size: number,
+    color: Color,
+    gap: number,
+    x = MARGIN,
+    width = CONTENT_W,
+    align?: "center",
+  ) => {
+    for (const line of wrap(text, font, size, width)) {
+      blocks.push({ t: "line", text: line, font, size, color, x, gapAfter: gap, align });
+    }
   };
-  // A heading stays glued to its rule AND the first line of its section (no dangling heading).
   const heading = (label: string) => {
     blocks.push({ t: "space", h: st.sectionBefore, keepWithNext: true });
-    blocks.push({ t: "line", text: label.toUpperCase(), font: fonts.bold, size: st.h2, color: ACCENT, x: MARGIN, gapAfter: st.headingGap, keepWithNext: true });
+    blocks.push({
+      t: "line",
+      text: label.toUpperCase(),
+      font: fonts.regular,
+      size: st.h2,
+      color: INK,
+      x: MARGIN,
+      gapAfter: st.headingGap,
+      keepWithNext: true,
+    });
     blocks.push({ t: "rule", gapBefore: 0, gapAfter: st.sectionRuleGap, keepWithNext: true });
   };
+  const titleLine = (
+    left: string,
+    right: string,
+    font: PDFFont,
+    size: number,
+    gap: number,
+    keepWithNext = true,
+  ) => {
+    const rightW = right ? fonts.regular.widthOfTextAtSize(right, st.expMeta) : 0;
+    const lines = wrap(left, font, size, CONTENT_W - rightW - (right ? 14 : 0));
+    lines.forEach((line, i) =>
+      blocks.push({
+        t: "line",
+        text: line,
+        font,
+        size,
+        color: INK,
+        x: MARGIN + 12,
+        gapAfter: i === lines.length - 1 ? gap : st.lineGap,
+        right: i === 0 && right ? { text: right, size: st.expMeta, color: INK } : undefined,
+        keepWithNext: i === lines.length - 1 ? keepWithNext : undefined,
+      }),
+    );
+  };
+  const metaLine = (left: string, right: string) => {
+    const rightW = right ? fonts.italic.widthOfTextAtSize(right, st.expMeta) : 0;
+    const lines = wrap(left, fonts.italic, st.expMeta, CONTENT_W - rightW - (right ? 14 : 0));
+    lines.forEach((line, i) =>
+      blocks.push({
+        t: "line",
+        text: line,
+        font: fonts.italic,
+        size: st.expMeta,
+        color: INK,
+        x: MARGIN + 12,
+        gapAfter: i === lines.length - 1 ? st.metaGap : st.lineGap,
+        right: i === 0 && right ? { text: right, size: st.expMeta, color: INK } : undefined,
+      }),
+    );
+  };
+  const bullet = (text: string) => {
+    const lines = wrap(text, fonts.regular, st.bullet, CONTENT_W - 34);
+    lines.forEach((line, i) =>
+      blocks.push({
+        t: "line",
+        text: i === 0 ? `- ${line}` : line,
+        font: fonts.regular,
+        size: st.bullet,
+        color: INK,
+        x: MARGIN + (i === 0 ? 24 : 34),
+        gapAfter: st.bulletGap,
+      }),
+    );
+  };
+  const skillLine = (label: string, values: string[]) => {
+    const prefix = `${label}:`;
+    const valueText = values.join(", ");
+    const prefixW = fonts.bold.widthOfTextAtSize(prefix, st.skills) + 4;
+    const lines = wrap(valueText, fonts.regular, st.skills, CONTENT_W - prefixW);
+    if (lines.length === 0) return;
+    blocks.push({
+      t: "skillLine",
+      label: prefix,
+      text: lines[0]!,
+      labelFont: fonts.bold,
+      font: fonts.regular,
+      size: st.skills,
+      color: INK,
+      x: MARGIN,
+      gapAfter: st.tight,
+      keepWithNext: lines.length > 1,
+    });
+    for (const line of lines.slice(1)) {
+      blocks.push({
+        t: "line",
+        text: line,
+        font: fonts.regular,
+        size: st.skills,
+        color: INK,
+        x: MARGIN + 18,
+        gapAfter: st.tight,
+      });
+    }
+  };
 
-  para(resume.name || "Your Name", fonts.bold, st.name, INK, st.headingGap);
-  if (resume.headline) para(resume.headline, fonts.bold, st.headline, ACCENT, st.contactGap);
-  const contact = [resume.email, resume.phone, resume.location, ...resume.links.map((l) => l.url)].filter(Boolean).join("  |  ");
-  if (contact) para(contact, fonts.regular, st.contact, GRAY, st.contactGap);
+  para(resume.name || "Your Name", fonts.bold, st.name, INK, st.headingGap, MARGIN, CONTENT_W, "center");
+  if (resume.headline) {
+    para(resume.headline, fonts.italic, st.headline, INK, st.contactGap, MARGIN, CONTENT_W, "center");
+  }
+  const links = resume.links
+    .map((link) => clean(link.url))
+    .filter(Boolean);
+  const contact = [resume.phone, resume.email, ...links, resume.location].filter(Boolean).join(" | ");
+  if (contact) para(contact, fonts.regular, st.contact, INK, st.contactGap, MARGIN, CONTENT_W, "center");
 
   if (resume.summary) {
     heading("Summary");
@@ -146,40 +331,37 @@ function layout(resume: ResumeContent, st: Style, fonts: Fonts): Block[] {
   }
 
   if (resume.experience.length > 0) {
-    heading("Experience");
+    heading("Work Experience");
     for (const job of resume.experience) {
-      const title = [job.title, job.company].filter(Boolean).join(", ");
+      const title = job.title || job.company;
       const dates = dateRange(job.startDate, job.endDate, job.current);
-      const dateW = dates ? fonts.regular.widthOfTextAtSize(dates, st.expMeta) : 0;
-      const titleLines = wrap(title, fonts.bold, st.expTitle, CONTENT_W - dateW - 12);
-      titleLines.forEach((line, i) =>
-        blocks.push({
-          t: "line",
-          text: line,
-          font: fonts.bold,
-          size: st.expTitle,
-          color: INK,
-          x: MARGIN,
-          gapAfter: i === titleLines.length - 1 ? st.tight : st.lineGap,
-          right: i === 0 && dates ? { text: dates, size: st.expMeta, color: GRAY } : undefined,
-          // The title's last line stays with the line that follows (location or first bullet).
-          keepWithNext: i === titleLines.length - 1,
-        }),
-      );
-      if (job.location) blocks.push({ t: "line", text: job.location, font: fonts.regular, size: st.expMeta, color: GRAY, x: MARGIN, gapAfter: st.metaGap });
-      for (const bullet of job.bullets) {
-        const lines = wrap(bullet, fonts.regular, st.bullet, CONTENT_W - 14);
-        lines.forEach((line, i) =>
-          blocks.push({
-            t: "line",
-            text: i === 0 ? `- ${line}` : line,
-            font: fonts.regular,
-            size: st.bullet,
-            color: INK,
-            x: MARGIN + (i === 0 ? 0 : 10),
-            gapAfter: st.bulletGap,
-          }),
-        );
+      if (title) titleLine(title, dates, fonts.bold, st.expTitle, st.tight);
+      const meta = [job.company && job.title ? job.company : "", job.location].filter(Boolean).join(" - ");
+      if (meta) metaLine(meta, "");
+      for (const item of job.bullets) {
+        bullet(item);
+      }
+      blocks.push({ t: "space", h: st.itemAfter });
+    }
+  }
+
+  if (resume.projects.length > 0) {
+    heading("Projects");
+    for (const project of resume.projects) {
+      const name = project.name || "Project";
+      const tech = (project.technologies ?? []).map(clean).filter(Boolean).join(", ");
+      titleLine(name, "", fonts.bold, st.expTitle, st.tight);
+      if (tech) {
+        metaLine(tech, "");
+      }
+      if (project.description) {
+        para(project.description, fonts.regular, st.summary, INK, st.summaryGap, MARGIN + 12, CONTENT_W - 12);
+      }
+      for (const item of project.bullets ?? []) {
+        bullet(item);
+      }
+      if (project.url) {
+        metaLine(project.url, "");
       }
       blocks.push({ t: "space", h: st.itemAfter });
     }
@@ -188,37 +370,72 @@ function layout(resume: ResumeContent, st: Style, fonts: Fonts): Block[] {
   if (resume.education.length > 0) {
     heading("Education");
     for (const e of resume.education) {
-      const head = [e.degree, e.field].filter(Boolean).join(", ") || e.school;
-      const suffix = (e.degree || e.field) && e.school ? ` - ${e.school}` : "";
       const dates = dateRange(e.startDate, e.endDate);
-      const dateW = dates ? fonts.regular.widthOfTextAtSize(dates, st.expMeta) : 0;
-      const lines = wrap(`${head}${suffix}`, fonts.bold, st.eduTitle, CONTENT_W - dateW - 12);
-      lines.forEach((line, i) =>
-        blocks.push({
-          t: "line",
-          text: line,
-          font: fonts.bold,
-          size: st.eduTitle,
-          color: INK,
-          x: MARGIN,
-          gapAfter: st.tight,
-          right: i === 0 && dates ? { text: dates, size: st.expMeta, color: GRAY } : undefined,
-        }),
-      );
-      blocks.push({ t: "space", h: st.metaGap });
+      titleLine(e.school || [e.degree, e.field].filter(Boolean).join(", "), dates, fonts.bold, st.eduTitle, st.tight);
+      const degreeLine = [
+        [e.degree, e.field].filter(Boolean).join(", "),
+        e.gpa ? `GPA: ${e.gpa}` : "",
+      ].filter(Boolean).join(", ");
+      if (degreeLine) metaLine(degreeLine, "");
+      blocks.push({ t: "space", h: st.itemTight });
     }
   }
 
-  if (resume.skills.length > 0) {
+  if (resume.certifications.length > 0) {
+    heading("Certifications");
+    for (const certification of resume.certifications) {
+      titleLine(certification.name || certification.issuer || "Certification", certification.date ?? "", fonts.bold, st.expTitle, st.tight);
+      const details = [certification.issuer, certification.url].filter(Boolean).join(" - ");
+      if (details) metaLine(details, "");
+      blocks.push({ t: "space", h: st.itemTight });
+    }
+  }
+
+  if (resume.skills.length > 0 || resume.languages.length > 0 || resume.interests.length > 0) {
     heading("Skills");
-    para(resume.skills.join(", "), fonts.regular, st.skills, INK, st.lineGap);
+    for (const section of groupedSkillSections(resume.skills)) {
+      skillLine(section.label, section.values);
+    }
+    if (resume.languages.length > 0) {
+      skillLine("Languages", resume.languages);
+    }
+    if (resume.interests.length > 0) {
+      skillLine("Interests", resume.interests);
+    }
+  }
+
+  if (resume.awards.length > 0) {
+    heading("Awards");
+    for (const award of resume.awards) {
+      titleLine(award.title || award.issuer || "Award", award.date ?? "", fonts.bold, st.expTitle, st.tight);
+      const details = [award.issuer, award.url].filter(Boolean).join(" - ");
+      if (details) metaLine(details, "");
+      blocks.push({ t: "space", h: st.itemTight });
+    }
+  }
+
+  if (resume.publications.length > 0) {
+    heading("Publications");
+    for (const publication of resume.publications) {
+      titleLine(publication.title || publication.publisher || "Publication", publication.date ?? "", fonts.bold, st.expTitle, st.tight);
+      const details = [publication.publisher, publication.url].filter(Boolean).join(" - ");
+      if (details) metaLine(details, "");
+      blocks.push({ t: "space", h: st.itemTight });
+    }
+  }
+
+  if (resume.references.length > 0) {
+    heading("References");
+    for (const reference of resume.references) {
+      para(reference, fonts.regular, st.summary, INK, st.summaryGap);
+    }
   }
 
   return blocks;
 }
 
 function blockHeight(b: Block): number {
-  if (b.t === "line") return b.size + b.gapAfter;
+  if (b.t === "line" || b.t === "skillLine") return b.size + b.gapAfter;
   if (b.t === "rule") return b.gapBefore + 1 + b.gapAfter;
   return b.h;
 }
@@ -258,11 +475,25 @@ function paginate(doc: PDFDocument | null, blocks: Block[], fonts: Fonts): PageP
         if (y - b.size < MARGIN && !atPageTop()) breakPage(); // safety for runs taller than a page
         y -= b.size;
         if (doc && page) {
-          page.drawText(clean(b.text), { x: b.x, y, size: b.size, font: b.font, color: b.color });
+          const text = clean(b.text);
+          const x = b.align === "center" ? MARGIN + (CONTENT_W - b.font.widthOfTextAtSize(text, b.size)) / 2 : b.x;
+          page.drawText(text, { x, y, size: b.size, font: b.font, color: b.color });
           if (b.right) {
-            const w = fonts.regular.widthOfTextAtSize(b.right.text, b.right.size);
-            page.drawText(b.right.text, { x: MARGIN + CONTENT_W - w, y, size: b.right.size, font: fonts.regular, color: b.right.color });
+            const rightText = clean(b.right.text);
+            const w = fonts.regular.widthOfTextAtSize(rightText, b.right.size);
+            page.drawText(rightText, { x: MARGIN + CONTENT_W - w, y, size: b.right.size, font: fonts.regular, color: b.right.color });
           }
+        }
+        y -= b.gapAfter;
+      } else if (b.t === "skillLine") {
+        if (y - b.size < MARGIN && !atPageTop()) breakPage();
+        y -= b.size;
+        if (doc && page) {
+          const label = clean(b.label);
+          const text = clean(b.text);
+          page.drawText(label, { x: b.x, y, size: b.size, font: b.labelFont, color: b.color });
+          const offset = b.labelFont.widthOfTextAtSize(label, b.size) + 4;
+          page.drawText(text, { x: b.x + offset, y, size: b.size, font: b.font, color: b.color });
         }
         y -= b.gapAfter;
       } else if (b.t === "rule") {
@@ -307,8 +538,9 @@ function fitResume(resume: ResumeContent, fonts: Fonts): { density: number; plan
 export async function measureResumePdf(resume: ResumeContent): Promise<{ pages: number; lastFill: number; density: number }> {
   const doc = await PDFDocument.create();
   const fonts: Fonts = {
-    regular: await doc.embedFont(StandardFonts.Helvetica),
-    bold: await doc.embedFont(StandardFonts.HelveticaBold),
+    regular: await doc.embedFont(StandardFonts.TimesRoman),
+    bold: await doc.embedFont(StandardFonts.TimesRomanBold),
+    italic: await doc.embedFont(StandardFonts.TimesRomanItalic),
   };
   const { density, plan } = fitResume(resume, fonts);
   return { pages: plan.pages, lastFill: plan.lastFill, density };
@@ -318,8 +550,9 @@ export async function renderResumePdf(resume: ResumeContent): Promise<Uint8Array
   const doc = await PDFDocument.create();
   doc.setTitle(clean(resume.name || "Resume"));
   const fonts: Fonts = {
-    regular: await doc.embedFont(StandardFonts.Helvetica),
-    bold: await doc.embedFont(StandardFonts.HelveticaBold),
+    regular: await doc.embedFont(StandardFonts.TimesRoman),
+    bold: await doc.embedFont(StandardFonts.TimesRomanBold),
+    italic: await doc.embedFont(StandardFonts.TimesRomanItalic),
   };
   const { density } = fitResume(resume, fonts);
   paginate(doc, layout(resume, makeStyle(density), fonts), fonts);

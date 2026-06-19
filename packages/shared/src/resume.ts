@@ -28,6 +28,35 @@ export interface ResumeEducation {
   gpa?: string;
 }
 
+export interface ResumeProject {
+  name: string;
+  description?: string;
+  bullets?: string[];
+  technologies?: string[];
+  url?: string;
+}
+
+export interface ResumeCertification {
+  name: string;
+  issuer?: string;
+  date?: string;
+  url?: string;
+}
+
+export interface ResumeAward {
+  title: string;
+  issuer?: string;
+  date?: string;
+  url?: string;
+}
+
+export interface ResumePublication {
+  title: string;
+  publisher?: string;
+  date?: string;
+  url?: string;
+}
+
 export interface ResumeContent {
   name: string;
   headline: string;
@@ -39,6 +68,13 @@ export interface ResumeContent {
   experience: ResumeExperience[];
   education: ResumeEducation[];
   skills: string[];
+  projects: ResumeProject[];
+  certifications: ResumeCertification[];
+  languages: string[];
+  awards: ResumeAward[];
+  publications: ResumePublication[];
+  interests: string[];
+  references: string[];
 }
 
 export type TailorMatchTier = "STRONG_FIT" | "MODERATE_FIT" | "STRETCH" | "LONG_SHOT";
@@ -85,6 +121,13 @@ export function emptyResumeContent(): ResumeContent {
     experience: [],
     education: [],
     skills: [],
+    projects: [],
+    certifications: [],
+    languages: [],
+    awards: [],
+    publications: [],
+    interests: [],
+    references: [],
   };
 }
 
@@ -113,6 +156,44 @@ export function resumeEmbeddingText(resume: Partial<ResumeContent> | Record<stri
           .map((item) => {
             const row = item && typeof item === "object" ? (item as Record<string, unknown>) : {};
             return [row.degree, row.field, row.school].filter(Boolean).join(" ");
+          })
+          .join("\n")
+      : "",
+    Array.isArray(r.projects)
+      ? r.projects
+          .map((item) => {
+            const row = item && typeof item === "object" ? (item as Record<string, unknown>) : {};
+            return [
+              row.name,
+              row.description,
+              Array.isArray(row.bullets) ? row.bullets.join(" ") : "",
+              Array.isArray(row.technologies) ? row.technologies.join(" ") : "",
+            ].filter(Boolean).join(" ");
+          })
+          .join("\n")
+      : "",
+    Array.isArray(r.certifications)
+      ? r.certifications
+          .map((item) => {
+            const row = item && typeof item === "object" ? (item as Record<string, unknown>) : {};
+            return [row.name, row.issuer, row.date].filter(Boolean).join(" ");
+          })
+          .join("\n")
+      : "",
+    Array.isArray(r.languages) ? r.languages.join(", ") : "",
+    Array.isArray(r.awards)
+      ? r.awards
+          .map((item) => {
+            const row = item && typeof item === "object" ? (item as Record<string, unknown>) : {};
+            return [row.title, row.issuer, row.date].filter(Boolean).join(" ");
+          })
+          .join("\n")
+      : "",
+    Array.isArray(r.publications)
+      ? r.publications
+          .map((item) => {
+            const row = item && typeof item === "object" ? (item as Record<string, unknown>) : {};
+            return [row.title, row.publisher, row.date].filter(Boolean).join(" ");
           })
           .join("\n")
       : "",

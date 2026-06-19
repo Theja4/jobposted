@@ -19,6 +19,13 @@ const resume: ResumeContent = {
   ],
   education: [],
   skills: ["TypeScript", "Reliability", "APIs"],
+  projects: [],
+  certifications: [],
+  languages: [],
+  awards: [],
+  publications: [],
+  interests: [],
+  references: [],
 };
 
 const analysis: TailorAnalysis = {

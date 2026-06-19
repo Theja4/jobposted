@@ -35,6 +35,51 @@ function isMissingApplicationModeColumn(error: unknown) {
   );
 }
 
+async function findExistingResumeVersion(
+  supabase: Awaited<ReturnType<typeof createSupabaseServerClient>>,
+  userId: string,
+  contentHash?: string,
+) {
+  if (!contentHash) return null;
+  const { data, error } = await supabase
+    .from("resume_base_versions")
+    .select("id,storage_path")
+    .eq("user_id", userId)
+    .eq("content_hash", contentHash)
+    .order("created_at", { ascending: true })
+    .limit(1)
+    .maybeSingle();
+  if (error) {
+    await reportError("onboarding existing resume version lookup failed", error, { userId });
+    return null;
+  }
+  return data as { id: string; storage_path: string | null } | null;
+}
+
+async function ensureBaseResumeDocument(
+  supabase: Awaited<ReturnType<typeof createSupabaseServerClient>>,
+  userId: string,
+  storagePath?: string | null,
+) {
+  if (!storagePath) return;
+  const { data: existingDocument } = await supabase
+    .from("documents")
+    .select("id")
+    .eq("user_id", userId)
+    .eq("type", "base_resume")
+    .eq("storage_path", storagePath)
+    .maybeSingle();
+  if (existingDocument?.id) return;
+  const { error: documentError } = await supabase.from("documents").insert({
+    user_id: userId,
+    type: "base_resume",
+    storage_path: storagePath,
+  });
+  if (documentError) {
+    await reportError("onboarding base resume document insert failed", documentError, { userId });
+  }
+}
+
 export async function POST(request: Request) {
   const supabase = await createSupabaseServerClient();
   const {
@@ -101,17 +146,31 @@ export async function POST(request: Request) {
   }
 
   const sourceDocument = config.profile.resumeSource ?? undefined;
-  const content = resumeContentFromProfilePayload(profilePayload, sourceDocument);
+  const existingResumeVersion = await findExistingResumeVersion(
+    supabase,
+    user.id,
+    sourceDocument?.contentHash,
+  );
+  const content = existingResumeVersion ? null : resumeContentFromProfilePayload(profilePayload, sourceDocument);
   const hasResumeContent =
-    content.name ||
-    content.headline ||
-    content.summary ||
-    (content.skills?.length ?? 0) > 0 ||
-    (content.experience?.length ?? 0) > 0 ||
-    (content.education?.length ?? 0) > 0 ||
+    Boolean(existingResumeVersion) ||
+    Boolean(content?.name) ||
+    Boolean(content?.headline) ||
+    Boolean(content?.summary) ||
+    (content?.skills?.length ?? 0) > 0 ||
+    (content?.experience?.length ?? 0) > 0 ||
+    (content?.education?.length ?? 0) > 0 ||
     sourceDocument;
 
-  if (hasResumeContent) {
+  if (existingResumeVersion?.id) {
+    await supabase
+      .from("profiles")
+      .upsert(
+        { id: user.id, email: user.email ?? null, active_resume_version_id: existingResumeVersion.id },
+        { onConflict: "id" },
+      );
+    await ensureBaseResumeDocument(supabase, user.id, existingResumeVersion.storage_path ?? sourceDocument?.storagePath);
+  } else if (hasResumeContent && content) {
     const embedding = await embedResumeContent(content);
     const { data: version, error: versionError } = await supabase
       .from("resume_base_versions")
@@ -137,25 +196,7 @@ export async function POST(request: Request) {
           { onConflict: "id" },
         );
     }
-    if (sourceDocument?.storagePath) {
-      const { data: existingDocument } = await supabase
-        .from("documents")
-        .select("id")
-        .eq("user_id", user.id)
-        .eq("type", "base_resume")
-        .eq("storage_path", sourceDocument.storagePath)
-        .maybeSingle();
-      if (!existingDocument?.id) {
-        const { error: documentError } = await supabase.from("documents").insert({
-          user_id: user.id,
-          type: "base_resume",
-          storage_path: sourceDocument.storagePath,
-        });
-        if (documentError) {
-          await reportError("onboarding base resume document insert failed", documentError, { userId: user.id });
-        }
-      }
-    }
+    await ensureBaseResumeDocument(supabase, user.id, sourceDocument?.storagePath);
   }
 
   const answers = reusableAnswersFromOnboarding(config);

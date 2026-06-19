@@ -22,6 +22,13 @@ export type ParsedResumeProfile = {
   skills?: string[];
   experience?: OnboardingExperience[];
   education?: OnboardingEducation[];
+  projects?: ResumeData["projects"];
+  certifications?: ResumeData["certifications"];
+  languages?: string[];
+  awards?: ResumeData["awards"];
+  publications?: ResumeData["publications"];
+  interests?: string[];
+  references?: string[];
   screening?: Partial<OnboardingConfig["profile"]["screening"]>;
 };
 
@@ -429,6 +436,13 @@ function profileFromResumeData(data: ResumeData, sourceText = ""): ParsedResumeP
       }))
       .filter((item) => item.school || item.degree)
       .slice(0, 6),
+    projects: (data.projects ?? []).slice(0, 6),
+    certifications: (data.certifications ?? []).slice(0, 8),
+    languages,
+    awards: (data.awards ?? []).slice(0, 8),
+    publications: (data.publications ?? []).slice(0, 8),
+    interests: (data.interests ?? []).slice(0, 12),
+    references: (data.references ?? []).slice(0, 4),
     screening: {
       hybridPreference: extractHybridPreference(text, workLocations),
       travelOk,

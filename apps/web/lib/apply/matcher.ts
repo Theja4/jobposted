@@ -498,6 +498,45 @@ function overlapRatio(needle: string, haystack: string) {
   return matched / needleWords.length;
 }
 
+const GENERIC_TITLE_WORDS = new Set([
+  "associate",
+  "analyst",
+  "director",
+  "executive",
+  "head",
+  "ii",
+  "iii",
+  "iv",
+  "lead",
+  "manager",
+  "owner",
+  "principal",
+  "senior",
+  "specialist",
+  "sr",
+  "staff",
+]);
+
+function titleSpecificWords(title: string) {
+  return words(title).filter((word) => !GENERIC_TITLE_WORDS.has(word));
+}
+
+function titleMatch(selectedTitle: string, jobTitle: string | null | undefined) {
+  const title = jobTitle ?? "";
+  const ratio = overlapRatio(selectedTitle, title);
+  const selectedSpecificWords = titleSpecificWords(selectedTitle);
+  const jobWords = new Set(words(title));
+  const exactPhrase = includesPhrase(title.toLowerCase(), selectedTitle.toLowerCase());
+  const hasSpecificOverlap =
+    selectedSpecificWords.length === 0 ||
+    selectedSpecificWords.some((word) => jobWords.has(word));
+  return {
+    title: selectedTitle,
+    ratio,
+    ok: ratio >= 0.34 && (exactPhrase || hasSpecificOverlap),
+  };
+}
+
 function clampScore(value: number) {
   return Math.max(0, Math.min(100, Math.round(value)));
 }
@@ -737,10 +776,10 @@ export function scoreJobForConfig(
   const titleOptions = config.search.titles;
   if (titleOptions.length > 0) {
     const rankedTitles = titleOptions
-      .map((title) => ({ title, ratio: overlapRatio(title, job.title ?? "") }))
+      .map((title) => titleMatch(title, job.title))
       .sort((a, b) => b.ratio - a.ratio);
-    const best = rankedTitles[0] ?? { title: null, ratio: 0 };
-    if (best.ratio < 0.34) {
+    const best = rankedTitles[0] ?? { title: null, ratio: 0, ok: false };
+    if (!best.ok) {
       blockers.push("Title does not match selected roles");
     } else {
       score += 35 * best.ratio;

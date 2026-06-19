@@ -1,9 +1,13 @@
 import {
   emptyResumeContent,
   type ResumeContent,
+  type ResumeAward,
+  type ResumeCertification,
   type ResumeEducation,
   type ResumeExperience,
   type ResumeLink,
+  type ResumeProject,
+  type ResumePublication,
 } from "@jobposted/shared";
 
 // The server client is scoped to the non-public `jobposted` schema, whose
@@ -54,6 +58,72 @@ function educationFrom(value: unknown): ResumeEducation[] {
     });
   }
   return out;
+}
+
+function projectsFrom(value: unknown): ResumeProject[] {
+  if (!Array.isArray(value)) return [];
+  const out: ResumeProject[] = [];
+  for (const item of value) {
+    const r = rec(item);
+    const name = str(r.name);
+    const description = str(r.description);
+    const bullets = strArr(r.bullets);
+    const technologies = strArr(r.technologies);
+    if (!name && !description && bullets.length === 0) continue;
+    out.push({
+      name,
+      description: description || undefined,
+      bullets,
+      technologies,
+      url: str(r.url) || undefined,
+    });
+  }
+  return out;
+}
+
+function certificationsFrom(value: unknown): ResumeCertification[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((item) => {
+      const r = rec(item);
+      return {
+        name: str(r.name),
+        issuer: str(r.issuer) || undefined,
+        date: str(r.date) || undefined,
+        url: str(r.url) || undefined,
+      };
+    })
+    .filter((item) => item.name || item.issuer);
+}
+
+function awardsFrom(value: unknown): ResumeAward[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((item) => {
+      const r = rec(item);
+      return {
+        title: str(r.title),
+        issuer: str(r.issuer) || undefined,
+        date: str(r.date) || undefined,
+        url: str(r.url) || undefined,
+      };
+    })
+    .filter((item) => item.title || item.issuer);
+}
+
+function publicationsFrom(value: unknown): ResumePublication[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((item) => {
+      const r = rec(item);
+      return {
+        title: str(r.title),
+        publisher: str(r.publisher) || undefined,
+        date: str(r.date) || undefined,
+        url: str(r.url) || undefined,
+      };
+    })
+    .filter((item) => item.title || item.publisher);
 }
 
 function linksFrom(profileRow: Rec, content: Rec): ResumeLink[] {
@@ -113,8 +183,20 @@ export async function loadBaseResume(
   const skills = strArr(content.skills);
   const summary = str(content.summary);
   const headline = str(content.headline ?? content.currentRole ?? content.title);
+  const projects = projectsFrom(content.projects);
+  const certifications = certificationsFrom(content.certifications);
+  const languages = strArr(content.languages);
+  const awards = awardsFrom(content.awards);
+  const publications = publicationsFrom(content.publications);
 
-  if (!summary && !headline && experience.length === 0 && skills.length === 0) {
+  if (
+    !summary &&
+    !headline &&
+    experience.length === 0 &&
+    skills.length === 0 &&
+    projects.length === 0 &&
+    certifications.length === 0
+  ) {
     return null;
   }
 
@@ -130,5 +212,12 @@ export async function loadBaseResume(
     experience,
     education: educationFrom(content.education),
     skills,
+    projects,
+    certifications,
+    languages,
+    awards,
+    publications,
+    interests: strArr(content.interests),
+    references: strArr(content.references),
   };
 }

@@ -15,6 +15,18 @@ describe("pickAdapter", () => {
     expect(adapter?.risk).toBe("review_only");
   });
 
+  it("does not treat custom careers pages as hosted Greenhouse forms", () => {
+    const adapter = pickAdapter("greenhouse", "https://stripe.com/jobs/search?gh_jid=123");
+    expect(adapter?.id).toBe("greenhouse");
+    expect(adapter?.risk).toBe("review_only");
+  });
+
+  it("still supports hosted Greenhouse forms", () => {
+    const adapter = pickAdapter("greenhouse", "https://boards.greenhouse.io/acme/jobs/123");
+    expect(adapter?.id).toBe("greenhouse");
+    expect(adapter?.risk).toBe("server_safe");
+  });
+
   it("routes post-submit captcha challenges to review", async () => {
     let clickedSubmit = false;
     const validSelectors = new Set([

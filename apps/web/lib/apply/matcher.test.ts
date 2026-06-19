@@ -218,6 +218,22 @@ describe("scoreJobForConfig", () => {
     expect(scoreJobForConfig(job(), value).eligible).toBe(true);
   });
 
+  it("does not treat generic manager or analyst words as product-role matches", () => {
+    const value = pmConfig();
+    value.search.titles = ["Product Manager", "Product Analyst"];
+    value.filters.match = "high";
+
+    for (const title of [
+      "Sr. Engineering Manager - Notebook Dataplane",
+      "Payments Risk Analyst II",
+      "Staff Employee Relations Manager, APAC",
+    ]) {
+      const decision = scoreJobForConfig(job({ title }), value);
+      expect(decision.eligible).toBe(false);
+      expect(decision.blockers).toContain("Title does not match selected roles");
+    }
+  });
+
   it("blocks cross-discipline noise even on broader fit (PM vs backend SWE)", () => {
     const value = pmConfig();
     value.filters.match = "high";

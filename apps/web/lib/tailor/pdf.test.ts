@@ -63,6 +63,28 @@ describe("renderResumePdf", () => {
     expect(new TextDecoder().decode(bytes.slice(0, 5))).toBe("%PDF-");
   });
 
+  it("renders rich master-resume sections without dropping the document", async () => {
+    const bytes = await renderResumePdf(
+      sample({
+        projects: [
+          {
+            name: "AI Hiring Insights",
+            description: "Matched candidates to roles using resume and job evidence.",
+            bullets: ["Built the scoring workflow and review dashboard."],
+            technologies: ["Python", "SQL", "Machine learning"],
+          },
+        ],
+        certifications: [{ name: "Certified Scrum Product Owner", issuer: "Scrum Alliance", date: "2020" }],
+        languages: ["English", "Hindi", "Telugu"],
+        awards: [{ title: "Product Excellence Award", issuer: "Acme", date: "2023" }],
+        publications: [{ title: "Practical Product Analytics", publisher: "Internal Guild", date: "2022" }],
+        interests: ["Mentoring"],
+      }),
+    );
+    const doc = await PDFDocument.load(bytes);
+    expect(doc.getPageCount()).toBeGreaterThanOrEqual(1);
+  });
+
   it("page-fit condenses a slightly-overflowing junior resume onto one page", async () => {
     // ~1.x pages of content, <3 years experience → should be condensed to a single page.
     const bullets = Array.from({ length: 5 }, (_, i) => `Shipped meaningful improvement number ${i} that moved a real metric for the team`);

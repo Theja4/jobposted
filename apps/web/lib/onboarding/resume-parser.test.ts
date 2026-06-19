@@ -105,6 +105,15 @@ describe("resume onboarding parser mapping", () => {
     expect(parsed.filters?.includeKeywords).toEqual(
       expect.arrayContaining(["Roadmapping", "Product analytics", "SQL", "Python", "Machine learning"]),
     );
+    expect(parsed.projects?.[0]).toMatchObject({
+      name: "AI Hiring Insights",
+      technologies: ["Python", "Machine learning"],
+    });
+    expect(parsed.certifications?.[0]).toMatchObject({
+      name: "Certified Scrum Product Owner",
+      issuer: "Scrum Alliance",
+    });
+    expect(parsed.languages).toEqual(["English", "Hindi"]);
     expect(parsed.workAuth).toMatchObject({
       authorizedToWork: true,
       needsSponsorship: false,

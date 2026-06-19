@@ -1,4 +1,13 @@
-import type { ResumeContent, ResumeEducation, ResumeExperience, ResumeLink } from "@jobposted/shared";
+import type {
+  ResumeAward,
+  ResumeCertification,
+  ResumeContent,
+  ResumeEducation,
+  ResumeExperience,
+  ResumeLink,
+  ResumeProject,
+  ResumePublication,
+} from "@jobposted/shared";
 
 export type Rec = Record<string, unknown>;
 
@@ -20,6 +29,13 @@ export type ProfilePayload = {
   skills?: unknown;
   experience?: unknown;
   education?: unknown;
+  projects?: unknown;
+  certifications?: unknown;
+  languages?: unknown;
+  awards?: unknown;
+  publications?: unknown;
+  interests?: unknown;
+  references?: unknown;
 };
 
 export type ResumeVersionContent = Partial<ResumeContent> & {
@@ -74,6 +90,67 @@ export function educationContent(value: unknown): ResumeEducation[] {
     .filter((education) => education.school || education.degree);
 }
 
+export function projectContent(value: unknown): ResumeProject[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((item) => {
+      const row = rec(item);
+      return {
+        name: str(row.name),
+        description: str(row.description) || undefined,
+        bullets: strArr(row.bullets),
+        technologies: strArr(row.technologies),
+        url: str(row.url) || undefined,
+      };
+    })
+    .filter((project) => project.name || project.description || (project.bullets?.length ?? 0) > 0);
+}
+
+export function certificationContent(value: unknown): ResumeCertification[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((item) => {
+      const row = rec(item);
+      return {
+        name: str(row.name),
+        issuer: str(row.issuer) || undefined,
+        date: str(row.date) || undefined,
+        url: str(row.url) || undefined,
+      };
+    })
+    .filter((certification) => certification.name || certification.issuer);
+}
+
+export function awardContent(value: unknown): ResumeAward[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((item) => {
+      const row = rec(item);
+      return {
+        title: str(row.title),
+        issuer: str(row.issuer) || undefined,
+        date: str(row.date) || undefined,
+        url: str(row.url) || undefined,
+      };
+    })
+    .filter((award) => award.title || award.issuer);
+}
+
+export function publicationContent(value: unknown): ResumePublication[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((item) => {
+      const row = rec(item);
+      return {
+        title: str(row.title),
+        publisher: str(row.publisher) || undefined,
+        date: str(row.date) || undefined,
+        url: str(row.url) || undefined,
+      };
+    })
+    .filter((publication) => publication.title || publication.publisher);
+}
+
 function link(label: string, url: string): ResumeLink | null {
   return url ? { label, url } : null;
 }
@@ -99,6 +176,13 @@ export function resumeContentFromProfilePayload(
     skills: strArr(payload.skills),
     experience: experienceContent(payload.experience),
     education: educationContent(payload.education),
+    projects: projectContent(payload.projects),
+    certifications: certificationContent(payload.certifications),
+    languages: strArr(payload.languages),
+    awards: awardContent(payload.awards),
+    publications: publicationContent(payload.publications),
+    interests: strArr(payload.interests),
+    references: strArr(payload.references),
   };
   if (sourceDocument) content.sourceDocument = sourceDocument;
   return content;

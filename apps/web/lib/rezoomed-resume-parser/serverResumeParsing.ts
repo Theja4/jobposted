@@ -47,17 +47,18 @@ function buildParseCandidate(
   }
 }
 
-function buildMarkerCandidate(snapshot: FirstPartyResumeSnapshot | null): ResumeParseCandidate | null {
+function buildMarkerCandidate(
+  snapshot: FirstPartyResumeSnapshot | null,
+  sourceTextLength: number,
+): ResumeParseCandidate | null {
   if (!snapshot) return null
 
+  const normalized = syncResumeData(snapshot.data)
+
   return {
-    data: syncResumeData(snapshot.data),
+    data: normalized,
     source: 'marker',
-    confidence: {
-      score: 100,
-      level: 'high',
-      issues: [],
-    },
+    confidence: assessResumeParseConfidence(normalized, { sourceTextLength }),
   }
 }
 
@@ -157,7 +158,11 @@ async function repairResumeParseWithLLM(params: {
   return syncResumeData(response)
 }
 
-async function extractSourceTextLength(buffer: Buffer, fileType: string) {
+async function extractSourceTextLength(
+  buffer: Buffer,
+  fileType: string,
+  options: { quiet?: boolean } = {},
+) {
   try {
     if (fileType === PDF_MIME_TYPE) {
       const pages = await extractPDFItems(buffer)
@@ -171,7 +176,7 @@ async function extractSourceTextLength(buffer: Buffer, fileType: string) {
 
     return buffer.toString('utf-8').trim().length
   } catch (error) {
-    console.warn('Failed to extract source text length for resume parsing:', error)
+    if (!options.quiet) console.warn('Failed to extract source text length for resume parsing:', error)
   }
 
   return 0
@@ -213,8 +218,8 @@ export async function parseResumeRobustly(params: {
     markerSnapshot = await extractFirstPartyResumeSnapshotFromPdf(buffer)
   }
 
-  const markerCandidate = buildMarkerCandidate(markerSnapshot)
-  const sourceTextLength = markerCandidate ? 0 : await extractSourceTextLength(buffer, fileType)
+  const sourceTextLength = await extractSourceTextLength(buffer, fileType, { quiet: Boolean(markerSnapshot) })
+  const markerCandidate = buildMarkerCandidate(markerSnapshot, sourceTextLength)
   let sourceTextCache: string | null = null
 
   async function getSourceText() {
@@ -226,20 +231,24 @@ export async function parseResumeRobustly(params: {
 
   let parsedData: ResumeData | null = null
   let failureReason: string | undefined
-  if (!markerCandidate) {
-    try {
-      parsedData = await pdfjsParser.parse(buffer, fileType)
-    } catch (error) {
-      console.error('Fast resume parser failed:', error)
-      failureReason = parseFailureCode(error)
-      parsedData = null
-    }
+  try {
+    parsedData = await pdfjsParser.parse(buffer, fileType)
+  } catch (error) {
+    // A Rezoomed marker is still a valid source even if visible-text extraction fails.
+    if (!markerCandidate) console.error('Fast resume parser failed:', error)
+    failureReason = parseFailureCode(error)
+    parsedData = null
   }
 
   const fastCandidate = buildParseCandidate(parsedData, 'fast', sourceTextLength)
   let textCandidate: ResumeParseCandidate | null = null
 
-  if (!markerCandidate && (!fastCandidate || fastCandidate.confidence.level === 'low')) {
+  if (
+    sourceTextLength > 0 &&
+    (!fastCandidate ||
+      fastCandidate.confidence.level === 'low' ||
+      (markerCandidate && shouldAttemptRepair(markerCandidate)))
+  ) {
     try {
       const text = await getSourceText()
       if (text.length > 0) {
@@ -265,14 +274,16 @@ export async function parseResumeRobustly(params: {
   let repairCandidate: ResumeParseCandidate | null = null
   let repairAttempted = false
 
-  if (!markerCandidate && shouldAttemptRepair(bestDeterministicCandidate)) {
+  const bestBeforeRepair = chooseBetterParseCandidate(markerCandidate, bestDeterministicCandidate)
+
+  if (shouldAttemptRepair(bestBeforeRepair)) {
     repairAttempted = gatewayConfigured()
     if (repairAttempted) {
       try {
         const text = await getSourceText()
         const repairedData = await repairResumeParseWithLLM({
           sourceText: text,
-          deterministicCandidate: bestDeterministicCandidate,
+          deterministicCandidate: bestBeforeRepair,
         })
         repairCandidate = buildParseCandidate(repairedData, 'repair', text.length)
       } catch (error) {
