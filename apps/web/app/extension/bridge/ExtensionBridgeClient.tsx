@@ -19,6 +19,8 @@ export function ExtensionBridgeClient({ requestId }: { requestId?: string }) {
 
   useEffect(() => {
     let cancelled = false;
+    let intervalId: number | null = null;
+    let stopId: number | null = null;
     async function deliver() {
       if (!supabase) {
         setState("error");
@@ -31,26 +33,33 @@ export function ExtensionBridgeClient({ requestId }: { requestId?: string }) {
         setState("signed-out");
         return;
       }
-      window.postMessage(
-        {
-          type: "JOBPOSTED_EXTENSION_SESSION",
-          requestId,
-          session: {
-            accessToken: session.access_token,
-            refreshToken: session.refresh_token,
-            expiresAt: session.expires_at,
-            user: session.user
-              ? { id: session.user.id, email: session.user.email ?? null }
-              : null,
-          },
+      const payload = {
+        type: "JOBPOSTED_EXTENSION_SESSION",
+        requestId,
+        session: {
+          accessToken: session.access_token,
+          refreshToken: session.refresh_token,
+          expiresAt: session.expires_at,
+          user: session.user
+            ? { id: session.user.id, email: session.user.email ?? null }
+            : null,
         },
-        window.location.origin,
-      );
+      };
+      window.postMessage(payload, window.location.origin);
+      intervalId = window.setInterval(() => {
+        window.postMessage(payload, window.location.origin);
+      }, 500);
+      stopId = window.setTimeout(() => {
+        if (intervalId) window.clearInterval(intervalId);
+        intervalId = null;
+      }, 8_000);
       setState("sent");
     }
     void deliver();
     return () => {
       cancelled = true;
+      if (intervalId) window.clearInterval(intervalId);
+      if (stopId) window.clearTimeout(stopId);
     };
   }, [requestId, supabase]);
 

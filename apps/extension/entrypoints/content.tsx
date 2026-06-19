@@ -1,6 +1,7 @@
 import React, { useMemo, useRef, useState } from "react";
 import ReactDOM from "react-dom/client";
 import type {
+  ExtensionAuthSession,
   ExtensionFieldFillRecord,
   ExtensionMessageResponse,
   ExtensionSettings,
@@ -53,6 +54,77 @@ const CONTENT_MATCHES = [
   ...(includeLocalhost ? ["http://localhost:3000/*"] : []),
 ].filter((value, index, all) => all.indexOf(value) === index);
 
+function asRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+}
+
+function str(value: unknown) {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function num(value: unknown) {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function configuredHostname() {
+  try {
+    return new URL(JOBPOSTED_WEB_ORIGIN).hostname.toLowerCase();
+  } catch {
+    return "jobposted.app";
+  }
+}
+
+function isJobPostedWebAppHost(hostname = location.hostname) {
+  const host = hostname.toLowerCase();
+  return (
+    host === configuredHostname() ||
+    host === "jobposted.app" ||
+    host === "www.jobposted.app" ||
+    host === "jobposted.ai" ||
+    host === "www.jobposted.ai" ||
+    (includeLocalhost && host === "localhost")
+  );
+}
+
+function normalizeSupabaseSession(value: unknown): ExtensionAuthSession | null {
+  const root = asRecord(value);
+  const session = asRecord(root.currentSession ?? root.session ?? value);
+  const accessToken = str(session.access_token ?? session.accessToken);
+  if (!accessToken) return null;
+  const refreshToken = str(session.refresh_token ?? session.refreshToken) || null;
+  const expiresAt = num(session.expires_at ?? session.expiresAt ?? root.expiresAt);
+  const user = asRecord(session.user);
+  const userId = str(user.id);
+
+  return {
+    accessToken,
+    refreshToken,
+    expiresAt,
+    user: userId ? { id: userId, email: str(user.email) || null } : null,
+  };
+}
+
+function readStoredWebSession(): ExtensionAuthSession | null {
+  try {
+    for (let index = 0; index < window.localStorage.length; index += 1) {
+      const key = window.localStorage.key(index) ?? "";
+      if (!key.startsWith("sb-") || !key.endsWith("-auth-token")) continue;
+      const session = normalizeSupabaseSession(JSON.parse(window.localStorage.getItem(key) ?? "null"));
+      if (session) return session;
+    }
+  } catch {
+    return null;
+  }
+  return null;
+}
+
+async function syncStoredWebSession() {
+  if (!isJobPostedWebAppHost()) return;
+  const session = readStoredWebSession();
+  if (!session) return;
+  await chrome.runtime.sendMessage({ type: "AUTH_SESSION_DELIVERY", session }).catch(() => undefined);
+}
+
 function message<T extends ExtensionMessageResponse>(payload: unknown): Promise<T> {
   return chrome.runtime.sendMessage(payload) as Promise<T>;
 }
@@ -62,20 +134,14 @@ function installBridgeListener() {
     if (event.source !== window || event.origin !== window.location.origin) return;
     const data = event.data as Record<string, unknown> | null;
     if (!data || data.type !== "JOBPOSTED_EXTENSION_SESSION") return;
+    const session = normalizeSupabaseSession(data.session);
+    if (!session) return;
     void chrome.runtime.sendMessage({
       type: "AUTH_SESSION_DELIVERY",
       requestId: typeof data.requestId === "string" ? data.requestId : undefined,
-      session: data.session,
+      session,
     });
   });
-}
-
-function onBridgePage() {
-  const expected = new URL(JOBPOSTED_WEB_ORIGIN).hostname;
-  return (
-    (location.hostname === expected || location.hostname === "localhost") &&
-    location.pathname.startsWith("/extension/bridge")
-  );
 }
 
 function injectPageHighlightStyle() {
@@ -222,7 +288,10 @@ export default defineContentScript({
   cssInjectionMode: "manual",
   async main(ctx) {
     installBridgeListener();
-    if (onBridgePage()) return;
+    if (isJobPostedWebAppHost()) {
+      void syncStoredWebSession();
+      return;
+    }
     injectPageHighlightStyle();
     const adapter = detectAdapter();
     if (adapter.id === "generic") {

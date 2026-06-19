@@ -23,6 +23,7 @@ export async function readSession(): Promise<ExtensionAuthSession | null> {
 
 export async function writeSession(session: ExtensionAuthSession): Promise<void> {
   await chrome.storage.local.set({ [SESSION_KEY]: session });
+  await chrome.storage.local.remove(PROFILE_KEY);
 }
 
 export async function clearSession(): Promise<void> {
@@ -35,7 +36,10 @@ export async function getFreshSession(): Promise<ExtensionAuthSession | null> {
   const expiresAt = session.expiresAt ?? 0;
   const shouldRefresh = Boolean(session.refreshToken) && expiresAt - 60 < Date.now() / 1000;
   if (!shouldRefresh) return session;
-  if (!SUPABASE_URL || !SUPABASE_ANON_KEY || !session.refreshToken) return session;
+  if (!SUPABASE_URL || !SUPABASE_ANON_KEY || !session.refreshToken) {
+    await clearSession();
+    return null;
+  }
 
   const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
     auth: { persistSession: false, autoRefreshToken: false },
@@ -43,7 +47,10 @@ export async function getFreshSession(): Promise<ExtensionAuthSession | null> {
   const { data, error } = await supabase.auth.refreshSession({
     refresh_token: session.refreshToken,
   });
-  if (error || !data.session) return session;
+  if (error || !data.session) {
+    await clearSession();
+    return null;
+  }
   const refreshed: ExtensionAuthSession = {
     accessToken: data.session.access_token,
     refreshToken: data.session.refresh_token,

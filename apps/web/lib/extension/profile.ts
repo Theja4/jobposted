@@ -5,7 +5,7 @@ import type {
   MasterProfileExperience,
   ReusableAnswer,
 } from "@jobposted/shared";
-import { sanitizeOnboardingConfig } from "@/lib/onboarding/model";
+import { onboardingCompletion, sanitizeOnboardingConfig } from "@/lib/onboarding/model";
 
 type UnknownRecord = Record<string, unknown>;
 
@@ -159,21 +159,39 @@ export function buildMasterProfile(args: {
   const row = args.profileRow ?? {};
   const content = asRecord(args.resumeContent);
   const email = asString(row.email) || args.authEmail || "";
-  const name = splitName(asString(row.full_name), email);
-  const location = splitLocation(asString(row.location));
+  const onboardingConfig = args.onboardingData ? sanitizeOnboardingConfig(args.onboardingData, email) : null;
+  const onboardingProfile = onboardingConfig?.profile;
+  const onboardingBasics = onboardingProfile?.basics;
+  const onboardingLinks = onboardingProfile?.links;
+  const onboardingWorkAuth = onboardingProfile?.workAuth;
+  const name = splitName(onboardingBasics?.fullName || asString(row.full_name), email);
+  const location = splitLocation(onboardingBasics?.location || asString(row.location));
   const workAuthorization = asString(row.work_authorization);
-  const needsSponsorship =
+  const storedNeedsSponsorship =
     typeof row.needs_sponsorship === "boolean" ? row.needs_sponsorship : null;
-  const authorizedToWork = authorizedToWorkFromProfile(workAuthorization, needsSponsorship);
+  const needsSponsorship =
+    onboardingWorkAuth && onboardingWorkAuth.needsSponsorship !== null
+      ? onboardingWorkAuth.needsSponsorship
+      : storedNeedsSponsorship;
+  const authorizedToWork =
+    onboardingWorkAuth && onboardingWorkAuth.authorizedToWork !== null
+      ? onboardingWorkAuth.authorizedToWork
+      : authorizedToWorkFromProfile(workAuthorization, needsSponsorship);
 
   const links = asRecord(content.links);
+  const onboardingExperience = normalizeExperience(onboardingProfile?.experience);
+  const resumeExperience = normalizeExperience(content.experience ?? content.workExperience);
+  const onboardingEducation = normalizeEducation(onboardingProfile?.education);
+  const resumeEducation = normalizeEducation(content.education);
+  const onboardingSkills = asStringArray(onboardingProfile?.skills);
+  const resumeSkills = asStringArray(content.skills);
   const profile: MasterProfile = {
     identity: {
       firstName: name.firstName,
       lastName: name.lastName,
       preferredName: asString(content.preferredName) || null,
-      email,
-      phone: asString(row.phone),
+      email: onboardingBasics?.email || email,
+      phone: onboardingBasics?.phone || asString(row.phone),
     },
     location: {
       street: asString(content.street ?? content.address) || null,
@@ -183,9 +201,9 @@ export function buildMasterProfile(args: {
       country: asString(content.country) || location.country,
     },
     links: {
-      portfolio: asString(row.portfolio_url) || asString(links.portfolio) || null,
-      linkedin: asString(row.linkedin_url) || asString(links.linkedin) || null,
-      github: asString(links.github) || null,
+      portfolio: onboardingLinks?.portfolio || asString(row.portfolio_url) || asString(links.portfolio) || null,
+      linkedin: onboardingLinks?.linkedin || asString(row.linkedin_url) || asString(links.linkedin) || null,
+      github: onboardingLinks?.github || asString(links.github) || null,
       website: asStringArray(links.website),
     },
     workAuth: {
@@ -194,17 +212,17 @@ export function buildMasterProfile(args: {
       country: asString(content.workAuthCountry) || location.country,
     },
     compensation: {
-      currentMin: moneyOf(row.current_salary_min),
-      currentMax: moneyOf(row.current_salary_max),
-      currentCurrency: asString(row.current_salary_currency) || null,
-      expectedMin: moneyOf(row.salary_expectation_min),
-      expectedMax: moneyOf(row.salary_expectation_max),
-      currency: asString(row.salary_currency) || null,
+      currentMin: onboardingWorkAuth?.currentSalaryMin ?? moneyOf(row.current_salary_min),
+      currentMax: onboardingWorkAuth?.currentSalaryMax ?? moneyOf(row.current_salary_max),
+      currentCurrency: onboardingWorkAuth?.currentSalaryCurrency || asString(row.current_salary_currency) || null,
+      expectedMin: onboardingWorkAuth?.salaryMin ?? moneyOf(row.salary_expectation_min),
+      expectedMax: onboardingWorkAuth?.salaryMax ?? moneyOf(row.salary_expectation_max),
+      currency: onboardingWorkAuth?.salaryCurrency || asString(row.salary_currency) || null,
     },
     demographics: demographicsFromOnboarding(args.onboardingData, email),
-    experience: normalizeExperience(content.experience ?? content.workExperience),
-    education: normalizeEducation(content.education),
-    skills: asStringArray(content.skills),
+    experience: onboardingExperience.length > 0 ? onboardingExperience : resumeExperience,
+    education: onboardingEducation.length > 0 ? onboardingEducation : resumeEducation,
+    skills: onboardingSkills.length > 0 ? onboardingSkills : resumeSkills,
     answers: args.answers ?? [],
     documents: {
       resumeUrl: args.resumeUrl ?? null,
@@ -212,7 +230,7 @@ export function buildMasterProfile(args: {
     },
     source: "jobposted",
   };
-  profile.completeness = profileCompleteness(profile);
+  profile.completeness = onboardingConfig ? onboardingCompletion(onboardingConfig) : profileCompleteness(profile);
   return profile;
 }
 

@@ -1,12 +1,88 @@
 import { useEffect, useState } from "react";
 import { ArrowRight, CheckCircle2, ExternalLink, Loader2, LogOut, RefreshCw, Settings, ShieldCheck } from "lucide-react";
-import type { ExtensionMessageResponse, ExtensionSyncQueueStatus, MasterProfile } from "@jobposted/shared";
+import type { ExtensionAuthSession, ExtensionMessageResponse, ExtensionSyncQueueStatus, MasterProfile } from "@jobposted/shared";
 import { JOBPOSTED_WEB_ORIGIN } from "../../src/config/env";
 
 type AuthState = "checking" | "signed-out" | "signed-in";
 
 function send<T extends ExtensionMessageResponse>(payload: unknown): Promise<T> {
   return chrome.runtime.sendMessage(payload) as Promise<T>;
+}
+
+function sleep(ms: number) {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
+function configuredHostname() {
+  try {
+    return new URL(JOBPOSTED_WEB_ORIGIN).hostname.toLowerCase();
+  } catch {
+    return "jobposted.app";
+  }
+}
+
+function isJobPostedUrl(url: string | undefined) {
+  if (!url) return false;
+  try {
+    const host = new URL(url).hostname.toLowerCase();
+    return (
+      host === configuredHostname() ||
+      host === "jobposted.app" ||
+      host === "www.jobposted.app" ||
+      host === "jobposted.ai" ||
+      host === "www.jobposted.ai" ||
+      host === "localhost"
+    );
+  } catch {
+    return false;
+  }
+}
+
+function validSession(value: unknown): value is ExtensionAuthSession {
+  return Boolean(value && typeof value === "object" && typeof (value as { accessToken?: unknown }).accessToken === "string");
+}
+
+async function connectFromActiveJobPostedTab() {
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  if (!tab?.id || !isJobPostedUrl(tab.url)) return false;
+  const results = await chrome.scripting.executeScript({
+    target: { tabId: tab.id },
+    func: () => {
+      const asRecord = (value: unknown): Record<string, unknown> =>
+        value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+      const str = (value: unknown) => (typeof value === "string" ? value.trim() : "");
+      const num = (value: unknown) => (typeof value === "number" && Number.isFinite(value) ? value : null);
+      const normalize = (value: unknown) => {
+        const root = asRecord(value);
+        const session = asRecord(root.currentSession ?? root.session ?? value);
+        const accessToken = str(session.access_token ?? session.accessToken);
+        if (!accessToken) return null;
+        const user = asRecord(session.user);
+        const userId = str(user.id);
+        return {
+          accessToken,
+          refreshToken: str(session.refresh_token ?? session.refreshToken) || null,
+          expiresAt: num(session.expires_at ?? session.expiresAt ?? root.expiresAt),
+          user: userId ? { id: userId, email: str(user.email) || null } : null,
+        };
+      };
+      for (let index = 0; index < window.localStorage.length; index += 1) {
+        const key = window.localStorage.key(index) ?? "";
+        if (!key.startsWith("sb-") || !key.endsWith("-auth-token")) continue;
+        try {
+          const session = normalize(JSON.parse(window.localStorage.getItem(key) ?? "null"));
+          if (session) return session;
+        } catch {
+          // Keep scanning other Supabase keys.
+        }
+      }
+      return null;
+    },
+  });
+  const session = results[0]?.result;
+  if (!validSession(session)) return false;
+  const delivered = await send<ExtensionMessageResponse>({ type: "AUTH_SESSION_DELIVERY", session });
+  return delivered.ok && delivered.type === "AUTH_STATUS" && delivered.authenticated;
 }
 
 export function PopupApp() {
@@ -16,18 +92,33 @@ export function PopupApp() {
   const [syncStatus, setSyncStatus] = useState<ExtensionSyncQueueStatus | null>(null);
   const [busy, setBusy] = useState(false);
 
-  async function refresh() {
-    const status = await send<ExtensionMessageResponse>({ type: "AUTH_STATUS" });
+  async function refresh(options: { allowActiveTabConnect?: boolean } = {}) {
+    const allowActiveTabConnect = options.allowActiveTabConnect ?? true;
+    let status = await send<ExtensionMessageResponse>({ type: "AUTH_STATUS" });
+    if ((!status.ok || status.type !== "AUTH_STATUS" || !status.authenticated) && allowActiveTabConnect) {
+      try {
+        const connected = await connectFromActiveJobPostedTab();
+        if (connected) status = await send<ExtensionMessageResponse>({ type: "AUTH_STATUS" });
+      } catch {
+        // Active-tab access is opportunistic; the bridge button remains the fallback.
+      }
+    }
     if (!status.ok || status.type !== "AUTH_STATUS" || !status.authenticated) {
       setAuth("signed-out");
       setEmail(null);
+      setProfile(null);
       return;
     }
     setAuth("signed-in");
     setEmail(status.email ?? null);
-    const profileResponse = await send<ExtensionMessageResponse>({ type: "PROFILE_GET" });
+    const profileResponse = await send<ExtensionMessageResponse>({ type: "PROFILE_GET", forceRefresh: true });
     if (profileResponse.ok && profileResponse.type === "PROFILE_GET") {
       setProfile(profileResponse.profile);
+    } else if (!profileResponse.ok && profileResponse.status === 401) {
+      setProfile(null);
+      setAuth("signed-out");
+      setEmail(null);
+      return;
     }
     const queueResponse = await send<ExtensionMessageResponse>({ type: "SYNC_QUEUE_STATUS" });
     if (queueResponse.ok && queueResponse.type === "SYNC_QUEUE_STATUS") {
@@ -41,8 +132,25 @@ export function PopupApp() {
 
   async function signIn() {
     setBusy(true);
-    await send<ExtensionMessageResponse>({ type: "AUTH_START" });
-    setBusy(false);
+    setAuth("checking");
+    try {
+      if (await connectFromActiveJobPostedTab()) {
+        await refresh({ allowActiveTabConnect: false });
+        return;
+      }
+      await send<ExtensionMessageResponse>({ type: "AUTH_START" });
+      for (let attempt = 0; attempt < 20; attempt += 1) {
+        await sleep(500);
+        const status = await send<ExtensionMessageResponse>({ type: "AUTH_STATUS" });
+        if (status.ok && status.type === "AUTH_STATUS" && status.authenticated) {
+          await refresh({ allowActiveTabConnect: false });
+          return;
+        }
+      }
+      setAuth("signed-out");
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function signOut() {

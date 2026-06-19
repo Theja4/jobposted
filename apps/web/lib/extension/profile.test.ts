@@ -69,4 +69,61 @@ describe("buildMasterProfile", () => {
     expect(profile.workAuth.authorizedToWork).toBe(true);
     expect(profile.workAuth.requiresSponsorship).toBe(true);
   });
+
+  it("prefers saved onboarding setup and uses its completion score", () => {
+    const profile = buildMasterProfile({
+      authEmail: "old@example.com",
+      profileRow: {
+        email: "old@example.com",
+        full_name: "Old Profile",
+        phone: "",
+        location: "",
+        work_authorization: "not_authorized",
+        needs_sponsorship: true,
+      },
+      onboardingData: {
+        search: {
+          workLocations: ["remote"],
+          jobTypes: ["fulltime"],
+          titles: ["Product Manager"],
+        },
+        profile: {
+          basics: {
+            fullName: "Theja Chitturi",
+            email: "theja@example.com",
+            phone: "+91 73300 07006",
+            location: "Hyderabad, India",
+          },
+          links: {
+            linkedin: "https://linkedin.com/in/theja",
+          },
+          workAuth: {
+            authorizedToWork: true,
+            needsSponsorship: false,
+          },
+          skills: ["Product strategy", "Analytics"],
+          experience: [{ title: "Product Analyst", company: "ION Group", bullets: ["Built workflow tools"] }],
+          education: [{ school: "VIT", degree: "B.Tech", field: "Technology" }],
+          resumeName: "Theja_Chitturi.pdf",
+        },
+        final: {
+          applicationMode: "auto",
+        },
+      },
+    });
+
+    expect(profile.identity).toMatchObject({
+      firstName: "Theja",
+      lastName: "Chitturi",
+      email: "theja@example.com",
+      phone: "+91 73300 07006",
+    });
+    expect(profile.location).toMatchObject({ city: "Hyderabad", country: "India" });
+    expect(profile.links.linkedin).toBe("https://linkedin.com/in/theja");
+    expect(profile.workAuth).toMatchObject({ authorizedToWork: true, requiresSponsorship: false });
+    expect(profile.skills).toEqual(["Product strategy", "Analytics"]);
+    expect(profile.experience[0]?.company).toBe("ION Group");
+    expect(profile.education[0]?.school).toBe("VIT");
+    expect(profile.completeness).toBe(100);
+  });
 });

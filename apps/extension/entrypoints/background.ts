@@ -7,7 +7,7 @@ import {
 } from "@jobposted/shared";
 import { EXTENSION_BRIDGE_PATH, JOBPOSTED_WEB_ORIGIN } from "../src/config/env";
 import { ExtensionHttpError, fetchProfile, fetchResume, mapField, saveAnswer, syncApplication } from "../src/lib/api";
-import { clearSession, readSession, readSettings, writeSession, writeSettings } from "../src/lib/storage";
+import { clearSession, getFreshSession, readSettings, writeSession, writeSettings } from "../src/lib/storage";
 import {
   APPLICATION_SYNC_ALARM,
   dueApplicationSyncs,
@@ -101,7 +101,7 @@ async function handleMessage(message: ExtensionMessage): Promise<ExtensionMessag
     case "AUTH_START":
       return startAuth();
     case "AUTH_STATUS": {
-      const session = await readSession();
+      const session = await getFreshSession();
       return {
         ok: true,
         type: "AUTH_STATUS",
