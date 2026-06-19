@@ -56,6 +56,46 @@ const EMPTY: BoardConfig = {
   companies: [],
 };
 
+const DEFAULT_BOARD_CONFIG: Partial<BoardConfig> = {
+  greenhouse: [
+    "airbnb",
+    "coinbase",
+    "databricks",
+    "discord",
+    "figma",
+    "postman",
+    "stripe",
+  ],
+  lever: ["netflix", "plaid", "spotify"],
+  ashby: ["ashby", "cursor", "linear"],
+  smartrecruiters: ["SmartRecruiters"],
+  workable: ["epignosis"],
+  teamtailor: ["unleash"],
+  companies: [
+    {
+      name: "Postman",
+      domain: "postman.com",
+      careersUrl: "https://www.postman.com/company/careers/",
+      countryFocus: ["IN", "Remote"],
+      priority: "high",
+      ats: [{ type: "greenhouse", slug: "postman" }],
+    },
+    {
+      name: "Coinbase",
+      domain: "coinbase.com",
+      careersUrl: "https://www.coinbase.com/careers",
+      countryFocus: ["Remote", "Global"],
+      priority: "medium",
+      ats: [{ type: "greenhouse", slug: "coinbase" }],
+    },
+  ],
+};
+
+function defaultBoardsDisabled() {
+  const value = process.env.INGEST_DISABLE_DEFAULT_BOARDS;
+  return value === "1" || value?.toLowerCase() === "true";
+}
+
 function stringArray(value: unknown): string[] {
   return Array.isArray(value)
     ? Array.from(
@@ -126,7 +166,8 @@ function normalizeCompanies(value: unknown): CompanyRegistryEntry[] {
 
 /**
  * Load board tokens from a JSON file (INGEST_BOARDS_FILE), shaped like
- * packages/db/seed/board_tokens.example.json. Returns an empty config if unset.
+ * packages/db/seed/board_tokens.example.json. Falls back to a small curated default set so cron
+ * cannot silently stop ingesting because an environment variable was missed.
  */
 export async function loadBoardConfig(file?: string): Promise<BoardConfig> {
   if (!file && process.env.INGEST_BOARDS_JSON) {
@@ -134,7 +175,9 @@ export async function loadBoardConfig(file?: string): Promise<BoardConfig> {
   }
 
   const path = file ?? process.env.INGEST_BOARDS_FILE;
-  if (!path) return EMPTY;
+  if (!path) {
+    return defaultBoardsDisabled() ? EMPTY : normalizeBoardConfig(DEFAULT_BOARD_CONFIG);
+  }
   return normalizeBoardConfig(JSON.parse(await readFile(path, "utf8")));
 }
 

@@ -64,7 +64,15 @@ async function withWorkerLock<T>(
 ) {
   if (process.env.WORKER_LOCKS_ENABLED === "0") return fn();
   const holder = workerHolder();
-  const acquired = await acquireWorkerLock(client, lockName, holder, ttlSeconds);
+  let acquired = false;
+  try {
+    acquired = await acquireWorkerLock(client, lockName, holder, ttlSeconds);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (!message.includes("acquire_worker_lock")) throw error;
+    await reportError("worker lock unavailable; running without lock", error, { lockName });
+    return fn();
+  }
   if (!acquired) return onLocked();
   try {
     return await fn();

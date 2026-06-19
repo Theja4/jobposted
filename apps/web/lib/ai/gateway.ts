@@ -8,7 +8,7 @@ export class GatewayError extends Error {}
 
 const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
 const VERCEL_GATEWAY_BASE_URL = "https://ai-gateway.vercel.sh/v1";
-const DEFAULT_OPENROUTER_MODEL = "deepseek/deepseek-chat";
+const DEFAULT_OPENROUTER_MODEL = "google/gemini-2.5-flash";
 const DEFAULT_VERCEL_MODEL = "openai/gpt-5-mini";
 
 type ProviderConfig = {

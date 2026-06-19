@@ -1033,33 +1033,46 @@ async function readCandidateJobs(client: SchemaScopedClient, limit: number, resu
     }
   }
 
-  const { data, error } = await client
-    .from("jobs")
-    .select(
-      [
-        "id",
-        "source",
-        "source_job_id",
-        "ats_type",
-        "company",
-        "title",
-        "location",
-        "remote",
-        "description_md",
-        "apply_url",
-        "salary_min",
-        "salary_max",
-        "salary_currency",
-        "posted_at",
-        "ingested_at",
-        "dedupe_key",
-      ].join(","),
-    )
-    .not("apply_url", "is", null)
-    .is("closed_at", null)
-    .order("posted_at", { ascending: false, nullsFirst: false })
-    .order("ingested_at", { ascending: false, nullsFirst: false })
-    .limit(limit);
+  const baseColumns = [
+    "id",
+    "source",
+    "source_job_id",
+    "ats_type",
+    "company",
+    "title",
+    "location",
+    "remote",
+    "description_md",
+    "apply_url",
+    "salary_min",
+    "salary_max",
+    "salary_currency",
+    "posted_at",
+    "ingested_at",
+  ];
+  const runQuery = (columns: string[], filterClosed = true) => {
+    let query = client
+      .from("jobs")
+      .select(columns.join(","))
+      .not("apply_url", "is", null);
+    if (filterClosed) query = query.is("closed_at", null);
+    return query
+      .order("posted_at", { ascending: false, nullsFirst: false })
+      .order("ingested_at", { ascending: false, nullsFirst: false })
+      .limit(limit);
+  };
+
+  let { data, error } = await runQuery([...baseColumns, "dedupe_key"]);
+  if (error && isMissingColumnError(error, "dedupe_key")) {
+    const fallback = await runQuery(baseColumns);
+    data = fallback.data;
+    error = fallback.error;
+  }
+  if (error && isMissingColumnError(error, "closed_at")) {
+    const fallback = await runQuery(baseColumns, false);
+    data = fallback.data;
+    error = fallback.error;
+  }
   if (error) throw new Error(`jobs_read_failed: ${dbErrorMessage(error)}`);
   return Array.isArray(data) ? (data as JobRow[]) : [];
 }
@@ -1079,7 +1092,26 @@ async function readExistingApplied(client: SchemaScopedClient, userId: string) {
     .from("applications")
     .select("job_id, jobs(dedupe_key)")
     .eq("user_id", userId);
-  if (error) throw new Error(`existing_applications_read_failed: ${dbErrorMessage(error)}`);
+  if (error) {
+    if (!isMissingColumnError(error, "dedupe_key")) {
+      throw new Error(`existing_applications_read_failed: ${dbErrorMessage(error)}`);
+    }
+    const fallback = await client
+      .from("applications")
+      .select("job_id")
+      .eq("user_id", userId);
+    if (fallback.error) {
+      throw new Error(`existing_applications_read_failed: ${dbErrorMessage(fallback.error)}`);
+    }
+    return {
+      ids: new Set(
+        (Array.isArray(fallback.data) ? (fallback.data as Array<{ job_id: string | null }>) : [])
+          .map((row) => row.job_id)
+          .filter((id): id is string => Boolean(id)),
+      ),
+      keys: new Set<string>(),
+    };
+  }
   const ids = new Set<string>();
   const keys = new Set<string>();
   for (const row of (Array.isArray(data) ? (data as ExistingAppliedRow[]) : [])) {
