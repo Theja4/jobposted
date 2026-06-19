@@ -826,6 +826,14 @@ function dbErrorMessage(error: unknown) {
   );
 }
 
+function isMissingColumnError(error: unknown, column: string) {
+  const record = asRecord(error);
+  return (
+    asString(record.code) === "42703" ||
+    dbErrorMessage(error).toLowerCase().includes(column.toLowerCase())
+  );
+}
+
 function modeFrom(value: unknown): "auto" | "review" | null {
   return value === "auto" || value === "review" ? value : null;
 }
@@ -875,7 +883,16 @@ async function readProfile(client: SchemaScopedClient, userId: string) {
     .select("email,application_mode,active_resume_version_id")
     .eq("id", userId)
     .maybeSingle();
-  if (error) return null;
+  if (error) {
+    if (!isMissingColumnError(error, "application_mode")) return null;
+    const fallback = await client
+      .from("profiles")
+      .select("email,active_resume_version_id")
+      .eq("id", userId)
+      .maybeSingle();
+    if (fallback.error) return null;
+    return (fallback.data ?? null) as ProfileRow | null;
+  }
   return (data ?? null) as ProfileRow | null;
 }
 
