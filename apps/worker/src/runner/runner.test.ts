@@ -298,7 +298,7 @@ describe("runApplyBatch", () => {
     expect(updates[0]?.reason).toContain("no_resume_artifact");
   });
 
-  it("routes tailoring-enabled jobs without rendered artifacts to review before submit", async () => {
+  it("requeues tailoring-enabled jobs without rendered artifacts before submit", async () => {
     const submit = vi.fn();
     const { db, updates } = fakeDb([job({ renderedPdfPath: null, attempts: 1 })]);
     const summary = await runApplyBatch({
@@ -307,11 +307,11 @@ describe("runApplyBatch", () => {
       pickAdapter: adapterReturning({ status: "submitted" }, submit),
       dryRun: false,
     });
-    expect(summary.review).toBe(1);
+    expect(summary.requeued).toBe(1);
     expect(submit).not.toHaveBeenCalled();
     expect(updates[0]).toMatchObject({
-      status: "ready_for_review",
-      reason: "missing_tailored_resume_artifact",
+      status: "queued",
+      reason: "waiting_for_tailored_resume",
       attempts: 0,
     });
   });

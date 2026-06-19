@@ -170,7 +170,7 @@ export async function POST(request: Request) {
 
       const { error: pinError } = await serviceClient
         .from("applications")
-        .update({ rendered_pdf_path: storagePath, resume_doc_id: documentId })
+        .update({ rendered_pdf_path: storagePath, resume_doc_id: documentId, failure_reason: null })
         .eq("id", row.id);
       if (pinError) {
         errors.push({ id: row.id, reason: `pin_failed: ${pinError.message}` });

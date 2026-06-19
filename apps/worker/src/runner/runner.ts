@@ -116,11 +116,11 @@ export async function runApplyBatch(deps: RunnerDeps): Promise<RunnerSummary> {
     }
 
     if (requiresRenderedResume(job) && !job.renderedPdfPath) {
-      await deps.db.markStatus(job.id, "ready_for_review", {
+      await deps.db.markStatus(job.id, "queued", {
         attempts: Math.max(0, job.attempts - 1),
-        reason: "missing_tailored_resume_artifact",
+        reason: "waiting_for_tailored_resume",
       });
-      summary.review += 1;
+      summary.requeued += 1;
       return;
     }
 
