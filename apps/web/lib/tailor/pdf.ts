@@ -25,8 +25,11 @@ const CONTENT_W = PAGE_W - MARGIN * 2;
 const USABLE_H = PAGE_H - MARGIN * 2;
 
 const MIN_DENSITY = 0.84;
-const MAX_DENSITY = 1.1;
+const MAX_DENSITY = 1.16;
 const DENSITY_STEPS = 20;
+const TARGET_SINGLE_PAGE_FILL = 0.84;
+const MAX_VERTICAL_FILL = 2.6;
+const VERTICAL_FILL_STEPS = 24;
 
 const INK = rgb(0.04, 0.07, 0.13);
 const RULE = rgb(0, 0, 0);
@@ -98,9 +101,11 @@ function wrap(text: string, font: PDFFont, size: number, maxWidth: number): stri
   return lines;
 }
 
-function makeStyle(d: number): Style {
+function makeStyle(d: number, vertical = 1): Style {
   const f = (base: number, floor: number) => Math.max(floor, base * d);
-  const g = (base: number) => Math.max(1.4, base * d);
+  const g = (base: number, scale = 1) => Math.max(1.4, base * d * scale);
+  const inline = Math.min(vertical, 1.25);
+  const flow = Math.min(vertical, 1.55);
   return {
     name: f(25.5, 20),
     headline: f(10.4, 9),
@@ -112,17 +117,17 @@ function makeStyle(d: number): Style {
     bullet: f(9.8, 8.5),
     eduTitle: f(11.2, 9.7),
     skills: f(9.8, 8.5),
-    lineGap: g(2),
-    summaryGap: g(2.6),
-    bulletGap: g(1.6),
-    metaGap: g(1.8),
-    tight: g(1),
-    itemTight: g(3.2),
-    sectionBefore: g(9),
-    sectionRuleGap: g(4.2),
-    headingGap: g(3.2),
-    itemAfter: g(5),
-    contactGap: g(1.6),
+    lineGap: g(2, inline),
+    summaryGap: g(2.6, flow),
+    bulletGap: g(1.6, inline),
+    metaGap: g(1.8, flow),
+    tight: g(1, inline),
+    itemTight: g(3.2, vertical),
+    sectionBefore: g(9, vertical),
+    sectionRuleGap: g(4.2, flow),
+    headingGap: g(3.2, flow),
+    itemAfter: g(5, vertical),
+    contactGap: g(1.6, flow),
   };
 }
 
@@ -518,32 +523,49 @@ function paginate(doc: PDFDocument | null, blocks: Block[], fonts: Fonts): PageP
  * minimum page count fills those pages as fully as possible — so a slightly-too-long resume packs
  * back onto one full page instead of orphaning a line, and a true two-pager fills both pages.
  */
-function fitResume(resume: ResumeContent, fonts: Fonts): { density: number; plan: PagePlan } {
-  const planAt = (d: number) => paginate(null, layout(resume, makeStyle(d), fonts), fonts);
+function fitResume(resume: ResumeContent, fonts: Fonts): { density: number; vertical: number; plan: PagePlan } {
+  const planAt = (d: number, vertical = 1) => paginate(null, layout(resume, makeStyle(d, vertical), fonts), fonts);
   const target = Math.max(1, planAt(MIN_DENSITY).pages); // fewest pages achievable
 
-  let best: { density: number; plan: PagePlan } | null = null;
+  let best: { density: number; vertical: number; plan: PagePlan } | null = null;
   for (let i = DENSITY_STEPS; i >= 0; i--) {
     const density = MIN_DENSITY + ((MAX_DENSITY - MIN_DENSITY) * i) / DENSITY_STEPS;
     const plan = planAt(density);
     if (plan.pages === target) {
-      best = { density, plan }; // first match scanning high→low = densest layout at target pages
+      best = { density, vertical: 1, plan }; // first match scanning high→low = densest layout at target pages
       break;
     }
   }
-  return best ?? { density: MIN_DENSITY, plan: planAt(MIN_DENSITY) };
+  best = best ?? { density: MIN_DENSITY, vertical: 1, plan: planAt(MIN_DENSITY) };
+
+  // If a resume comfortably fits on one page, the density ceiling alone can still leave a visually
+  // unfinished bottom third. Fill that space by expanding structural whitespace, capped so sparse
+  // resumes do not turn into oversized type or a forced two-pager.
+  if (target === 1 && best.plan.lastFill < TARGET_SINGLE_PAGE_FILL) {
+    let filled = best;
+    for (let i = 1; i <= VERTICAL_FILL_STEPS; i++) {
+      const vertical = 1 + ((MAX_VERTICAL_FILL - 1) * i) / VERTICAL_FILL_STEPS;
+      const plan = planAt(best.density, vertical);
+      if (plan.pages !== target) break;
+      filled = { density: best.density, vertical, plan };
+      if (plan.lastFill >= TARGET_SINGLE_PAGE_FILL) break;
+    }
+    best = filled;
+  }
+
+  return best;
 }
 
 /** Diagnostics: the page count + last-page fill the renderer will produce (used in tests). */
-export async function measureResumePdf(resume: ResumeContent): Promise<{ pages: number; lastFill: number; density: number }> {
+export async function measureResumePdf(resume: ResumeContent): Promise<{ pages: number; lastFill: number; density: number; vertical: number }> {
   const doc = await PDFDocument.create();
   const fonts: Fonts = {
     regular: await doc.embedFont(StandardFonts.TimesRoman),
     bold: await doc.embedFont(StandardFonts.TimesRomanBold),
     italic: await doc.embedFont(StandardFonts.TimesRomanItalic),
   };
-  const { density, plan } = fitResume(resume, fonts);
-  return { pages: plan.pages, lastFill: plan.lastFill, density };
+  const { density, vertical, plan } = fitResume(resume, fonts);
+  return { pages: plan.pages, lastFill: plan.lastFill, density, vertical };
 }
 
 export async function renderResumePdf(resume: ResumeContent): Promise<Uint8Array> {
@@ -554,7 +576,7 @@ export async function renderResumePdf(resume: ResumeContent): Promise<Uint8Array
     bold: await doc.embedFont(StandardFonts.TimesRomanBold),
     italic: await doc.embedFont(StandardFonts.TimesRomanItalic),
   };
-  const { density } = fitResume(resume, fonts);
-  paginate(doc, layout(resume, makeStyle(density), fonts), fonts);
+  const { density, vertical } = fitResume(resume, fonts);
+  paginate(doc, layout(resume, makeStyle(density, vertical), fonts), fonts);
   return doc.save();
 }

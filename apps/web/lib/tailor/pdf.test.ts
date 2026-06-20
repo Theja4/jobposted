@@ -100,6 +100,77 @@ describe("renderResumePdf", () => {
     expect(doc.getPageCount()).toBe(1);
   });
 
+  it("page-fit expands medium one-page resumes instead of leaving a sparse bottom", async () => {
+    const { pages, lastFill } = await measureResumePdf(
+      sample({
+        headline: "Product Manager",
+        summary:
+          "Product manager with experience building internal tools, AI workflows, and customer-facing platforms across ambiguous problem spaces.",
+        experience: [
+          {
+            company: "JobPosted",
+            title: "Product Manager",
+            location: "Remote",
+            current: true,
+            startDate: "2022",
+            bullets: [
+              "Led roadmap prioritisation for automation workflows, aligning product strategy with customer feedback and operational constraints.",
+              "Worked with engineering to debug API integrations and improve deployment reliability across the production deployment process.",
+            ],
+          },
+          {
+            company: "Previous Company",
+            title: "Associate Product Manager",
+            location: "Remote",
+            startDate: "2020",
+            endDate: "2022",
+            bullets: [
+              "Defined PRDs, acceptance criteria, and user stories for high-impact platform features used by internal teams.",
+              "Partnered with analytics to measure adoption, success metrics, and customer discovery outcomes.",
+            ],
+          },
+        ],
+        education: [{ school: "Vellore Institute of Technology", degree: "B.Tech", startDate: "Jan 2017", endDate: "Jan 2021" }],
+        skills: [
+          "Roadmap",
+          "PRDs",
+          "user stories",
+          "acceptance criteria",
+          "backlog prioritisation",
+          "A/B testing",
+          "user research",
+          "customer discovery",
+          "success metrics",
+          "MVP delivery",
+          "Agile",
+          "Scrum",
+          "SQL",
+          "Python",
+          "REST APIs",
+          "API debugging",
+          "Linux",
+          "microservices",
+          "RAG",
+          "vector embeddings",
+          "prompt engineering",
+          "LLM evaluation",
+          "Tableau",
+          "JIRA",
+          "Confluence",
+          "Postman",
+          "Git",
+          "Figma",
+          "MS Excel",
+          "MS PowerPoint",
+          "Notion",
+          "Slack",
+        ],
+      }),
+    );
+    expect(pages).toBe(1);
+    expect(lastFill).toBeGreaterThan(0.8);
+  });
+
   it("page-fit keeps a senior, content-rich resume within two pages", async () => {
     const bullets = Array.from({ length: 5 }, (_, i) => `Led initiative ${i} delivering measurable platform impact across multiple teams and quarters`);
     const experience = Array.from({ length: 6 }, (_, i) => ({
