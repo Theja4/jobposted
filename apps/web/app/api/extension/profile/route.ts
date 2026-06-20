@@ -20,7 +20,14 @@ export async function GET(request: Request) {
         .select("key,prompt,value")
         .eq("user_id", user.id)
         .order("updated_at", { ascending: false }),
-      supabase.from("onboarding_configurations").select("data").eq("user_id", user.id).maybeSingle(),
+      supabase
+        .from("onboarding_configurations")
+        .select("data,completed_at,updated_at")
+        .eq("user_id", user.id)
+        .order("completed_at", { ascending: false })
+        .order("updated_at", { ascending: false })
+        .limit(1)
+        .maybeSingle(),
     ]);
 
     const activeResumeVersionId =

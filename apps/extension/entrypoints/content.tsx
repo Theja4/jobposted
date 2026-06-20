@@ -16,11 +16,15 @@ import { Overlay, type OverlayRunState } from "../src/content/Overlay";
 const includeLocalhost =
   import.meta.env.MODE !== "production" ||
   import.meta.env.WXT_INCLUDE_LOCALHOST === "1" ||
-  JOBPOSTED_WEB_ORIGIN.startsWith("http://localhost");
+  /^http:\/\/(localhost|127\.0\.0\.1)(?::\d+)?$/i.test(JOBPOSTED_WEB_ORIGIN);
 
 function originMatch(origin: string) {
   try {
-    return `${new URL(origin).origin}/*`;
+    const url = new URL(origin);
+    if (url.hostname === "localhost" || url.hostname === "127.0.0.1") {
+      return `${url.protocol}//${url.hostname}/*`;
+    }
+    return `${url.origin}/*`;
   } catch {
     return "https://jobposted.app/*";
   }
@@ -51,7 +55,7 @@ const CONTENT_MATCHES = [
   "https://www.jobposted.app/*",
   "https://jobposted.ai/*",
   "https://www.jobposted.ai/*",
-  ...(includeLocalhost ? ["http://localhost:3000/*"] : []),
+  ...(includeLocalhost ? ["http://localhost/*", "http://127.0.0.1/*"] : []),
 ].filter((value, index, all) => all.indexOf(value) === index);
 
 function asRecord(value: unknown): Record<string, unknown> {
@@ -82,7 +86,7 @@ function isJobPostedWebAppHost(hostname = location.hostname) {
     host === "www.jobposted.app" ||
     host === "jobposted.ai" ||
     host === "www.jobposted.ai" ||
-    (includeLocalhost && host === "localhost")
+    (includeLocalhost && (host === "localhost" || host === "127.0.0.1"))
   );
 }
 
@@ -136,11 +140,35 @@ function installBridgeListener() {
     if (!data || data.type !== "JOBPOSTED_EXTENSION_SESSION") return;
     const session = normalizeSupabaseSession(data.session);
     if (!session) return;
-    void chrome.runtime.sendMessage({
-      type: "AUTH_SESSION_DELIVERY",
-      requestId: typeof data.requestId === "string" ? data.requestId : undefined,
-      session,
-    });
+    const requestId = typeof data.requestId === "string" ? data.requestId : undefined;
+    void chrome.runtime
+      .sendMessage({
+        type: "AUTH_SESSION_DELIVERY",
+        requestId,
+        session,
+      })
+      .then((response: ExtensionMessageResponse) => {
+        window.postMessage(
+          {
+            type: "JOBPOSTED_EXTENSION_SESSION_ACK",
+            requestId,
+            ok: response.ok && response.type === "AUTH_STATUS" && response.authenticated,
+            email: response.ok && response.type === "AUTH_STATUS" ? response.email ?? null : null,
+          },
+          window.location.origin,
+        );
+      })
+      .catch((error: unknown) => {
+        window.postMessage(
+          {
+            type: "JOBPOSTED_EXTENSION_SESSION_ACK",
+            requestId,
+            ok: false,
+            error: error instanceof Error ? error.message : "extension_unavailable",
+          },
+          window.location.origin,
+        );
+      });
   });
 }
 

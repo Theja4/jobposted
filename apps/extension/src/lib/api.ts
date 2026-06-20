@@ -15,7 +15,14 @@ import {
   API_RESUME_PATH,
   JOBPOSTED_WEB_ORIGIN,
 } from "../config/env";
-import { clearSession, getFreshSession, readCachedProfile, writeCachedProfile } from "./storage";
+import {
+  clearSession,
+  getFreshSession,
+  readCachedProfile,
+  recoverSessionFromPortalCookies,
+  refreshStoredSession,
+  writeCachedProfile,
+} from "./storage";
 
 class ExtensionHttpError extends Error {
   constructor(
@@ -32,18 +39,15 @@ function apiUrl(path: string) {
   return `${JOBPOSTED_WEB_ORIGIN.replace(/\/$/, "")}${path}`;
 }
 
-async function authedFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const session = await getFreshSession();
-  if (!session?.accessToken) throw new ExtensionHttpError(401, "not_authenticated");
+async function requestWithToken(path: string, accessToken: string, init: RequestInit = {}) {
   const controller = new AbortController();
   const timeoutId = globalThis.setTimeout(() => controller.abort(), DEFAULT_TIMEOUT_MS);
-  let response: Response;
   try {
-    response = await fetch(apiUrl(path), {
+    return await fetch(apiUrl(path), {
       ...init,
       signal: controller.signal,
       headers: {
-        authorization: `Bearer ${session.accessToken}`,
+        authorization: `Bearer ${accessToken}`,
         ...(init.body ? { "content-type": "application/json" } : {}),
         ...(init.headers ?? {}),
       },
@@ -56,9 +60,39 @@ async function authedFetch<T>(path: string, init: RequestInit = {}): Promise<T> 
   } finally {
     globalThis.clearTimeout(timeoutId);
   }
+}
+
+function parseResponseBody<T>(text: string): (T & { message?: string }) | null {
+  if (!text) return null;
+  try {
+    return JSON.parse(text) as T & { message?: string };
+  } catch {
+    return null;
+  }
+}
+
+async function authedFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
+  let session = await getFreshSession();
+  if (!session?.accessToken) throw new ExtensionHttpError(401, "not_authenticated");
+
+  let response = await requestWithToken(path, session.accessToken, init);
+  if (response.status === 401 && session.refreshToken) {
+    const refreshed = (await refreshStoredSession()) ?? (await recoverSessionFromPortalCookies());
+    if (refreshed?.accessToken && refreshed.accessToken !== session.accessToken) {
+      session = refreshed;
+      response = await requestWithToken(path, session.accessToken, init);
+    }
+  }
+  if (response.status === 401) {
+    const recovered = await recoverSessionFromPortalCookies();
+    if (recovered?.accessToken && recovered.accessToken !== session.accessToken) {
+      session = recovered;
+      response = await requestWithToken(path, session.accessToken, init);
+    }
+  }
 
   const text = await response.text();
-  const body = text ? (JSON.parse(text) as T & { message?: string }) : (null as T);
+  const body = parseResponseBody<T>(text);
   if (response.status === 401) {
     await clearSession();
   }
@@ -69,7 +103,7 @@ async function authedFetch<T>(path: string, init: RequestInit = {}): Promise<T> 
         : `request_failed:${response.status}`;
     throw new ExtensionHttpError(response.status, message);
   }
-  return body;
+  return body as T;
 }
 
 export async function fetchProfile(forceRefresh = false): Promise<MasterProfile> {
