@@ -1,9 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import { CheckCircle2, Clock, Send } from "lucide-react";
+import { AlertCircle, CheckCircle2, Clock, Send } from "lucide-react";
 import { type JobApplication } from "@/lib/dashboard/sample-data";
 import type { ApplicationMode } from "@/lib/dashboard/applications";
+import { isReviewAttentionStatus } from "@/lib/dashboard/queue-visibility";
 import { ApplicationRow } from "./ApplicationRow";
 
 export function QueuePanel({
@@ -19,6 +20,7 @@ export function QueuePanel({
   const [done, setDone] = useState(initialAcknowledged);
   const [busy, setBusy] = useState(false);
   const review = mode === "review";
+  const hasReviewItems = today.some((application) => isReviewAttentionStatus(application.rawStatus));
 
   async function takeAction() {
     if (busy) return;
@@ -39,18 +41,19 @@ export function QueuePanel({
   const sentCount = today.length;
   const applicationLabel = sentCount === 1 ? "application" : "applications";
   const hasDailyAction = sentCount > 0;
+  const canTakeAction = review && hasDailyAction;
   if (!review && !hasDailyAction) return null;
 
   const batchChip =
     !hasDailyAction
       ? { label: review ? "Empty" : "No queue", tone: "neutral" }
+      : hasReviewItems
+        ? { label: "Review", tone: "warning" }
       : review && !done
         ? { label: "Pending", tone: "warning" }
         : review
           ? { label: "Queued", tone: "success" }
-          : done
-            ? { label: "Reviewed", tone: "success" }
-            : { label: "Prepared", tone: "success" };
+          : { label: "Prepared", tone: "success" };
 
   const batchTitle = review
     ? done
@@ -58,8 +61,8 @@ export function QueuePanel({
       : hasDailyAction
         ? "Ready for review"
         : "Review queue"
-    : done
-      ? "Reviewed today"
+    : hasReviewItems
+      ? "Needs review"
       : "Prepared today";
   const batchSubtitle = review
     ? done
@@ -67,6 +70,8 @@ export function QueuePanel({
       : hasDailyAction
         ? `${sentCount} tailored ${applicationLabel} waiting for your go-ahead`
         : "Nothing is waiting for manual review right now"
+    : hasReviewItems
+      ? `${sentCount} ${applicationLabel} need a manual check before JobPosted can continue`
     : sentCount > 0
       ? `${sentCount} ${applicationLabel} prepared by JobPosted · manual and extension items stay in Tracker`
       : "No automatic JobPosted queue items yet today";
@@ -94,10 +99,10 @@ export function QueuePanel({
                   : "bg-zinc-100 text-zinc-500 ring-zinc-200/70")
             }
           >
-            {batchChip.tone === "warning" ? <Clock className="size-3.5" /> : <Send className="size-3.5" />}
+            {batchChip.tone === "warning" ? <AlertCircle className="size-3.5" /> : <Send className="size-3.5" />}
             {batchChip.label}
           </span>
-          {!done && hasDailyAction && (
+          {!done && canTakeAction && (
             <button
               type="button"
               onClick={takeAction}

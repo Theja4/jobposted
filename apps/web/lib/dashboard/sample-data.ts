@@ -26,6 +26,7 @@ export interface JobApplication {
   status: ApplicationStatus;
   rawStatus?: string | null;
   applyPath?: string | null;
+  jobUrl?: string | null;
   matchScore: number; // 0–100
   resumeName: string;
   resumeUrl: string;

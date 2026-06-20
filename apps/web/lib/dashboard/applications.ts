@@ -3,6 +3,7 @@ import { sanitizeOnboardingConfig } from "@/lib/onboarding/model";
 import { reportError } from "@/lib/observability/report";
 import { inferCompanyDomainFromCompanyName, logoDevCompanyLogoUrl } from "@jobposted/shared";
 import { type JobApplication } from "./sample-data";
+import { queueApplicationVisible, REVIEW_ATTENTION_STATUSES } from "./queue-visibility";
 
 type ApplicationRow = {
   id: string;
@@ -25,6 +26,7 @@ type ApplicationRow = {
         company_logo_url: string | null;
         title: string | null;
         location: string | null;
+        apply_url?: string | null;
       }
     | null;
 };
@@ -169,6 +171,7 @@ function mapRow(row: ApplicationRow): JobApplication {
     logoDevCompanyLogoUrl({ companyDomain, companyName: company });
   const role = (row.jobs?.title ?? row.job_title ?? asString(fieldMap.role)) || "Unknown role";
   const location = (row.jobs?.location ?? row.job_location ?? asString(fieldMap.location)) || "Remote or unknown";
+  const jobUrl = (row.jobs?.apply_url ?? asString(fieldMap.jobUrl)) || null;
   return {
     id: row.id,
     role,
@@ -181,12 +184,13 @@ function mapRow(row: ApplicationRow): JobApplication {
     status: statusForDashboard(row.status),
     rawStatus: row.status,
     applyPath: row.apply_path,
+    jobUrl,
     matchScore: scoreFromFieldMap(row.field_map),
     resumeName:
       resumeDisplayName ||
       (resumeUsed === "#"
         ? `Resume · ${company} ${role}.pdf`
-        : decodeURIComponent(resumeUsed.split("/").pop() || "Resume.pdf")),
+        : fileNameFromPath(resumeUsed)),
     resumeUrl: resumeUsed,
   };
 }
@@ -199,7 +203,7 @@ export async function getDashboardApplications(
   let query = supabase
     .from("applications")
     .select(
-      "id,status,apply_path,submitted_at,created_at,rendered_pdf_path,field_map,jobs:job_id(company,company_domain,company_logo_url,title,location)",
+      "id,status,apply_path,submitted_at,created_at,rendered_pdf_path,field_map,jobs:job_id(company,company_domain,company_logo_url,title,location,apply_url)",
     )
     .eq("apply_path", "server");
 
@@ -222,6 +226,99 @@ export async function getDashboardApplications(
 
 type ApplicationHistoryRpcRow = Omit<ApplicationRow, "jobs"> & { jobs?: null };
 type QueueRpcRow = Omit<ApplicationRow, "jobs" | "total_count"> & { jobs?: null };
+
+type ResumeFallback = {
+  resumeName: string;
+  resumeUrl: string;
+};
+
+type BaseResumeVersionRow = {
+  id: string;
+  storage_path: string | null;
+  content: unknown;
+};
+
+type ApplicationBaseVersionRow = {
+  id: string;
+  base_version_id: string | null;
+};
+
+function fileNameFromPath(path: string) {
+  return decodeURIComponent(path.split("/").pop() || "Resume.pdf");
+}
+
+function resumeFallbackFromBaseVersion(row: BaseResumeVersionRow | null | undefined): ResumeFallback | null {
+  if (!row) return null;
+  const content = asRecord(row.content);
+  const sourceDocument = asRecord(content.sourceDocument);
+  const storagePath = row.storage_path || asString(sourceDocument.storagePath);
+  if (!storagePath) return null;
+  const sourceName = asString(sourceDocument.name);
+  return {
+    resumeUrl: storagePath,
+    resumeName: sourceName || fileNameFromPath(storagePath),
+  };
+}
+
+async function hydrateMissingResumeFallbacks({
+  supabase,
+  userId,
+  applications,
+}: {
+  supabase: Awaited<ReturnType<typeof createSupabaseServerClient>>;
+  userId: string;
+  applications: JobApplication[];
+}) {
+  const missing = applications.filter((application) => !application.resumeUrl || application.resumeUrl === "#");
+  if (missing.length === 0) return applications;
+
+  const { data: applicationRows, error: applicationError } = await supabase
+    .from("applications")
+    .select("id,base_version_id")
+    .eq("user_id", userId)
+    .in("id", missing.map((application) => application.id));
+
+  if (applicationError) {
+    await reportError("dashboard queue resume fallback application fetch failed", applicationError, { userId });
+    return applications;
+  }
+
+  const appBaseRows = Array.isArray(applicationRows)
+    ? (applicationRows as ApplicationBaseVersionRow[])
+    : [];
+  const versionIds = Array.from(
+    new Set(appBaseRows.map((row) => row.base_version_id).filter((id): id is string => Boolean(id))),
+  );
+  if (versionIds.length === 0) return applications;
+
+  const { data: versions, error: versionError } = await supabase
+    .from("resume_base_versions")
+    .select("id,storage_path,content")
+    .eq("user_id", userId)
+    .in("id", versionIds);
+
+  if (versionError) {
+    await reportError("dashboard queue resume fallback version fetch failed", versionError, { userId });
+    return applications;
+  }
+
+  const fallbackByVersion = new Map(
+    (Array.isArray(versions) ? (versions as BaseResumeVersionRow[]) : [])
+      .map((version) => [version.id, resumeFallbackFromBaseVersion(version)] as const)
+      .filter((entry): entry is [string, ResumeFallback] => Boolean(entry[1])),
+  );
+  const fallbackByApplication = new Map<string, ResumeFallback>();
+  for (const row of appBaseRows) {
+    const fallback = row.base_version_id ? fallbackByVersion.get(row.base_version_id) : null;
+    if (fallback) fallbackByApplication.set(row.id, fallback);
+  }
+
+  return applications.map((application) => {
+    if (application.resumeUrl && application.resumeUrl !== "#") return application;
+    const fallback = fallbackByApplication.get(application.id);
+    return fallback ? { ...application, ...fallback } : application;
+  });
+}
 
 async function fetchApplicationHistoryRpcPage({
   supabase,
@@ -256,6 +353,45 @@ async function fetchApplicationHistoryRpcPage({
 
   const rows = Array.isArray(data) ? (data as unknown as ApplicationHistoryRpcRow[]) : [];
   return { rows, total: Number(rows[0]?.total_count ?? 0) };
+}
+
+async function fetchReviewAttentionRows({
+  supabase,
+  userId,
+  limit,
+}: {
+  supabase: Awaited<ReturnType<typeof createSupabaseServerClient>>;
+  userId: string;
+  limit: number;
+}) {
+  const { data, error } = await supabase
+    .from("applications")
+    .select(
+      "id,status,apply_path,submitted_at,created_at,rendered_pdf_path,field_map,jobs:job_id(company,company_domain,company_logo_url,title,location,apply_url)",
+    )
+    .eq("user_id", userId)
+    .eq("apply_path", "server")
+    .in("status", [...REVIEW_ATTENTION_STATUSES])
+    .order("created_at", { ascending: false })
+    .limit(limit);
+
+  if (error) {
+    await reportError("dashboard review attention fetch failed", error, { userId });
+    return [] as JobApplication[];
+  }
+
+  return Array.isArray(data) ? (data as unknown as ApplicationRow[]).map(mapRow) : [];
+}
+
+function mergeQueueRows(primary: JobApplication[], additions: JobApplication[], limit: number) {
+  const seen = new Set<string>();
+  const merged: JobApplication[] = [];
+  for (const application of [...additions, ...primary]) {
+    if (seen.has(application.id)) continue;
+    seen.add(application.id);
+    merged.push(application);
+  }
+  return merged.slice(0, limit);
 }
 
 export async function getDashboardApplicationsPage(
@@ -434,20 +570,24 @@ export async function getDashboardQueue(): Promise<{
     const applications = await getDashboardApplications({ includeQueueStatuses: true });
     today = applications.filter((application) => {
       if (application.applyPath !== "server") return false;
-      if (mode === "review") {
-        const status = application.rawStatus ?? "";
-        return (
-          ["ready_for_review", "filled"].includes(status) ||
-          (application.appliedOn === todayKey && ["queued", "submitting", "submitted"].includes(status))
-        );
-      }
-      if (application.appliedOn !== todayKey) return false;
-      return ["queued", "submitting", "applied", "submitted"].includes(application.rawStatus ?? "");
+      return queueApplicationVisible({
+        status: application.rawStatus,
+        appliedOn: application.appliedOn,
+        queueDate: todayKey,
+        mode,
+      });
     });
   } else {
     const rows = Array.isArray(data) ? (data as unknown as QueueRpcRow[]) : [];
     today = rows.map((row) => mapRow({ ...row, jobs: null }));
   }
+
+  today = mergeQueueRows(
+    today,
+    await fetchReviewAttentionRows({ supabase, userId: user.id, limit: 100 }),
+    100,
+  );
+  today = await hydrateMissingResumeFallbacks({ supabase, userId: user.id, applications: today });
 
   return {
     today,
