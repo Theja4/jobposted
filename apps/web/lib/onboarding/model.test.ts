@@ -12,10 +12,24 @@ describe("onboarding model", () => {
     expect(config.profile.screening.knowsCompanyEmployee).toBe(false);
     expect(config.profile.screening.previouslyEmployedByCompany).toBe(false);
     expect(config.profile.screening.outsideBusinessActivities).toBe(false);
+    expect(config.profile.screening.nonCompeteAgreement).toBe(false);
+    expect(config.profile.screening.worksForAffiliatedCompany).toBe(false);
     expect(reusableAnswersFromOnboarding(config)).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
           key: "screening.company_employee_connection",
+          value: "No",
+        }),
+        expect.objectContaining({
+          key: "screening.ex_employee",
+          value: "No",
+        }),
+        expect.objectContaining({
+          key: "screening.affiliated_company_employment",
+          value: "No",
+        }),
+        expect.objectContaining({
+          key: "screening.non_compete_agreement",
           value: "No",
         }),
         expect.objectContaining({

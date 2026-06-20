@@ -32,13 +32,32 @@ const COMPANY_CONNECTION_PATTERNS = [
 const PREVIOUS_COMPANY_EMPLOYMENT_ANSWER_KEYS = [
   "screening.previous_company_employment",
   "screening.previous_subsidiary_employment",
+  "screening.ex_employee",
 ] as const;
 
 const PREVIOUS_COMPANY_EMPLOYMENT_PATTERNS = [
   /\b(?:previously|formerly|ever|in\s+the\s+past)\s+(?:been\s+)?(?:employed|worked|work)\s+(?:by|at|for|with)\b/,
   /\b(?:been\s+)?(?:employed|worked)\s+(?:by|at|for|with).*\b(?:previously|formerly|before|in\s+the\s+past|past)\b/,
-  /\bformer\s+employee\b/,
+  /\b(?:former|ex)[\s-]?employee\b/,
   /\b(?:subsidiar(?:y|ies)|affiliate|affiliates)\b.*\b(?:previously|formerly|employed|worked|past)\b/,
+] as const;
+
+const AFFILIATED_COMPANY_ANSWER_KEYS = ["screening.affiliated_company_employment"] as const;
+
+// Present-tense employment at an affiliate/subsidiary/parent. Checked AFTER previous-employment so
+// "worked at a subsidiary in the past" stays a previous-employment question.
+const AFFILIATED_COMPANY_PATTERNS = [
+  /\b(?:work|works|working|employed|employee)\b.*\b(?:affiliate|affiliates|affiliated|subsidiar(?:y|ies)|sister compan(?:y|ies)|parent compan(?:y|ies))\b/,
+  /\b(?:affiliate|affiliates|affiliated|subsidiar(?:y|ies)|sister compan(?:y|ies)|parent compan(?:y|ies))\b.*\b(?:work|works|working|employed|employee)\b/,
+] as const;
+
+const NON_COMPETE_ANSWER_KEYS = ["screening.non_compete_agreement"] as const;
+
+const NON_COMPETE_PATTERNS = [
+  /\bnon[\s-]?compete\b/,
+  /\bnoncompete\b/,
+  /\bnon[\s-]?competition\b/,
+  /\brestrictive covenant\b/,
 ] as const;
 
 const OUTSIDE_BUSINESS_ACTIVITIES_ANSWER_KEYS = [
@@ -76,10 +95,24 @@ export function matchOutsideBusinessActivitiesAnswer(text: string, profile: Mast
   return answerForKeys(profile, OUTSIDE_BUSINESS_ACTIVITIES_ANSWER_KEYS);
 }
 
+export function matchAffiliatedCompanyAnswer(text: string, profile: MasterProfile) {
+  const normalized = normalizeText(text);
+  if (!includesAny(normalized, AFFILIATED_COMPANY_PATTERNS)) return null;
+  return answerForKeys(profile, AFFILIATED_COMPANY_ANSWER_KEYS);
+}
+
+export function matchNonCompeteAnswer(text: string, profile: MasterProfile) {
+  const normalized = normalizeText(text);
+  if (!includesAny(normalized, NON_COMPETE_PATTERNS)) return null;
+  return answerForKeys(profile, NON_COMPETE_ANSWER_KEYS);
+}
+
 export function matchScreeningReusableAnswer(text: string, profile: MasterProfile) {
   return (
     matchCompanyConnectionAnswer(text, profile) ??
     matchPreviousCompanyEmploymentAnswer(text, profile) ??
+    matchAffiliatedCompanyAnswer(text, profile) ??
+    matchNonCompeteAnswer(text, profile) ??
     matchOutsideBusinessActivitiesAnswer(text, profile)
   );
 }

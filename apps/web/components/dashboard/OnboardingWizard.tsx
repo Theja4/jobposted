@@ -1394,6 +1394,16 @@ function StepProfile({
             value={config.profile.screening.outsideBusinessActivities}
             onChange={(outsideBusinessActivities) => patchScreening({ outsideBusinessActivities })}
           />
+          <BooleanChoice
+            label="Under a non-compete agreement?"
+            value={config.profile.screening.nonCompeteAgreement}
+            onChange={(nonCompeteAgreement) => patchScreening({ nonCompeteAgreement })}
+          />
+          <BooleanChoice
+            label="Work for an affiliated company?"
+            value={config.profile.screening.worksForAffiliatedCompany}
+            onChange={(worksForAffiliatedCompany) => patchScreening({ worksForAffiliatedCompany })}
+          />
           <TagInput
             label="Fluent languages"
             max={6}
