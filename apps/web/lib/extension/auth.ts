@@ -27,8 +27,10 @@ export function authErrorResponse(error: unknown) {
   if (error instanceof ExtensionAuthError) {
     return extensionError(error.message, error.status);
   }
-  console.error("extension auth failed", error);
-  return extensionError("Authentication failed.", 401);
+  // A non-auth failure (DB, storage, profile build) must not masquerade as 401 —
+  // the extension treats 401 as "session is dead" and forces a re-login.
+  console.error("extension request failed", error);
+  return extensionError("Something went wrong loading your profile.", 500);
 }
 
 function bearerToken(request: Request): string | null {
@@ -36,6 +38,40 @@ function bearerToken(request: Request): string | null {
   if (!header) return null;
   const match = /^bearer\s+(.+)$/i.exec(header.trim());
   return match?.[1] ?? null;
+}
+
+function projectRef(supabaseUrl: string): string {
+  try {
+    return new URL(supabaseUrl).hostname.split(".")[0] ?? "";
+  } catch {
+    return "";
+  }
+}
+
+// Decode (without verifying) the JWT payload so failures can be explained:
+// a project mismatch and an expired token both surface as a Supabase 401,
+// but the fix is completely different.
+function decodeJwt(token: string): { iss?: string; exp?: number; ref?: string } | null {
+  try {
+    const [, payload] = token.split(".");
+    if (!payload) return null;
+    const base64 = payload.replace(/-/g, "+").replace(/_/g, "/");
+    const padded = base64.padEnd(base64.length + ((4 - (base64.length % 4)) % 4), "=");
+    return JSON.parse(Buffer.from(padded, "base64").toString("utf8"));
+  } catch {
+    return null;
+  }
+}
+
+function describeToken(token: string, serverRef: string): string {
+  const claims = decodeJwt(token);
+  if (!claims) return "token=unparseable";
+  const tokenRef = claims.ref || projectRef(claims.iss ?? "");
+  const exp = typeof claims.exp === "number" ? claims.exp : null;
+  const now = Math.floor(Date.now() / 1000);
+  const expired = exp !== null ? exp < now : "unknown";
+  const projectMatches = tokenRef ? tokenRef === serverRef : "unknown";
+  return `tokenProject=${tokenRef || "?"} serverProject=${serverRef || "?"} projectMatches=${projectMatches} expired=${expired} exp=${exp ?? "?"} now=${now}`;
 }
 
 export async function getExtensionAuthContext(request: Request): Promise<ExtensionAuthContext> {
@@ -60,6 +96,12 @@ export async function getExtensionAuthContext(request: Request): Promise<Extensi
 
   const { data, error } = await supabase.auth.getUser(token);
   if (error || !data.user) {
+    console.error(
+      "[extension auth] getUser rejected token —",
+      describeToken(token, projectRef(url)),
+      "supabaseError=",
+      error?.message ?? "no user returned",
+    );
     throw new ExtensionAuthError(401, "Invalid or expired extension session.");
   }
 

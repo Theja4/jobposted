@@ -13,6 +13,11 @@ function sleep(ms: number) {
   return new Promise((resolve) => window.setTimeout(resolve, ms));
 }
 
+const includeLocalhost =
+  import.meta.env.MODE !== "production" ||
+  import.meta.env.WXT_INCLUDE_LOCALHOST === "1" ||
+  /^http:\/\/(localhost|127\.0\.0\.1)(?::\d+)?$/i.test(JOBPOSTED_WEB_ORIGIN);
+
 function configuredHostname() {
   try {
     return new URL(JOBPOSTED_WEB_ORIGIN).hostname.toLowerCase();
@@ -31,7 +36,7 @@ function isJobPostedUrl(url: string | undefined) {
       host === "www.jobposted.app" ||
       host === "jobposted.ai" ||
       host === "www.jobposted.ai" ||
-      host === "localhost"
+      (includeLocalhost && (host === "localhost" || host === "127.0.0.1"))
     );
   } catch {
     return false;
@@ -89,6 +94,7 @@ export function PopupApp() {
   const [auth, setAuth] = useState<AuthState>("checking");
   const [email, setEmail] = useState<string | null>(null);
   const [profile, setProfile] = useState<MasterProfile | null>(null);
+  const [profileError, setProfileError] = useState<string | null>(null);
   const [syncStatus, setSyncStatus] = useState<ExtensionSyncQueueStatus | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -107,6 +113,7 @@ export function PopupApp() {
       setAuth("signed-out");
       setEmail(null);
       setProfile(null);
+      setProfileError(null);
       return;
     }
     setAuth("signed-in");
@@ -114,11 +121,16 @@ export function PopupApp() {
     const profileResponse = await send<ExtensionMessageResponse>({ type: "PROFILE_GET", forceRefresh: true });
     if (profileResponse.ok && profileResponse.type === "PROFILE_GET") {
       setProfile(profileResponse.profile);
+      setProfileError(null);
     } else if (!profileResponse.ok && profileResponse.status === 401) {
       setProfile(null);
+      setProfileError(null);
       setAuth("signed-out");
       setEmail(null);
       return;
+    } else {
+      setProfile(null);
+      setProfileError(profileResponse.ok ? "Could not load setup." : profileResponse.error);
     }
     const queueResponse = await send<ExtensionMessageResponse>({ type: "SYNC_QUEUE_STATUS" });
     if (queueResponse.ok && queueResponse.type === "SYNC_QUEUE_STATUS") {
@@ -157,6 +169,7 @@ export function PopupApp() {
     setBusy(true);
     await send<ExtensionMessageResponse>({ type: "AUTH_SIGN_OUT" });
     setProfile(null);
+    setProfileError(null);
     setAuth("signed-out");
     setBusy(false);
   }
@@ -170,7 +183,8 @@ export function PopupApp() {
     setBusy(false);
   }
 
-  const completeness = profile?.completeness ?? 0;
+  const completeness = Math.max(0, Math.min(100, profile?.completeness ?? 0));
+  const hasCompleteness = typeof profile?.completeness === "number";
 
   return (
     <main className="jp-shell flex h-[580px] w-[380px] flex-col overflow-hidden">
@@ -228,14 +242,19 @@ export function PopupApp() {
               <div className="mt-5">
                 <div className="mb-2 flex items-center justify-between text-xs font-black">
                   <span>Profile completeness</span>
-                  <span className="text-[var(--jp-brand-700)]">{completeness}%</span>
+                  <span className="text-[var(--jp-brand-700)]">{hasCompleteness ? `${completeness}%` : "Syncing"}</span>
                 </div>
                 <div className="h-2 rounded-full bg-[var(--jp-brand-100)]">
                   <div
                     className="h-2 rounded-full bg-[var(--jp-brand-600)]"
-                    style={{ width: `${Math.max(4, completeness)}%` }}
+                    style={{ width: `${hasCompleteness ? Math.max(4, completeness) : 4}%` }}
                   />
                 </div>
+                {profileError && (
+                  <p className="mt-2 text-xs font-semibold leading-5 text-[#b45309]">
+                    Setup sync needs a refresh. Open setup, then try the extension again.
+                  </p>
+                )}
               </div>
             </>
           )}
