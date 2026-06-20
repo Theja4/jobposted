@@ -82,6 +82,8 @@ export type OnboardingConfig = {
       knowsCompanyEmployee: boolean | null;
       previouslyEmployedByCompany: boolean | null;
       outsideBusinessActivities: boolean | null;
+      nonCompeteAgreement: boolean | null;
+      worksForAffiliatedCompany: boolean | null;
       dateOfBirth: string;
       gpa: string;
       over18: boolean | null;
@@ -198,6 +200,8 @@ export function defaultOnboardingConfig(email = ""): OnboardingConfig {
         knowsCompanyEmployee: false,
         previouslyEmployedByCompany: false,
         outsideBusinessActivities: false,
+        nonCompeteAgreement: false,
+        worksForAffiliatedCompany: false,
         dateOfBirth: "",
         gpa: "",
         over18: null,
@@ -372,6 +376,8 @@ export function sanitizeOnboardingConfig(value: unknown, email = ""): Onboarding
         knowsCompanyEmployee: asBool(screening.knowsCompanyEmployee) ?? false,
         previouslyEmployedByCompany: asBool(screening.previouslyEmployedByCompany) ?? false,
         outsideBusinessActivities: asBool(screening.outsideBusinessActivities) ?? false,
+        nonCompeteAgreement: asBool(screening.nonCompeteAgreement) ?? false,
+        worksForAffiliatedCompany: asBool(screening.worksForAffiliatedCompany) ?? false,
         dateOfBirth: asString(screening.dateOfBirth),
         gpa: asString(screening.gpa),
         over18: asBool(screening.over18),
@@ -472,6 +478,21 @@ export function reusableAnswersFromOnboarding(config: OnboardingConfig): Reusabl
       key: "screening.previous_subsidiary_employment",
       prompt: "Have you previously worked for this company or any of its subsidiaries?",
       value: yesNo(s.previouslyEmployedByCompany),
+    },
+    {
+      key: "screening.ex_employee",
+      prompt: "Are you an ex-employee of this company?",
+      value: yesNo(s.previouslyEmployedByCompany),
+    },
+    {
+      key: "screening.affiliated_company_employment",
+      prompt: "Do you work for any of the applying organization's affiliated companies?",
+      value: yesNo(s.worksForAffiliatedCompany),
+    },
+    {
+      key: "screening.non_compete_agreement",
+      prompt: "Do you have any non-compete agreement?",
+      value: yesNo(s.nonCompeteAgreement),
     },
     {
       key: "screening.outside_business_activities",

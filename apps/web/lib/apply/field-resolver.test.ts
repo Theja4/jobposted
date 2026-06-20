@@ -79,6 +79,27 @@ describe("resolveFieldValue", () => {
     expect(outside.value).toBe("No");
   });
 
+  it("answers non-compete, affiliated-company, and ex-employee questions with the setup default (No)", () => {
+    const p = profile({
+      answers: [
+        { key: "screening.non_compete_agreement", prompt: "Do you have any non-compete agreement?", value: "No" },
+        { key: "screening.affiliated_company_employment", prompt: "Do you work for any affiliated companies?", value: "No" },
+        { key: "screening.previous_company_employment", prompt: "Have you been employed by this company in the past?", value: "No" },
+      ],
+    });
+    const nonCompete = resolveFieldValue(field({ label: "Are you currently bound by a non-compete agreement with a prior employer?" }), p, { demographicsEnabled: false });
+    const affiliated = resolveFieldValue(field({ label: "Do you currently work for any affiliated companies of this organization?" }), p, { demographicsEnabled: false });
+    const exEmployee = resolveFieldValue(field({ label: "Are you an ex-employee of this company?" }), p, { demographicsEnabled: false });
+
+    expect(nonCompete.canonicalKey).toBe("answers.screening.non_compete_agreement");
+    expect(nonCompete.value).toBe("No");
+    expect(affiliated.canonicalKey).toBe("answers.screening.affiliated_company_employment");
+    expect(affiliated.value).toBe("No");
+    // "ex-employee" reuses the previous-employment answer.
+    expect(exEmployee.canonicalKey).toBe("answers.screening.previous_company_employment");
+    expect(exEmployee.value).toBe("No");
+  });
+
   it("does not resolve demographics unless enabled", () => {
     const off = resolveFieldValue(field({ label: "Gender" }), profile(), { demographicsEnabled: false });
     expect(off.canonicalKey).toBe("unknown");
