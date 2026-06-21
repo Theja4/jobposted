@@ -95,10 +95,43 @@ function isPhoneNumberKey(key: ExtensionFieldMapping["canonicalKey"]) {
   return key === "identity.phone" || key === "identity.phoneNational";
 }
 
+function isReferralSourceKey(key: ExtensionFieldMapping["canonicalKey"]) {
+  const text = normalizedText(key);
+  return key.startsWith("answers.") && /\b(?:referral source|job source|application source|candidate source|source)\b/.test(text);
+}
+
+function looksLikeChoicePlaceholder(value: string) {
+  return /^(select|select option|select one|choose|choose option|please select|please choose|none selected)$/.test(normalizedText(value));
+}
+
+function referralSourceOptionScore(label: string, value: string) {
+  const raw = visibleText(`${label} ${value}`);
+  const text = normalizedText(raw);
+  if (!text || looksLikeChoicePlaceholder(raw) || looksLikeActionControl(raw)) return 0;
+  if (/\blinked\s?in\b/.test(text)) return 3;
+  if (/\bjob (?:board|boards|site|sites|portal|portals|posting|postings)\b/.test(text)) return 2.4;
+  if (
+    /\b(?:indeed|glassdoor|monster|zip\s?recruiter|wellfound|angel\s?list|angellist|otta|naukri|seek|reed|dice|builtin|hired)\b/.test(
+      text,
+    ) ||
+    /\bgoogle jobs\b/.test(text) ||
+    /\byc (?:jobs|work at startup)\b/.test(text)
+  ) {
+    return 2;
+  }
+  return 0.1;
+}
+
 function looksLikePlaceholder(value: string, field: FieldDescriptor) {
   const text = normalizedText(value);
   if (!text) return true;
-  if (/^(select|select option|select one|choose|choose option|please select|please choose|none selected)$/.test(text)) return true;
+  if (looksLikeChoicePlaceholder(value)) return true;
+  if (
+    (field.type === "combobox" || field.type === "typeahead" || field.type === "select" || field.type === "multiselect") &&
+    /\b(select|select option|select one|choose|choose option|please select|please choose)$/.test(text)
+  ) {
+    return true;
+  }
   const label = normalizedText(field.label);
   const context = normalizedText(field.context);
   const placeholder = normalizedText(field.element.getAttribute("placeholder"));
@@ -186,6 +219,7 @@ function fieldChoiceValueMatches(
   if (mapping.canonicalKey === "identity.phoneCountryCode") return phoneCountryMatches(field, mapping.value, countryHint);
   const current = fieldCurrentText(field);
   if (looksLikePlaceholder(current, field)) return false;
+  if (isReferralSourceKey(mapping.canonicalKey)) return referralSourceOptionScore(current, "") > 0;
   const desired = desiredString(mapping.value);
   if (!desired) return false;
   if (typeof mapping.value === "boolean") {
@@ -205,10 +239,20 @@ function shouldCorrectExistingValue(
   mapping: ExtensionFieldMapping,
   countryHint: string | null | undefined,
 ) {
-  if (mapping.canonicalKey !== "identity.phoneCountryCode") return false;
-  const desiredCode = callingCodeDigits(mapping.value);
-  if (!desiredCode) return false;
-  return hasValue(field) && !phoneCountryMatches(field, mapping.value, countryHint);
+  if (mapping.canonicalKey === "identity.phoneCountryCode") {
+    const desiredCode = callingCodeDigits(mapping.value);
+    if (!desiredCode) return false;
+    return hasValue(field) && !phoneCountryMatches(field, mapping.value, countryHint);
+  }
+  if (isPhoneNumberKey(mapping.canonicalKey) && looksLikePhoneField(field)) {
+    const desired = desiredString(mapping.value);
+    const desiredDigits = phoneDigits(desired);
+    const current = fieldCurrentText(field);
+    const currentDigits = phoneDigits(current);
+    if (!desiredDigits || !currentDigits || currentDigits === desiredDigits) return false;
+    return phoneNationalNumber(current, countryHint) === phoneNationalNumber(desired, countryHint);
+  }
+  return false;
 }
 
 function desiredString(value: ExtensionFieldMapping["value"]) {
@@ -441,6 +485,15 @@ function pickOption(
     let best: { option: HTMLOptionElement; score: number } | null = null;
     for (const option of options) {
       const score = phoneCountryOptionScore(option.textContent ?? "", option.value, value, countryHint);
+      if (!best || score > best.score) best = { option, score };
+    }
+    return best && best.score > 0 ? best.option : null;
+  }
+  if (isReferralSourceKey(canonicalKey)) {
+    let best: { option: HTMLOptionElement; score: number } | null = null;
+    for (const option of options) {
+      if (option.disabled) continue;
+      const score = referralSourceOptionScore(option.textContent ?? "", option.value);
       if (!best || score > best.score) best = { option, score };
     }
     return best && best.score > 0 ? best.option : null;
@@ -776,19 +829,24 @@ function activateChoice(element: HTMLElement, group: HTMLElement[]) {
   dispatchFieldEvents(element);
 }
 
-function fillRadio(field: FieldDescriptor, value: ExtensionFieldMapping["value"]) {
+function fillRadio(field: FieldDescriptor, mapping: ExtensionFieldMapping) {
   const group = radioGroup(field);
-  const desired = desiredString(value);
+  const desired = desiredString(mapping.value);
   let best: { input: HTMLElement; score: number } | null = null;
   for (const input of group) {
-    const score = Math.max(
-      optionScore(labelForChoice(input), desired),
-      optionScore(input.getAttribute("value") ?? "", desired),
-      optionScore(input.getAttribute("data-value") ?? "", desired),
-    );
+    const label = labelForChoice(input);
+    const rawValue = `${input.getAttribute("value") ?? ""} ${input.getAttribute("data-value") ?? ""}`;
+    const score = isReferralSourceKey(mapping.canonicalKey)
+      ? referralSourceOptionScore(label, rawValue)
+      : Math.max(
+          optionScore(label, desired),
+          optionScore(input.getAttribute("value") ?? "", desired),
+          optionScore(input.getAttribute("data-value") ?? "", desired),
+        );
     if (!best || score > best.score) best = { input, score };
   }
-  if (!best || best.score < 0.4) return false;
+  const threshold = isReferralSourceKey(mapping.canonicalKey) ? 0.1 : 0.4;
+  if (!best || best.score < threshold) return false;
   activateChoice(best.input, group);
   return true;
 }
@@ -858,6 +916,8 @@ function scoreComboboxOption(
   const rawValue = option.getAttribute("value") ?? "";
   return mapping.canonicalKey === "identity.phoneCountryCode"
     ? phoneCountryOptionScore(label, `${dataValue} ${rawValue}`, mapping.value, countryHint)
+    : isReferralSourceKey(mapping.canonicalKey)
+      ? referralSourceOptionScore(label, `${dataValue} ${rawValue}`)
     : Math.max(optionScore(label, desired), optionScore(dataValue, desired), optionScore(rawValue, desired));
 }
 
@@ -866,7 +926,7 @@ function rankedComboboxOptions(
   mapping: ExtensionFieldMapping,
   countryHint: string | null | undefined,
 ) {
-  const threshold = mapping.canonicalKey === "identity.phoneCountryCode" ? 1 : 0.45;
+  const threshold = mapping.canonicalKey === "identity.phoneCountryCode" ? 1 : isReferralSourceKey(mapping.canonicalKey) ? 0.1 : 0.45;
   return options
     .map((option) => ({ option, score: scoreComboboxOption(option, mapping, countryHint) }))
     .filter((candidate) => candidate.score >= threshold)
@@ -1065,7 +1125,7 @@ export async function fillField(
     if (field.element instanceof HTMLSelectElement) {
       filled = fillSelect(field.element, effectiveMapping, context.profile.location.country);
     } else if (field.type === "radio") {
-      filled = fillRadio(field, effectiveMapping.value);
+      filled = fillRadio(field, effectiveMapping);
     } else if (field.type === "checkbox") {
       filled = fillCheckbox(field, effectiveMapping.value);
     } else if (field.type === "combobox" || field.type === "typeahead") {

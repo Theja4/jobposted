@@ -54,6 +54,29 @@ function complianceNeutralCheckbox(field: FieldDescriptor): ExtensionFieldMappin
   };
 }
 
+function referralSourceMapping(field: FieldDescriptor): ExtensionFieldMapping | null {
+  const question = normalizeText(`${field.label} ${field.context}`);
+  const text = fieldText(field);
+  const looksLikeSourceQuestion =
+    /\bhow did (?:you )?(?:hear|find|learn)(?: about| of| about this)?\b.*\b(?:job|role|position|opening|opportunity|company|us)\b/.test(
+      question,
+    ) ||
+    /\bwhere did (?:you )?(?:hear|find|learn)\b.*\b(?:job|role|position|opening|opportunity|company|us)\b/.test(question) ||
+    /\bhow did (?:you )?(?:come across|discover)\b.*\b(?:job|role|position|opening|opportunity|company|us)\b/.test(question) ||
+    /\b(?:referral|application|candidate|job)\s+source\b/.test(question) ||
+    /\bsource\b.*\b(?:referral|application|candidate|job)\b/.test(question) ||
+    (/\bsource\b/.test(question) && /\b(?:linkedin|job board|job site|indeed|glassdoor|referral|company website)\b/.test(text));
+  if (!looksLikeSourceQuestion) return null;
+
+  return {
+    canonicalKey: "answers.referral_source",
+    value: "LinkedIn",
+    confidence: 0.78,
+    source: "heuristic",
+    reason: "Answered a referral/source question with the preferred source fallback.",
+  };
+}
+
 function controlSignal(element: HTMLElement) {
   const attrs = [
     element.getAttribute("type"),
@@ -142,6 +165,46 @@ function answerMapping(field: FieldDescriptor, profile: MasterProfile): Extensio
   };
 }
 
+function hasUsableRuleValue(value: ExtensionFieldMapping["value"]) {
+  if (value == null) return false;
+  if (typeof value === "string") return value.trim().length > 0;
+  if (Array.isArray(value)) return value.length > 0;
+  return true;
+}
+
+function yesNoBoolean(value: string) {
+  const text = normalizeText(value);
+  if (/^(yes|y|true|1)$/.test(text)) return true;
+  if (/^(no|n|false|0)$/.test(text)) return false;
+  return value;
+}
+
+function workAuthAnswerMapping(
+  canonicalKey: ExtensionFieldMapping["canonicalKey"],
+  profile: MasterProfile,
+  confidence: number,
+): ExtensionFieldMapping | null {
+  const answerKeys =
+    canonicalKey === "workAuth.authorizedToWork"
+      ? ["workauth authorized to work", "work authorization authorized to work"]
+      : canonicalKey === "workAuth.requiresSponsorship"
+        ? ["workauth needs sponsorship", "workauth requires sponsorship"]
+        : [];
+  if (answerKeys.length === 0) return null;
+  const answer = profile.answers.find((item) => {
+    if (!isUsableAnswerValue(item)) return false;
+    return answerKeys.includes(normalizeText(item.key));
+  });
+  if (!answer) return null;
+  return {
+    canonicalKey,
+    value: yesNoBoolean(answer.value),
+    confidence: Math.min(confidence, 0.88),
+    source: "answer",
+    reason: "Matched a setup work-authorization answer.",
+  };
+}
+
 export async function resolveField(args: {
   field: FieldDescriptor;
   profile: MasterProfile;
@@ -183,13 +246,20 @@ export async function resolveField(args: {
   }
   const compliance = complianceNeutralCheckbox(field);
   if (compliance) return compliance;
+  const referralSource = referralSourceMapping(field);
+  if (referralSource) return referralSource;
 
   for (const rule of RULES) {
     if (rule.needsDemographics && !args.demographicsEnabled) continue;
     if (!includesAny(text, rule.patterns)) continue;
+    const value = valueForKey(profile, rule.key);
+    if (!hasUsableRuleValue(value)) {
+      const setupAnswer = workAuthAnswerMapping(rule.key, profile, rule.confidence);
+      if (setupAnswer) return setupAnswer;
+    }
     return {
       canonicalKey: rule.key,
-      value: valueForKey(profile, rule.key),
+      value,
       confidence: rule.confidence,
       source: "heuristic",
       reason: "Matched a normalized label rule.",

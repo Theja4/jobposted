@@ -62,7 +62,7 @@ const context: FillContext = {
       firstName: "Theja",
       lastName: "Chitturi",
       email: "theja@example.com",
-      phone: "+91 0733007006",
+      phone: "+91 73300 07006",
     },
     location: { country: "India" },
     links: { website: [] },
@@ -126,8 +126,37 @@ describe("fillField phone normalization", () => {
     );
 
     expect(record.status).toBe("filled");
-    expect(element.value).toBe("733007006");
-    expect(record.valuePreview).toBe("733007006");
+    expect(element.value).toBe("7330007006");
+    expect(record.valuePreview).toBe("7330007006");
+  });
+
+  it("corrects an already-filled Indian phone number with a leading trunk zero even when overwrite is off", async () => {
+    const { document, window } = parseHTML(`<input id="phone" value="073300 07006" />`);
+    installDomGlobals(window);
+    const element = document.querySelector("input") as HTMLInputElement;
+    const record = await fillField(
+      {
+        id: "phone",
+        element,
+        label: "Phone *",
+        context: "Country +91 Phone *",
+        type: "text",
+        required: true,
+        options: [],
+        signature: "phone",
+      },
+      {
+        canonicalKey: "identity.phone",
+        value: context.profile.identity.phone,
+        confidence: 0.96,
+        source: "heuristic",
+      },
+      context,
+    );
+
+    expect(record.status).toBe("filled");
+    expect(element.value).toBe("7330007006");
+    expect(record.valuePreview).toBe("7330007006");
   });
 
   it("selects the phone country code instead of filling the full phone number", async () => {
@@ -752,6 +781,46 @@ describe("fillField custom choice controls", () => {
     expect(button.textContent).toContain("No");
   });
 
+  it("does not skip closed setup dropdowns when the extracted label misses the visible question", async () => {
+    const { document, window } = parseHTML(`
+      <button id="auth" role="combobox" aria-controls="auth-options">
+        Are you legally authorized to work in the country in which you are applying? Select...
+      </button>
+      <div id="auth-options" role="listbox">
+        <div role="option" id="auth-yes">Yes</div>
+        <div role="option">No</div>
+      </div>
+    `);
+    installDomGlobals(window);
+    const button = document.getElementById("auth") as HTMLElement;
+    document.getElementById("auth-yes")?.addEventListener("mousedown", () => {
+      button.textContent = "Are you legally authorized to work in the country in which you are applying? Yes";
+    });
+
+    const record = await fillField(
+      {
+        id: "auth",
+        element: button,
+        label: "auth-select",
+        context: "",
+        type: "combobox",
+        required: true,
+        options: ["Yes", "No"],
+        signature: "auth",
+      },
+      {
+        canonicalKey: "workAuth.authorizedToWork",
+        value: true,
+        confidence: 0.9,
+        source: "heuristic",
+      },
+      context,
+    );
+
+    expect(record.status).toBe("filled");
+    expect(button.textContent).toContain("Yes");
+  });
+
   it("commits options for dropdowns that listen on mousedown instead of click", async () => {
     const { document, window } = parseHTML(`
       <button id="auth" role="combobox" aria-controls="auth-options">Select...</button>
@@ -1020,7 +1089,7 @@ describe("fillField custom choice controls", () => {
     const record = await fillField(
       field,
       {
-        canonicalKey: "answers.referral-source",
+        canonicalKey: "answers.custom_source_choice",
         value: "Employee referral",
         confidence: 0.9,
         source: "answer",
@@ -1032,6 +1101,112 @@ describe("fillField custom choice controls", () => {
     expect(field.options).toEqual(["Company website", "Employee referral"]);
     expect(record.status).toBe("filled");
     expect(button.textContent).toContain("Employee referral");
+  });
+
+  it("prefers LinkedIn for referral source dropdowns", async () => {
+    const { document, window } = parseHTML(`
+      <div>
+        <label id="source-label">How did you hear about this job?</label>
+        <button id="source" role="combobox" aria-labelledby="source-label source-value" aria-controls="source-options">
+          <span id="source-value">Select...</span>
+        </button>
+        <ul id="source-options" role="listbox">
+          <li role="option">Company website</li>
+          <li role="option">Job board</li>
+          <li role="option">LinkedIn</li>
+        </ul>
+      </div>
+    `);
+    installDomGlobals(window);
+    const button = document.getElementById("source") as HTMLElement;
+    for (const option of Array.from(document.querySelectorAll<HTMLElement>("[role='option']"))) {
+      option.addEventListener("mousedown", () => {
+        document.getElementById("source-value")!.textContent = option.textContent;
+      });
+    }
+    const field = extractFields(document, "greenhouse")[0]!;
+    const record = await fillField(
+      field,
+      {
+        canonicalKey: "answers.referral_source",
+        value: "LinkedIn",
+        confidence: 0.78,
+        source: "heuristic",
+      },
+      context,
+    );
+
+    expect(record.status).toBe("filled");
+    expect(button.textContent).toContain("LinkedIn");
+  });
+
+  it("falls back to job board for referral source selects when LinkedIn is absent", async () => {
+    const { document, window } = parseHTML(`
+      <select id="source">
+        <option value="">Select...</option>
+        <option value="company">Company website</option>
+        <option value="board">Job board</option>
+        <option value="referral">Employee referral</option>
+      </select>
+    `);
+    installDomGlobals(window);
+    const select = document.getElementById("source") as HTMLSelectElement;
+    const record = await fillField(
+      {
+        id: "source",
+        element: select,
+        label: "How did you hear about us?",
+        context: "",
+        type: "select",
+        required: true,
+        options: ["Select...", "Company website", "Job board", "Employee referral"],
+        signature: "source",
+      },
+      {
+        canonicalKey: "answers.referral_source",
+        value: "LinkedIn",
+        confidence: 0.78,
+        source: "heuristic",
+      },
+      context,
+    );
+
+    expect(record.status).toBe("filled");
+    expect(select.value).toBe("board");
+  });
+
+  it("uses the first real referral source option when no preferred source exists", async () => {
+    const { document, window } = parseHTML(`
+      <select id="source">
+        <option value="">Please select</option>
+        <option value="company">Company website</option>
+        <option value="referral">Employee referral</option>
+      </select>
+    `);
+    installDomGlobals(window);
+    const select = document.getElementById("source") as HTMLSelectElement;
+    const record = await fillField(
+      {
+        id: "source",
+        element: select,
+        label: "How did you hear about this job?",
+        context: "",
+        type: "select",
+        required: true,
+        options: ["Please select", "Company website", "Employee referral"],
+        signature: "source",
+      },
+      {
+        canonicalKey: "answers.referral_source",
+        value: "LinkedIn",
+        confidence: 0.78,
+        source: "heuristic",
+      },
+      context,
+    );
+
+    expect(record.status).toBe("filled");
+    expect(select.value).toBe("company");
   });
 
   it("extracts Greenhouse React select wrappers instead of their internal search input", async () => {

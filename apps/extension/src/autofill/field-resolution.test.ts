@@ -227,6 +227,48 @@ describe("field resolution", () => {
     expect(byLabel.get("Do you now or will you in the future need sponsorship for employment visa status in the country in which you are applying?*")?.value).toBe(false);
   });
 
+  it("falls back to setup work-auth answers when direct work-auth fields are missing", async () => {
+    const { adapter, fields } = await loadHtml(
+      `<!doctype html>
+      <form>
+        <div class="field">
+          <div class="field-heading">Are you legally authorized to work in the country in which you are applying?<span aria-hidden="true">*</span></div>
+          <button aria-haspopup="listbox" aria-label="Select..." aria-controls="auth-options">Select...</button>
+          <ul id="auth-options" role="listbox"><li role="option">Yes</li><li role="option">No</li></ul>
+        </div>
+        <div class="field">
+          <div class="field-heading">Do you now or will you in the future need sponsorship for employment visa status in the country in which you are applying?<span aria-hidden="true">*</span></div>
+          <button aria-haspopup="listbox" aria-label="Select..." aria-controls="sponsor-options">Select...</button>
+          <ul id="sponsor-options" role="listbox"><li role="option">Yes</li><li role="option">No</li></ul>
+        </div>
+      </form>`,
+      "https://www.databricks.com/company/careers/engineering/sr-engineering-manager---notebook-dataplane-8305835325",
+    );
+    const fallbackProfile: MasterProfile = {
+      ...profile,
+      workAuth: { authorizedToWork: null, requiresSponsorship: null, country: "United States" },
+      answers: [
+        { key: "workAuth.authorized_to_work", prompt: "Are you legally authorized to work in your resident country?", value: "Yes" },
+        { key: "workAuth.needs_sponsorship", prompt: "Will you now or in the future require visa sponsorship?", value: "No" },
+      ],
+    };
+    const mappings = await Promise.all(
+      fields.map((field) => resolveField({ field, profile: fallbackProfile, platform: adapter.id, url: "", demographicsEnabled: false })),
+    );
+    const byLabel = new Map(fields.map((field, index) => [field.label, mappings[index]]));
+
+    expect(byLabel.get("Are you legally authorized to work in the country in which you are applying?*")).toMatchObject({
+      canonicalKey: "workAuth.authorizedToWork",
+      value: true,
+      source: "answer",
+    });
+    expect(byLabel.get("Do you now or will you in the future need sponsorship for employment visa status in the country in which you are applying?*")).toMatchObject({
+      canonicalKey: "workAuth.requiresSponsorship",
+      value: false,
+      source: "answer",
+    });
+  });
+
   it("maps neutral export-control checkboxes to checked answers", async () => {
     const { adapter, fields } = await loadHtml(
       `<!doctype html>
@@ -359,7 +401,7 @@ describe("field resolution", () => {
     expect(fields.map((field) => field.label)).toEqual(["Country*", "Phone*"]);
   });
 
-  it("does not use a reusable answer when the value is only the question prompt", async () => {
+  it("uses the source fallback when a saved referral answer only repeats the question prompt", async () => {
     const { document } = parseHTML("<input />");
     const prompt = "How did you hear about this job?";
     const mapping = await resolveField({
@@ -382,8 +424,11 @@ describe("field resolution", () => {
       demographicsEnabled: false,
     });
 
-    expect(mapping.canonicalKey).toBe("unknown");
-    expect(mapping.value).toBeNull();
+    expect(mapping).toMatchObject({
+      canonicalKey: "answers.referral_source",
+      value: "LinkedIn",
+      source: "heuristic",
+    });
   });
 
   it("maps Lever and Ashby single-name variants", async () => {
