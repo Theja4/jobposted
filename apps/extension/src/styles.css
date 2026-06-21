@@ -18,10 +18,13 @@
   --jp-muted: #526173;
   --jp-navy: #071a33;
   --jp-panel: #f7fbff;
+  --jp-panel-2: #edf7ff;
   --jp-aqua: #16c7d4;
+  --jp-mint: #18b981;
+  --jp-coral: #f58abb;
   --jp-white: #ffffff;
   --jp-border: rgba(191, 219, 254, 0.68);
-  --jp-shadow: 0 18px 48px rgba(16, 47, 102, 0.16);
+  --jp-shadow: 0 6px 10px rgba(16, 47, 102, 0.08);
   --jp-font:
     "Plus Jakarta Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI",
     sans-serif;
@@ -48,20 +51,57 @@ textarea {
 }
 
 .jp-shell {
-  background:
-    radial-gradient(38rem 24rem at 100% -10%, rgba(47, 125, 244, 0.14), transparent 60%),
-    var(--jp-panel);
+  background: linear-gradient(180deg, #ffffff 0%, var(--jp-panel) 42%, var(--jp-panel-2) 100%);
   color: var(--jp-ink);
 }
 
 .jp-glass {
-  background: linear-gradient(150deg, rgba(255, 255, 255, 0.92), rgba(255, 255, 255, 0.72));
-  border: 1px solid rgba(255, 255, 255, 0.82);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.96),
-    var(--jp-shadow);
-  backdrop-filter: blur(18px) saturate(150%);
-  -webkit-backdrop-filter: blur(18px) saturate(150%);
+  background: var(--jp-white);
+  border: 1px solid var(--jp-border);
+  box-shadow: var(--jp-shadow);
+}
+
+.jp-topbar,
+.jp-footer {
+  background: rgba(247, 251, 255, 0.94);
+  border-color: var(--jp-border);
+}
+
+.jp-topbar {
+  border-bottom: 1px solid var(--jp-border);
+}
+
+.jp-footer {
+  border-top: 1px solid var(--jp-border);
+}
+
+.jp-sidepanel-body {
+  container-type: inline-size;
+}
+
+.jp-panel,
+.jp-account-card,
+.jp-command-card,
+.jp-canvas-panel {
+  border: 1px solid var(--jp-border);
+  border-radius: 16px;
+  background: var(--jp-white);
+  box-shadow: var(--jp-shadow);
+}
+
+.jp-account-card {
+  padding: 16px;
+}
+
+.jp-command-card {
+  display: grid;
+  gap: 10px;
+  padding: 10px;
+}
+
+.jp-canvas-panel {
+  padding: 14px;
+  overflow: hidden;
 }
 
 .jp-button {
@@ -78,7 +118,8 @@ textarea {
   transition:
     transform 160ms cubic-bezier(0.16, 1, 0.3, 1),
     background-color 160ms cubic-bezier(0.16, 1, 0.3, 1),
-    color 160ms cubic-bezier(0.16, 1, 0.3, 1);
+    color 160ms cubic-bezier(0.16, 1, 0.3, 1),
+    box-shadow 160ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .jp-button:disabled {
@@ -106,6 +147,17 @@ textarea {
   background: var(--jp-brand-50);
 }
 
+.jp-button:focus-visible,
+.jp-icon-button:focus-visible,
+.jp-primary-command:focus-visible,
+.jp-tool-button:focus-visible,
+.jp-link-tile:focus-visible,
+.jp-inline-action:focus-visible,
+.jp-switch:focus-visible {
+  outline: 2px solid var(--jp-brand-600);
+  outline-offset: 2px;
+}
+
 .jp-icon-button {
   display: grid;
   place-items: center;
@@ -123,10 +175,356 @@ textarea {
   color: var(--jp-brand-700);
 }
 
+.jp-progress {
+  height: 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--jp-brand-100);
+}
+
+.jp-progress > div {
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--jp-brand-700), var(--jp-brand-500));
+  transition: width 240ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.jp-pill {
+  display: inline-flex;
+  min-height: 24px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: var(--jp-brand-50);
+  color: var(--jp-brand-700);
+  padding: 0 9px;
+  font-size: 11px;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.jp-primary-command,
+.jp-tool-button,
+.jp-link-tile,
+.jp-toggle-card,
+.jp-inline-action {
+  border: 0;
+  font: inherit;
+}
+
+.jp-primary-command {
+  display: flex;
+  min-height: 64px;
+  width: 100%;
+  align-items: center;
+  gap: 12px;
+  border-radius: 14px;
+  background: var(--jp-brand-600);
+  color: var(--jp-white);
+  padding: 12px;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    transform 160ms cubic-bezier(0.16, 1, 0.3, 1),
+    background-color 160ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.jp-primary-command:hover:not(:disabled) {
+  background: var(--jp-brand-700);
+  transform: translateY(-1px);
+}
+
+.jp-primary-command:disabled,
+.jp-tool-button:disabled,
+.jp-inline-action:disabled {
+  cursor: not-allowed;
+  opacity: 0.58;
+}
+
+.jp-command-icon {
+  display: grid;
+  width: 40px;
+  height: 40px;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.16);
+  color: var(--jp-white);
+}
+
+.jp-toggle-card {
+  display: flex;
+  min-height: 58px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-radius: 14px;
+  background: #f8fbff;
+  padding: 11px 12px;
+  box-shadow: inset 0 0 0 1px var(--jp-border);
+}
+
+.jp-switch {
+  position: relative;
+  width: 42px;
+  height: 24px;
+  flex: 0 0 auto;
+  appearance: none;
+  border: 0;
+  border-radius: 999px;
+  background: #c8d6e8;
+  cursor: pointer;
+  transition: background-color 160ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.jp-switch::after {
+  content: "";
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  background: var(--jp-white);
+  box-shadow: 0 2px 4px rgba(7, 26, 51, 0.16);
+  transition: transform 160ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.jp-switch:checked {
+  background: var(--jp-brand-600);
+}
+
+.jp-switch:checked::after {
+  transform: translateX(18px);
+}
+
+.jp-tool-button,
+.jp-link-tile {
+  display: inline-flex;
+  min-height: 44px;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border-radius: 12px;
+  background: var(--jp-white);
+  color: var(--jp-ink);
+  font-weight: 900;
+  text-decoration: none;
+  cursor: pointer;
+  box-shadow: inset 0 0 0 1px var(--jp-border);
+  transition:
+    background-color 160ms cubic-bezier(0.16, 1, 0.3, 1),
+    transform 160ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.jp-tool-button:hover:not(:disabled),
+.jp-link-tile:hover {
+  background: var(--jp-brand-50);
+  transform: translateY(-1px);
+}
+
+.jp-link-tile {
+  justify-content: space-between;
+  padding: 0 12px;
+  font-size: 12px;
+}
+
+.jp-inline-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border-radius: 999px;
+  background: var(--jp-white);
+  color: inherit;
+  padding: 5px 9px;
+  font-size: 12px;
+  font-weight: 900;
+  cursor: pointer;
+  box-shadow: inset 0 0 0 1px currentColor;
+}
+
+.jp-message {
+  border-radius: 14px;
+  padding: 11px 12px;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.45;
+}
+
+.jp-message-success {
+  background: #ecfdf5;
+  color: #065f46;
+  box-shadow: inset 0 0 0 1px #a7f3d0;
+}
+
+.jp-message-warning {
+  background: #fff7ed;
+  color: #9a3412;
+  box-shadow: inset 0 0 0 1px #fed7aa;
+}
+
+.jp-message-error {
+  background: #fef2f2;
+  color: #991b1b;
+  box-shadow: inset 0 0 0 1px #fecaca;
+}
+
+.jp-canvas-art {
+  position: relative;
+  min-height: 150px;
+  overflow: hidden;
+  border-radius: 16px;
+  background:
+    linear-gradient(180deg, rgba(201, 239, 255, 0.96) 0%, rgba(99, 172, 239, 0.94) 48%, rgba(244, 166, 221, 0.88) 100%);
+}
+
+.jp-canvas-art::before {
+  content: "";
+  position: absolute;
+  inset: 12px 16px auto auto;
+  width: 74px;
+  height: 74px;
+  border-radius: 44% 56% 42% 58%;
+  border: 1px solid rgba(255, 255, 255, 0.72);
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.76), rgba(255, 255, 255, 0.12));
+  transform: rotate(14deg);
+}
+
+.jp-canvas-card {
+  position: absolute;
+  display: grid;
+  gap: 8px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.84);
+  padding: 12px;
+  box-shadow: 0 6px 10px rgba(7, 26, 51, 0.12);
+}
+
+.jp-canvas-card span {
+  display: block;
+  height: 8px;
+  border-radius: 999px;
+  background: rgba(31, 100, 224, 0.2);
+}
+
+.jp-canvas-card-main {
+  left: 14px;
+  bottom: 16px;
+  width: 54%;
+}
+
+.jp-canvas-card-main span:first-child {
+  width: 74%;
+  background: rgba(31, 100, 224, 0.32);
+}
+
+.jp-canvas-card-main span:nth-child(2) {
+  width: 88%;
+}
+
+.jp-canvas-card-main span:nth-child(3) {
+  width: 46%;
+}
+
+.jp-canvas-card-side {
+  right: 20px;
+  top: 18px;
+  width: 34%;
+  transform: rotate(2deg);
+}
+
+.jp-canvas-card-side span:first-child {
+  width: 80%;
+  background: rgba(22, 199, 212, 0.34);
+}
+
+.jp-canvas-card-side span:nth-child(2) {
+  width: 62%;
+}
+
+.jp-canvas-rail {
+  position: absolute;
+  right: 18px;
+  bottom: 14px;
+  display: grid;
+  gap: 8px;
+}
+
+.jp-canvas-rail span {
+  width: 28px;
+  height: 28px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.86);
+  box-shadow: inset 0 0 0 1px rgba(191, 219, 254, 0.8);
+}
+
+.jp-flow-list {
+  display: grid;
+  gap: 8px;
+}
+
+.jp-flow-list > div {
+  display: grid;
+  grid-template-columns: 14px 1fr auto;
+  align-items: center;
+  gap: 8px;
+  color: var(--jp-muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.jp-flow-list strong {
+  color: var(--jp-ink);
+  font-weight: 900;
+}
+
+.jp-flow-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+}
+
+.jp-flow-dot-blue {
+  background: var(--jp-brand-600);
+}
+
+.jp-flow-dot-amber {
+  background: #f59e0b;
+}
+
+.jp-flow-dot-muted {
+  background: #94a3b8;
+}
+
 .jp-field-highlight {
   outline: 2px solid rgba(31, 100, 224, 0.72) !important;
   outline-offset: 2px !important;
   box-shadow: 0 0 0 5px rgba(31, 100, 224, 0.12) !important;
+}
+
+/* A soft light sweep across the completeness bar while the profile revalidates. */
+@keyframes jp-sync-sweep {
+  0% {
+    transform: translateX(-120%);
+  }
+  100% {
+    transform: translateX(320%);
+  }
+}
+
+.jp-sync-bar {
+  position: relative;
+}
+
+.jp-sync-bar::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  width: 38%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.62), transparent);
+  transform: translateX(-120%);
+  animation: jp-sync-sweep 1.2s ease-in-out infinite;
+  pointer-events: none;
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -1,18 +1,23 @@
 import type {
   ExtensionApplicationResponse,
   ExtensionApplicationUpsert,
+  ExtensionCoverLetterResponse,
   ExtensionFieldContext,
   ExtensionFieldMapping,
+  ExtensionJobContext,
   ExtensionResumeResponse,
+  ExtensionTailorResponse,
   MasterProfile,
   ReusableAnswer,
 } from "@jobposted/shared";
 import {
   API_ANSWERS_PATH,
   API_APPLICATIONS_PATH,
+  API_COVER_LETTER_PATH,
   API_FIELD_MAP_PATH,
   API_PROFILE_PATH,
   API_RESUME_PATH,
+  API_TAILOR_PATH,
   JOBPOSTED_WEB_ORIGIN,
 } from "../config/env";
 import {
@@ -62,10 +67,10 @@ async function requestWithToken(path: string, accessToken: string, init: Request
   }
 }
 
-function parseResponseBody<T>(text: string): (T & { message?: string }) | null {
+function parseResponseBody<T>(text: string): (T & { message?: string; error?: string }) | null {
   if (!text) return null;
   try {
-    return JSON.parse(text) as T & { message?: string };
+    return JSON.parse(text) as T & { message?: string; error?: string };
   } catch {
     return null;
   }
@@ -100,6 +105,8 @@ async function authedFetch<T>(path: string, init: RequestInit = {}): Promise<T> 
     const message =
       body && typeof body === "object" && "message" in body && typeof body.message === "string"
         ? body.message
+        : body && typeof body === "object" && "error" in body && typeof body.error === "string"
+          ? body.error
         : `request_failed:${response.status}`;
     throw new ExtensionHttpError(response.status, message);
   }
@@ -140,6 +147,24 @@ export async function syncApplication(
     body: JSON.stringify(payload),
   });
   return response;
+}
+
+export async function tailorResumeForJob(
+  payload: ExtensionJobContext & { jobId?: string | null; applicationId?: string | null },
+): Promise<ExtensionTailorResponse> {
+  return authedFetch<ExtensionTailorResponse>(API_TAILOR_PATH, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function generateCoverLetterForJob(
+  payload: ExtensionJobContext & { jobId?: string | null; applicationId?: string | null },
+): Promise<ExtensionCoverLetterResponse> {
+  return authedFetch<ExtensionCoverLetterResponse>(API_COVER_LETTER_PATH, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
 }
 
 export async function saveAnswer(answer: ReusableAnswer): Promise<void> {

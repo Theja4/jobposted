@@ -42,6 +42,12 @@ function sourceJobId(jobUrl: string, fallback: string) {
   return createHash("sha256").update(jobUrl || fallback).digest("hex").slice(0, 32);
 }
 
+function errorMessage(error: unknown) {
+  if (!error || typeof error !== "object") return "Unknown error.";
+  const record = error as Record<string, unknown>;
+  return asString(record.message) || asString(record.details) || asString(record.hint) || "Unknown error.";
+}
+
 type SchemaScopedClient = { from: (table: string) => any };
 
 async function findExistingJobId(client: SchemaScopedClient, userId: string, jobUrl: string) {
@@ -197,12 +203,13 @@ export async function POST(request: Request) {
         .single();
       if (jobError) {
         console.error("extension job upsert failed", jobError);
-        return extensionError("Could not sync the application job.", 500);
+      } else {
+        jobId = job?.id ?? null;
       }
-      jobId = job?.id ?? null;
     }
 
     const existingApplication = jobId ? await findExistingApplication(supabase, auth.user.id, jobId) : null;
+    const duplicate = Boolean(existingApplication?.id);
     const applicationRow = buildExtensionApplicationRow({
       userId: auth.user.id,
       jobId,
@@ -235,7 +242,7 @@ export async function POST(request: Request) {
       .single();
     if (applicationError) {
       console.error("extension application upsert failed", applicationError);
-      return extensionError("Could not sync the application.", 500);
+      return extensionError(`Could not sync the application: ${errorMessage(applicationError)}`, 500);
     }
     const savedApplication = application as { id: string; job_id: string | null } | null;
 
@@ -243,6 +250,7 @@ export async function POST(request: Request) {
       ok: true,
       applicationId: savedApplication?.id ?? null,
       jobId: savedApplication?.job_id ?? jobId,
+      duplicate,
     });
   } catch (error) {
     return authErrorResponse(error);

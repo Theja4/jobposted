@@ -85,6 +85,9 @@ The extension never collects or stores Workday, LinkedIn, or employer passwords.
 
 - `entrypoints/background.ts`: session storage, refresh, settings, API proxy, application sync.
 - `entrypoints/content.tsx`: supported-host content script, session bridge listener, shadow overlay, fill runner.
+- `entrypoints/sidepanel/App.tsx`: explicit active-tab autofill action. The manifest grants broad
+  HTTP/HTTPS host access so company-hosted application forms and embedded ATS flows, such as
+  Databricks careers pages, can be filled after the user clicks the side-panel button.
 - `src/autofill/*`: platform-agnostic field discovery, canonical matching, React-safe value setting, file upload attachment.
 - `src/adapters/*`: thin ATS adapters that provide match rules, stable selector hints, step detection, Next/Submit controls, and maintenance notes.
 
@@ -103,7 +106,9 @@ The extension never collects or stores Workday, LinkedIn, or employer passwords.
 5. Add/extend `src/autofill/field-resolution.test.ts`.
 6. Add the host to `ATS_HOSTS` in `wxt.config.ts` only if it is a named supported domain.
 
-Do not add `<all_urls>`. Unknown forms are handled by the generic fallback only when the host is already in the permission list and the user enables fallback in options.
+The extension intentionally keeps auto-mounted content scripts limited to named ATS hosts, but the
+side-panel autofill action has broad HTTP/HTTPS host access so user-triggered autofill also works on
+company-hosted forms and embedded ATS pages.
 
 ## Field Mapping And LLM Cache
 

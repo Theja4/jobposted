@@ -33,7 +33,6 @@ function dedupeKey(payload: ExtensionApplicationUpsert) {
     payload.platform,
     payload.jobUrl.trim().toLowerCase(),
     payload.status,
-    payload.appliedAt,
   ].join("|");
 }
 

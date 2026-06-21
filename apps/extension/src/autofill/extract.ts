@@ -1,12 +1,17 @@
 import type { AdapterHint } from "./types";
-import { normalizeText, visibleText } from "./text";
+import { looksLikeActionControl, normalizeText, visibleText } from "./text";
 import type { FieldDescriptor } from "./types";
+import { isWorkdayExperienceOwnedControl } from "./workday-experience";
 
 const FIELD_SELECTOR = [
   "input:not([type='hidden']):not([type='submit']):not([type='button']):not([type='image']):not([type='reset'])",
   "textarea",
   "select",
   "[role='combobox']",
+  "[role='radio']",
+  "[role='textbox']",
+  "[aria-haspopup='listbox']",
+  "[aria-haspopup='menu']",
   "[contenteditable='true']",
 ].join(",");
 
@@ -24,13 +29,119 @@ function textById(doc: Document, id: string | null): string {
     .join(" ");
 }
 
+function labelElementsText(element: HTMLElement): string {
+  if (!(element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement || element instanceof HTMLSelectElement)) {
+    return "";
+  }
+  return Array.from(element.labels ?? [])
+    .map((label) => visibleText(label.textContent))
+    .filter(Boolean)
+    .join(" ");
+}
+
+function textWithoutControls(container: HTMLElement): string {
+  const clone = container.cloneNode(true) as HTMLElement;
+  for (const node of Array.from(
+    clone.querySelectorAll(`${FIELD_SELECTOR}, button, [role='button']`),
+  )) {
+    node.remove();
+  }
+  return visibleText(clone.textContent);
+}
+
+function singleControlContainerText(element: HTMLElement): string {
+  for (let node = element.parentElement; node && node !== element.ownerDocument.body; node = node.parentElement) {
+    const controlCount = node.querySelectorAll(FIELD_SELECTOR).length;
+    if (controlCount > 1) continue;
+    const text = textWithoutControls(node);
+    if (/[a-z0-9]/i.test(text)) return text.slice(0, 120);
+  }
+  return "";
+}
+
+function nearbyControlGroupText(element: HTMLElement): string {
+  for (let node = element.parentElement; node && node !== element.ownerDocument.body; node = node.parentElement) {
+    if (node.matches("fieldset, form, section")) return "";
+    const controlCount = node.querySelectorAll(FIELD_SELECTOR).length;
+    if (controlCount <= 1) continue;
+    if (controlCount > 4) return "";
+    const text = textWithoutControls(node);
+    if (/[a-z0-9]/i.test(text)) return text.slice(0, 160);
+  }
+  return "";
+}
+
+function nearbyPeerFieldText(element: HTMLElement): string {
+  for (let node = element.parentElement; node && node !== element.ownerDocument.body; node = node.parentElement) {
+    if (node.matches("fieldset, form, section")) return "";
+    const controls = Array.from(node.querySelectorAll<HTMLElement>(FIELD_SELECTOR));
+    if (controls.length <= 1) continue;
+    if (controls.length > 5) return "";
+    const texts = controls
+      .filter((control) => control !== element && !control.contains(element) && !element.contains(control))
+      .map((control) => labelFor(control))
+      .filter(Boolean);
+    if (texts.length > 0) return texts.join(" ").slice(0, 160);
+  }
+  return "";
+}
+
+function customRadioGroup(element: HTMLElement) {
+  return element.closest("[role='radiogroup'], fieldset, [data-automation-id], [data-testid]") ?? element.parentElement;
+}
+
+function customRadioGroupLabel(element: HTMLElement) {
+  const group = customRadioGroup(element);
+  if (!group) return "";
+  const aria = group.getAttribute("aria-label");
+  if (aria) return visibleText(aria);
+  const labelledBy = textById(element.ownerDocument, group.getAttribute("aria-labelledby"));
+  if (labelledBy) return labelledBy;
+  const legend = group.querySelector("legend");
+  if (legend?.textContent) return visibleText(legend.textContent);
+  const label = group.querySelector<HTMLElement>(
+    "label, [data-automation-id*='label' i], [data-testid*='label' i], [id*='label' i], [class*='label' i], [class*='heading' i]",
+  );
+  if (label?.textContent) return visibleText(label.textContent);
+  return textWithoutControls(group as HTMLElement).slice(0, 120);
+}
+
+function customRadioOptionText(element: HTMLElement) {
+  return (
+    visibleText(element.getAttribute("aria-label")) ||
+    textById(element.ownerDocument, element.getAttribute("aria-labelledby")) ||
+    visibleText(element.textContent) ||
+    visibleText(element.getAttribute("data-value"))
+  );
+}
+
+function isPlaceholderText(value: string) {
+  return /^(select|select option|choose|choose option|please select|select\.\.\.|choose\.\.\.)$/i.test(visibleText(value));
+}
+
+function isChoiceLike(element: HTMLElement) {
+  return (
+    element.getAttribute("role") === "combobox" ||
+    element.getAttribute("aria-haspopup") === "listbox" ||
+    element.getAttribute("aria-haspopup") === "menu"
+  );
+}
+
 function labelFor(element: HTMLElement): string {
+  if (element.getAttribute("role") === "radio") {
+    const groupLabel = customRadioGroupLabel(element);
+    if (groupLabel) return groupLabel;
+  }
+
   const doc = element.ownerDocument;
   const aria = element.getAttribute("aria-label");
-  if (aria) return visibleText(aria);
+  if (aria && !(isChoiceLike(element) && isPlaceholderText(aria))) return visibleText(aria);
 
   const ariaLabelledBy = textById(doc, element.getAttribute("aria-labelledby"));
-  if (ariaLabelledBy) return ariaLabelledBy;
+  if (ariaLabelledBy && !(isChoiceLike(element) && isPlaceholderText(ariaLabelledBy))) return ariaLabelledBy;
+
+  const nativeLabels = labelElementsText(element);
+  if (nativeLabels) return nativeLabels;
 
   const id = element.getAttribute("id");
   if (id) {
@@ -43,10 +154,22 @@ function labelFor(element: HTMLElement): string {
     return visibleText(wrapping.textContent.replace((element as HTMLInputElement).value ?? "", ""));
   }
 
+  const container = element.closest("[data-automation-id], [data-testid], div");
+  const nearbyLabel = container?.querySelector<HTMLElement>(
+    "label, [data-automation-id*='label' i], [data-testid*='label' i], [id*='label' i], [class*='label' i], [class*='heading' i]",
+  );
+  if (nearbyLabel && !nearbyLabel.contains(element) && nearbyLabel.textContent) {
+    const text = visibleText(nearbyLabel.textContent);
+    if (text) return text;
+  }
+
+  const wrapperText = singleControlContainerText(element);
+  if (wrapperText) return wrapperText;
+
   const placeholder = element.getAttribute("placeholder");
   if (placeholder) return visibleText(placeholder);
 
-  for (const attr of ["name", "data-automation-id", "data-testid", "id"]) {
+  for (const attr of ["autocomplete", "name", "data-source", "data-automation-id", "data-testid", "id"]) {
     const value = element.getAttribute(attr);
     if (value) return visibleText(value.replace(/[_-]+/g, " "));
   }
@@ -58,16 +181,21 @@ function fieldContext(element: HTMLElement): string {
   const fieldset = element.closest("fieldset");
   const legend = fieldset?.querySelector("legend");
   const section = element.closest("[data-automation-id], section, form");
-  return [legend?.textContent, section?.getAttribute("data-automation-id")]
+  return [legend?.textContent, section?.getAttribute("data-automation-id"), nearbyControlGroupText(element), nearbyPeerFieldText(element)]
     .map(visibleText)
     .filter(Boolean)
     .join(" ");
 }
 
 function controlType(element: HTMLElement): FieldDescriptor["type"] {
+  const role = element.getAttribute("role");
+  if (role === "radio") return "radio";
+  if (role === "combobox" || element.getAttribute("aria-haspopup") === "listbox" || element.getAttribute("aria-haspopup") === "menu") {
+    return "combobox";
+  }
+  if (role === "textbox") return "text";
   if (element instanceof HTMLTextAreaElement) return "textarea";
   if (element instanceof HTMLSelectElement) return element.multiple ? "multiselect" : "select";
-  if (element.getAttribute("role") === "combobox") return "combobox";
   if (element.isContentEditable) return "textarea";
   if (element instanceof HTMLInputElement) {
     const type = (element.type || "text").toLowerCase();
@@ -93,14 +221,41 @@ function optionsFor(element: HTMLElement): string[] {
       ),
     ).map((input) => labelFor(input) || input.value);
   }
-  const ariaControls = element.getAttribute("aria-controls");
-  const listbox = ariaControls ? element.ownerDocument.getElementById(ariaControls) : null;
-  if (listbox) {
-    return Array.from(listbox.querySelectorAll("[role='option'], option")).map((option) =>
-      visibleText(option.textContent),
-    );
+  if (element.getAttribute("role") === "radio") {
+    const group = customRadioGroup(element);
+    const radios = Array.from((group ?? element.ownerDocument).querySelectorAll<HTMLElement>("[role='radio']"));
+    return radios.map(customRadioOptionText).filter(Boolean);
+  }
+  const controlledIds = [element.getAttribute("aria-controls"), element.getAttribute("aria-owns")]
+    .filter(Boolean)
+    .join(" ")
+    .split(/\s+/)
+    .filter(Boolean);
+  const listboxes = controlledIds
+    .map((id) => element.ownerDocument.getElementById(id))
+    .filter((node): node is HTMLElement => Boolean(node));
+  const inputList = element instanceof HTMLInputElement ? element.getAttribute("list") : null;
+  if (inputList) {
+    const datalist = element.ownerDocument.getElementById(inputList);
+    if (datalist) listboxes.push(datalist);
+  }
+  const options = listboxes.flatMap((listbox) =>
+    Array.from(listbox.querySelectorAll<HTMLElement>("[role='option'], option, li")).map((option) =>
+      visibleText(option.textContent || option.getAttribute("aria-label") || option.getAttribute("data-value")),
+    ),
+  );
+  if (options.length > 0) {
+    return options;
   }
   return [];
+}
+
+function requiredFor(element: HTMLElement, label: string, context: string) {
+  if (element.hasAttribute("required") || element.getAttribute("aria-required") === "true") return true;
+  if (/\brequired\b/i.test(`${label} ${context}`)) return true;
+  if (/\*/.test(`${label} ${context}`)) return true;
+  const requiredContainer = element.closest("[aria-required='true'], [data-required='true'], .required");
+  return Boolean(requiredContainer && requiredContainer.querySelectorAll(FIELD_SELECTOR).length === 1);
 }
 
 function isVisible(element: HTMLElement): boolean {
@@ -111,6 +266,13 @@ function isVisible(element: HTMLElement): boolean {
   const rect = element.getBoundingClientRect();
   if (rect.width > 0 && rect.height > 0) return true;
   return !element.closest("[hidden]");
+}
+
+function isDropdownInternalControl(element: HTMLElement) {
+  const popup = element.closest("[role='listbox'], [role='menu'], [role='option'], [role='menuitem']");
+  if (popup && popup !== element) return true;
+  const combobox = element.closest("[role='combobox'], [aria-haspopup='listbox'], [aria-haspopup='menu']");
+  return Boolean(combobox && combobox !== element);
 }
 
 function applyHints(dom: Document, fields: FieldDescriptor[], hints: AdapterHint[]) {
@@ -137,16 +299,102 @@ export function signatureFor(parts: {
   ).slice(0, 240);
 }
 
+function isOptionButtonCandidate(element: HTMLElement): boolean {
+  if (isWorkdayExperienceOwnedControl(element)) return false;
+  if (element.tagName !== "BUTTON" && element.getAttribute("role") !== "button") return false;
+  // Dropdown triggers and listbox internals are handled by the combobox path, not here.
+  if (element.getAttribute("role") === "combobox" || element.hasAttribute("aria-haspopup")) return false;
+  if (element.closest("[role='listbox'], [role='menu'], [role='option'], [role='menuitem']")) return false;
+  if (element.querySelector(FIELD_SELECTOR)) return false;
+  if (!isVisible(element)) return false;
+  const text = visibleText(element.textContent || element.getAttribute("aria-label"));
+  if (!text || text.length > 40) return false;
+  return !looksLikeActionControl(text);
+}
+
+function buttonGroupLabel(container: HTMLElement): string {
+  for (let node: HTMLElement | null = container; node && node !== container.ownerDocument.body; node = node.parentElement) {
+    const text = textWithoutControls(node);
+    if (/[a-z0-9]/i.test(text)) return text.slice(0, 160);
+  }
+  return "";
+}
+
+/** Tightest pure-button ancestor that groups >=2 option buttons (no inputs mixed in). */
+function buttonGroupContainer(button: HTMLElement, candidates: ReadonlySet<HTMLElement>): HTMLElement | null {
+  for (let node = button.parentElement; node && node !== button.ownerDocument.body; node = node.parentElement) {
+    const within = Array.from(node.querySelectorAll<HTMLElement>("button, [role='button']")).filter((candidate) =>
+      candidates.has(candidate),
+    );
+    if (within.length >= 2) {
+      return node.querySelectorAll(FIELD_SELECTOR).length === 0 ? node : null;
+    }
+    if (node.querySelectorAll(FIELD_SELECTOR).length > 0) return null;
+  }
+  return null;
+}
+
+/**
+ * Some design systems (Ashby, several React form kits) render single-choice questions as a row of
+ * <button> toggles instead of radios/selects, which the field selector ignores. Detect those groups
+ * and emit one synthetic radio-type field per group so they can be resolved and filled.
+ */
+function extractButtonChoiceGroups(dom: Document, platform: string, existing: FieldDescriptor[]): FieldDescriptor[] {
+  const candidates = Array.from(dom.querySelectorAll<HTMLElement>("button, [role='button']")).filter(isOptionButtonCandidate);
+  if (candidates.length < 2) return [];
+  const candidateSet = new Set(candidates);
+  const groups = new Map<HTMLElement, HTMLElement[]>();
+  for (const button of candidates) {
+    const container = buttonGroupContainer(button, candidateSet);
+    if (!container) continue;
+    const list = groups.get(container) ?? [];
+    list.push(button);
+    groups.set(container, list);
+  }
+
+  const fields: FieldDescriptor[] = [];
+  for (const [container, buttons] of groups) {
+    if (buttons.length < 2) continue;
+    if (existing.some((field) => field.element === container || container.contains(field.element) || field.element.contains(container))) continue;
+    const label = buttonGroupLabel(container);
+    if (!label) continue;
+    const options = buttons.map((button) => visibleText(button.textContent || button.getAttribute("aria-label"))).filter(Boolean);
+    if (options.length < 2) continue;
+    const context = fieldContext(container);
+    const type = "radio" as const;
+    const signature = signatureFor({ platform, label, context, type, options });
+    fields.push({
+      id: `${type}:${signature}:${fields.length}`,
+      element: container,
+      label,
+      context,
+      type,
+      required: requiredFor(container, label, context),
+      options,
+      signature,
+    });
+  }
+  return fields;
+}
+
 export function extractFields(dom: Document, platform: string, hints: AdapterHint[] = []): FieldDescriptor[] {
   const seenRadioGroups = new Set<string>();
+  const seenCustomRadioGroups = new WeakSet<Element>();
   const fields: FieldDescriptor[] = [];
   const elements = Array.from(dom.querySelectorAll<HTMLElement>(FIELD_SELECTOR));
 
   for (const element of elements) {
     if (!isVisible(element)) continue;
+    if (isWorkdayExperienceOwnedControl(element)) continue;
+    if (isDropdownInternalControl(element)) continue;
     if (element instanceof HTMLInputElement && element.type === "radio" && element.name) {
       if (seenRadioGroups.has(element.name)) continue;
       seenRadioGroups.add(element.name);
+    }
+    if (element.getAttribute("role") === "radio") {
+      const group = customRadioGroup(element);
+      if (group && seenCustomRadioGroups.has(group)) continue;
+      if (group) seenCustomRadioGroups.add(group);
     }
 
     const label = labelFor(element);
@@ -161,15 +409,13 @@ export function extractFields(dom: Document, platform: string, hints: AdapterHin
       label,
       context,
       type,
-      required:
-        element.hasAttribute("required") ||
-        element.getAttribute("aria-required") === "true" ||
-        /\brequired\b/i.test(`${label} ${context}`),
+      required: requiredFor(element, label, context),
       options,
       signature,
     });
   }
 
+  fields.push(...extractButtonChoiceGroups(dom, platform, fields));
   applyHints(dom, fields, hints);
   return fields;
 }

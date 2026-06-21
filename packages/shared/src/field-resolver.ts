@@ -7,7 +7,12 @@ import type { CanonicalFieldKey, MasterProfile } from "./extension";
  */
 
 export function normalizeText(value: string): string {
-  return (value ?? "").toLowerCase().replace(/\s+/g, " ").trim();
+  return (value ?? "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
 }
 
 function includesAny(text: string, patterns: readonly RegExp[]): boolean {
@@ -74,7 +79,46 @@ const OUTSIDE_BUSINESS_ACTIVITIES_PATTERNS = [
 ] as const;
 
 function answerForKeys<T extends readonly string[]>(profile: MasterProfile, keys: T) {
-  return profile.answers.find((answer) => keys.includes(answer.key as T[number])) ?? null;
+  return profile.answers.find((answer) => keys.includes(answer.key as T[number]) && isUsableAnswerValue(answer)) ?? null;
+}
+
+function profileCompanyMatchesQuestion(questionText: string, company: string | null | undefined) {
+  const companyText = normalizeText(company ?? "");
+  if (!companyText) return false;
+  const phrase = new RegExp(`\\b${companyText.replace(/\s+/g, "\\s+")}\\b`);
+  if (phrase.test(questionText)) return true;
+  const compactQuestion = questionText.replace(/\s+/g, "");
+  const compactCompany = companyText.replace(/\s+/g, "");
+  return compactCompany.length >= 5 && compactQuestion.includes(compactCompany);
+}
+
+function inferredPreviousCompanyEmploymentAnswer(text: string, profile: MasterProfile) {
+  const matched = profile.experience.some((item) => profileCompanyMatchesQuestion(text, item.company));
+  if (matched) {
+    return {
+      key: "screening.previous_company_employment",
+      prompt: "Previous company employment",
+      value: "Yes",
+    };
+  }
+  return (
+    answerForKeys(profile, PREVIOUS_COMPANY_EMPLOYMENT_ANSWER_KEYS) ?? {
+      key: "screening.previous_company_employment",
+      prompt: "Previous company employment",
+      value: "No",
+    }
+  );
+}
+
+export function isUsableAnswerValue(answer: { prompt: string; value: string }, questionText = "") {
+  const value = normalizeText(answer.value);
+  if (!value) return false;
+  const prompt = normalizeText(answer.prompt);
+  const question = normalizeText(questionText);
+  const enoughWords = value.split(/\s+/).filter(Boolean).length >= 4;
+  if (prompt && (value === prompt || (enoughWords && (value.includes(prompt) || prompt.includes(value))))) return false;
+  if (question && (value === question || (enoughWords && (value.includes(question) || question.includes(value))))) return false;
+  return true;
 }
 
 export function matchCompanyConnectionAnswer(text: string, profile: MasterProfile) {
@@ -86,7 +130,7 @@ export function matchCompanyConnectionAnswer(text: string, profile: MasterProfil
 export function matchPreviousCompanyEmploymentAnswer(text: string, profile: MasterProfile) {
   const normalized = normalizeText(text);
   if (!includesAny(normalized, PREVIOUS_COMPANY_EMPLOYMENT_PATTERNS)) return null;
-  return answerForKeys(profile, PREVIOUS_COMPANY_EMPLOYMENT_ANSWER_KEYS);
+  return inferredPreviousCompanyEmploymentAnswer(normalized, profile);
 }
 
 export function matchOutsideBusinessActivitiesAnswer(text: string, profile: MasterProfile) {
@@ -129,13 +173,181 @@ type Rule = { key: CanonicalFieldKey; confidence: number; patterns: RegExp[]; ne
 
 const MONEY_WORD = "(?:salary|compensation|pay|base pay|base salary|ctc|package|remuneration)";
 const CURRENCY_WORD = "(?:currency|currency code|pay currency|salary currency|compensation currency)";
+const CALLING_CODES = [
+  "1",
+  "7",
+  "20",
+  "27",
+  "30",
+  "31",
+  "32",
+  "33",
+  "34",
+  "36",
+  "39",
+  "40",
+  "41",
+  "43",
+  "44",
+  "45",
+  "46",
+  "47",
+  "48",
+  "49",
+  "52",
+  "55",
+  "60",
+  "61",
+  "62",
+  "63",
+  "64",
+  "65",
+  "66",
+  "81",
+  "82",
+  "84",
+  "86",
+  "90",
+  "91",
+  "92",
+  "93",
+  "94",
+  "95",
+  "98",
+  "212",
+  "213",
+  "216",
+  "218",
+  "234",
+  "254",
+  "255",
+  "256",
+  "351",
+  "352",
+  "353",
+  "354",
+  "355",
+  "356",
+  "357",
+  "358",
+  "359",
+  "370",
+  "371",
+  "372",
+  "373",
+  "374",
+  "375",
+  "376",
+  "377",
+  "380",
+  "381",
+  "382",
+  "383",
+  "385",
+  "386",
+  "387",
+  "389",
+  "420",
+  "421",
+  "423",
+  "852",
+  "853",
+  "855",
+  "856",
+  "880",
+  "886",
+  "971",
+  "972",
+  "973",
+  "974",
+  "975",
+  "976",
+  "977",
+  "992",
+  "993",
+  "994",
+  "995",
+  "996",
+  "998",
+].sort((a, b) => b.length - a.length);
+
+const COUNTRY_CALLING_CODES: Record<string, string> = {
+  australia: "+61",
+  canada: "+1",
+  france: "+33",
+  germany: "+49",
+  india: "+91",
+  ireland: "+353",
+  singapore: "+65",
+  "united kingdom": "+44",
+  uk: "+44",
+  "united states": "+1",
+  usa: "+1",
+};
+
+function phoneDigits(phone: string | null | undefined) {
+  return (phone ?? "").replace(/\D+/g, "");
+}
+
+function phoneCallingCode(phone: string | null | undefined, country: string | null | undefined) {
+  const raw = phone?.trim() ?? "";
+  const digits = phoneDigits(raw);
+  if (raw.startsWith("+")) {
+    const code = CALLING_CODES.find((candidate) => digits.startsWith(candidate));
+    if (code) return `+${code}`;
+    if (digits) return `+${digits.slice(0, Math.min(3, digits.length))}`;
+  }
+  if (digits.length > 10) {
+    const code = CALLING_CODES.find((candidate) => digits.startsWith(candidate) && digits.length > candidate.length + 6);
+    if (code) return `+${code}`;
+  }
+  const countryCode = COUNTRY_CALLING_CODES[normalizeText(country ?? "")];
+  return countryCode ?? null;
+}
+
+function phoneNationalNumber(phone: string | null | undefined, country: string | null | undefined) {
+  let digits = phoneDigits(phone);
+  const code = phoneCallingCode(phone, country)?.replace(/\D+/g, "");
+  if (code && digits.startsWith(code) && digits.length > code.length + 6) {
+    digits = digits.slice(code.length);
+  }
+  return digits.replace(/^0+/, "") || null;
+}
+
+function dateScore(value: string | null | undefined) {
+  const trimmed = value?.trim();
+  if (!trimmed) return 0;
+  if (/^(present|current|now)$/i.test(trimmed)) return Number.MAX_SAFE_INTEGER;
+  const parsed = Date.parse(trimmed);
+  if (Number.isFinite(parsed)) return parsed;
+  const yearMonth = /^(\d{4})(?:[-/](\d{1,2}))?/.exec(trimmed);
+  if (!yearMonth) return 0;
+  const year = Number(yearMonth[1]);
+  const month = yearMonth[2] ? Number(yearMonth[2]) - 1 : 0;
+  return Date.UTC(year, Math.max(0, Math.min(11, month)), 1);
+}
+
+function currentCompany(profile: MasterProfile) {
+  const experiences = profile.experience.filter((item) => item.company?.trim());
+  const current =
+    experiences.find((item) => item.current === true) ??
+    experiences.find((item) => !item.endDate?.trim() || /^(present|current|now)$/i.test(item.endDate.trim()));
+  if (current) return current.company.trim();
+
+  const latest = [...experiences].sort((a, b) => {
+    const aScore = Math.max(dateScore(a.endDate), dateScore(a.startDate));
+    const bScore = Math.max(dateScore(b.endDate), dateScore(b.startDate));
+    return bScore - aScore;
+  })[0];
+  return latest?.company.trim() || null;
+}
 
 /** Label/heuristic rules. Kept in sync with the extension's prior inline rules. */
 export const FIELD_RULES: Rule[] = [
   { key: "identity.fullName", confidence: 0.88, patterns: [/\b(full|legal) name\b/, /\bcandidate name\b/] },
+  { key: "identity.preferredName", confidence: 0.9, patterns: [/\bpreferred(?: first)? name\b/, /\bchosen(?: first)? name\b/] },
   { key: "identity.firstName", confidence: 0.96, patterns: [/\b(first|given) name\b/, /\blegal first\b/] },
   { key: "identity.lastName", confidence: 0.96, patterns: [/\b(last|family|surname) name\b/, /\blegal last\b/] },
-  { key: "identity.preferredName", confidence: 0.9, patterns: [/\bpreferred name\b/, /\bchosen name\b/] },
   { key: "identity.email", confidence: 0.98, patterns: [/\bemail\b/, /\be mail\b/] },
   { key: "identity.phone", confidence: 0.96, patterns: [/\bphone\b/, /\bmobile\b/, /\btelephone\b/] },
   // Work-auth before location so "authorized to work in the country" isn't read as a country field.
@@ -190,6 +402,15 @@ export const FIELD_RULES: Rule[] = [
   { key: "links.linkedin", confidence: 0.94, patterns: [/\blinkedin\b/] },
   { key: "links.github", confidence: 0.94, patterns: [/\bgithub\b/, /\bgit hub\b/] },
   { key: "links.portfolio", confidence: 0.9, patterns: [/\bportfolio\b/, /\bpersonal website\b/] },
+  {
+    key: "experience.currentCompany",
+    confidence: 0.9,
+    patterns: [
+      /\bcurrent\s+(?:firm|company|employer|organization|organisation)\b/,
+      /\b(?:firm|company|employer|organization|organisation)\s+(?:you\s+re|you\s+are|you)?\s*(?:currently\s+)?(?:part\s+of|work(?:ing)?\s+(?:for|at)|employed\s+(?:by|with))\b/,
+      /\b(?:name\s+of\s+)?(?:your\s+)?current\s+employer\b/,
+    ],
+  },
   { key: "documents.resume", confidence: 0.96, patterns: [/\bresume\b/, /\bcv\b/] },
   { key: "documents.coverLetter", confidence: 0.92, patterns: [/\bcover letter\b/] },
   { key: "experience", confidence: 0.82, patterns: [/\bwork experience\b/, /\bemployment history\b/, /\bexperience\b/] },
@@ -221,6 +442,10 @@ export function valueForKey(profile: MasterProfile, key: CanonicalFieldKey): str
       return profile.identity.email;
     case "identity.phone":
       return profile.identity.phone;
+    case "identity.phoneCountryCode":
+      return phoneCallingCode(profile.identity.phone, profile.location.country);
+    case "identity.phoneNational":
+      return phoneNationalNumber(profile.identity.phone, profile.location.country);
     case "location.street":
       return profile.location.street ?? null;
     case "location.city":
@@ -273,6 +498,8 @@ export function valueForKey(profile: MasterProfile, key: CanonicalFieldKey): str
       return profile.documents.resumeUrl ?? null;
     case "documents.coverLetter":
       return profile.documents.coverLetterUrl ?? null;
+    case "experience.currentCompany":
+      return currentCompany(profile);
     case "experience":
       return profile.experience.map((i) => `${i.title} at ${i.company}\n${i.bullets.join("\n")}`).join("\n\n");
     case "education":
@@ -299,8 +526,9 @@ export type ResolvedField = {
 
 function matchReusableAnswer(field: ResolvableField, profile: MasterProfile): ResolvedField | null {
   const text = normalizeText(`${field.label} ${field.context ?? ""} ${(field.options ?? []).join(" ")}`);
+  const questionText = normalizeText(`${field.label} ${field.context ?? ""}`);
   const semanticAnswer = matchScreeningReusableAnswer(text, profile);
-  if (semanticAnswer) {
+  if (semanticAnswer && isUsableAnswerValue(semanticAnswer, questionText)) {
     return {
       canonicalKey: `answers.${semanticAnswer.key}`,
       value: semanticAnswer.value,
@@ -309,6 +537,7 @@ function matchReusableAnswer(field: ResolvableField, profile: MasterProfile): Re
     };
   }
   const answer = profile.answers.find((item) => {
+    if (!isUsableAnswerValue(item, questionText)) return false;
     const key = normalizeText(item.key);
     const prompt = normalizeText(item.prompt);
     return (key && text.includes(key)) || (prompt && (text.includes(prompt) || prompt.includes(text)));

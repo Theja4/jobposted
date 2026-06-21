@@ -103,6 +103,12 @@ export function OptionsApp() {
             onChange={(value) => update({ enableGenericFallback: value })}
           />
           <Toggle
+            label="Autofill adds to tracker"
+            description="When on, Auto-fill this page also records the job in Application history."
+            checked={settings.autoTrackAutofill}
+            onChange={(value) => update({ autoTrackAutofill: value })}
+          />
+          <Toggle
             label="Auto-advance steps"
             description="Fill & Continue can click Next/Continue at a human pace."
             checked={settings.autoAdvance}

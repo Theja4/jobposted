@@ -33,7 +33,7 @@ function cleanOrigin(value: string) {
 }
 
 const configuredWebOrigin = cleanOrigin(
-  env("WXT_JOBPOSTED_WEB_ORIGIN", "NEXT_PUBLIC_SITE_URL") || "https://jobposted.app",
+  env("WXT_JOBPOSTED_WEB_ORIGIN") || "https://jobposted.app",
 );
 const configuredSupabaseUrl = env("WXT_SUPABASE_URL", "NEXT_PUBLIC_SUPABASE_URL");
 const configuredSupabaseAnonKey = env("WXT_SUPABASE_ANON_KEY", "NEXT_PUBLIC_SUPABASE_ANON_KEY");
@@ -87,6 +87,7 @@ const ATS_HOSTS = [
 ];
 
 const API_HOSTS = ["https://*.supabase.co/*"];
+const UNIVERSAL_AUTOFILL_HOSTS = ["https://*/*", "http://*/*"];
 
 export default defineConfig({
   manifestVersion: 3,
@@ -117,8 +118,8 @@ export default defineConfig({
       96: "icon/96.png",
       128: "icon/128.png",
     },
-    permissions: ["storage", "activeTab", "scripting", "alarms", "cookies"],
-    host_permissions: [...ATS_HOSTS, ...JOBPOSTED_HOSTS, ...API_HOSTS],
+    permissions: ["storage", "activeTab", "scripting", "alarms", "cookies", "sidePanel"],
+    host_permissions: [...UNIVERSAL_AUTOFILL_HOSTS, ...ATS_HOSTS, ...JOBPOSTED_HOSTS, ...API_HOSTS],
     action: {
       default_title: EXTENSION_NAME,
       default_icon: {

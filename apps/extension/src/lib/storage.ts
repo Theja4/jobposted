@@ -210,12 +210,19 @@ export async function readSession(): Promise<ExtensionAuthSession | null> {
 }
 
 export async function writeSession(session: ExtensionAuthSession): Promise<void> {
+  // Do NOT drop the cached profile here: a routine token refresh rotates the
+  // session for the same user, and wiping the cache on every refresh forced a
+  // cold network fetch on each popup open. Sign-in clears the cache explicitly
+  // (see AUTH_SESSION_DELIVERY), and clearSession handles sign-out.
   await chrome.storage.local.set({ [SESSION_KEY]: normalizeSession(session) });
-  await chrome.storage.local.remove(PROFILE_KEY);
 }
 
 export async function clearSession(): Promise<void> {
   await chrome.storage.local.remove([SESSION_KEY, PROFILE_KEY]);
+}
+
+export async function clearCachedProfile(): Promise<void> {
+  await chrome.storage.local.remove(PROFILE_KEY);
 }
 
 export async function getFreshSession(): Promise<ExtensionAuthSession | null> {

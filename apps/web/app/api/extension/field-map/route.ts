@@ -5,6 +5,7 @@ import type {
   ExtensionFieldMapping,
   MasterProfile,
 } from "@jobposted/shared";
+import { isUsableAnswerValue, resolveFieldValue, valueForKey } from "@jobposted/shared";
 import { callGatewayJSON, GatewayError, gatewayConfigured } from "@/lib/ai/gateway";
 import { authErrorResponse, extensionError, getExtensionAuthContext } from "@/lib/extension/auth";
 import { reportError } from "@/lib/observability/report";
@@ -34,18 +35,14 @@ function isFieldContext(value: unknown): value is ExtensionFieldContext {
 }
 
 function localFallback(field: ExtensionFieldContext, profile: MasterProfile): ExtensionFieldMapping {
-  const label = `${field.label} ${field.context ?? ""}`.toLowerCase();
-  const answer = profile.answers.find((item) => {
-    const key = item.key.toLowerCase();
-    return label.includes(key) || key.includes(field.label.toLowerCase());
-  });
-  if (answer) {
+  const resolved = resolveFieldValue(field, profile, { demographicsEnabled: true });
+  if (resolved.canonicalKey !== "unknown" && resolved.confidence >= 0.6) {
     return {
-      canonicalKey: `answers.${answer.key}`,
-      value: answer.value,
-      confidence: 0.74,
-      source: "answer",
-      reason: "Matched a reusable answer.",
+      canonicalKey: resolved.canonicalKey,
+      value: resolved.value,
+      confidence: Math.min(resolved.confidence, 0.86),
+      source: resolved.source,
+      reason: resolved.source === "answer" ? "Matched a reusable answer." : "Matched a profile field.",
     };
   }
   return {
@@ -57,6 +54,29 @@ function localFallback(field: ExtensionFieldContext, profile: MasterProfile): Ex
   };
 }
 
+function safeMapping(
+  field: ExtensionFieldContext,
+  profile: MasterProfile,
+  mapping: ExtensionFieldMapping,
+): ExtensionFieldMapping {
+  if (mapping.canonicalKey === "unknown") return mapping;
+  const value =
+    mapping.value !== undefined ? mapping.value : valueForKey(profile, mapping.canonicalKey);
+  if (
+    typeof value === "string" &&
+    !isUsableAnswerValue({ prompt: field.label, value }, `${field.label} ${field.context ?? ""}`)
+  ) {
+    return {
+      canonicalKey: "unknown",
+      value: null,
+      confidence: 0,
+      source: "skip",
+      reason: "Mapped value matched the field prompt.",
+    };
+  }
+  return { ...mapping, value };
+}
+
 function profileSummary(profile: MasterProfile) {
   return {
     identity: profile.identity,
@@ -65,6 +85,13 @@ function profileSummary(profile: MasterProfile) {
     workAuth: profile.workAuth,
     compensation: profile.compensation,
     demographics: profile.demographics,
+    experience: profile.experience.slice(0, 8).map((item) => ({
+      title: item.title,
+      company: item.company,
+      startDate: item.startDate,
+      endDate: item.endDate,
+      current: item.current,
+    })),
     skills: profile.skills,
     answers: profile.answers,
   };
@@ -87,6 +114,8 @@ async function callGateway(field: ExtensionFieldContext, profile: MasterProfile)
           "identity.preferredName",
           "identity.email",
           "identity.phone",
+          "identity.phoneCountryCode",
+          "identity.phoneNational",
           "location.street",
           "location.city",
           "location.state",
@@ -95,6 +124,7 @@ async function callGateway(field: ExtensionFieldContext, profile: MasterProfile)
           "links.portfolio",
           "links.linkedin",
           "links.github",
+          "links.website",
           "workAuth.authorizedToWork",
           "workAuth.requiresSponsorship",
           "workAuth.country",
@@ -107,6 +137,9 @@ async function callGateway(field: ExtensionFieldContext, profile: MasterProfile)
           "demographics.veteranStatus",
           "demographics.disabilityStatus",
           "demographics.hispanicLatino",
+          "documents.resume",
+          "documents.coverLetter",
+          "experience.currentCompany",
           "experience",
           "education",
           "skills",
@@ -176,7 +209,7 @@ export async function POST(request: Request) {
       return rateLimitResponse(rateLimit, "Field mapping is temporarily rate limited. Try again shortly.");
     }
 
-    const mapping = (await callGateway(field, profile)) ?? localFallback(field, profile);
+    const mapping = safeMapping(field, profile, (await callGateway(field, profile)) ?? localFallback(field, profile));
     if (mapping.confidence >= 0.6 && mapping.canonicalKey !== "unknown") {
       await supabase.from("extension_field_mappings").upsert(
         {

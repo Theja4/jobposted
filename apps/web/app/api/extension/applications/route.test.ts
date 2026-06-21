@@ -75,4 +75,25 @@ describe("buildExtensionApplicationRow", () => {
     expect(row.status).toBe("submitted");
     expect(row.submitted_at).toBe("2026-06-16T10:00:00.000Z");
   });
+
+  it("can build a tracker application row even when no job row was created", () => {
+    const row = buildExtensionApplicationRow({
+      userId: "user_1",
+      jobId: null,
+      payload,
+      jobUrl: payload.jobUrl,
+      company: payload.company,
+      role: payload.role,
+      activeResumeVersionId: "base_latest",
+      existingApplication: null,
+    });
+
+    expect(row.job_id).toBeNull();
+    expect(row.field_map).toMatchObject({
+      source: "extension",
+      company: "Acme",
+      role: "Product Engineer",
+      jobUrl: "https://boards.greenhouse.io/acme/jobs/1",
+    });
+  });
 });

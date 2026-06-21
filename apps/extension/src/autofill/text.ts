@@ -27,3 +27,16 @@ export function optionScore(option: string, desired: string): number {
   const overlap = bTokens.filter((token) => aTokens.has(token)).length;
   return overlap / Math.max(bTokens.length, 1);
 }
+
+/**
+ * True when a button's text reads like a form action (submit, upload, next, …) rather than a
+ * selectable answer option. Used to keep button-based choice groups (e.g. Ashby Yes/No toggles)
+ * from ever scooping up — or clicking — the submit/upload/navigation buttons.
+ */
+export function looksLikeActionControl(text: string | null | undefined): boolean {
+  const value = visibleText(text).toLowerCase();
+  if (!value) return true;
+  return /^(submit|submit application|send|send application|apply|apply now|upload|upload file|upload cv|upload resume|attach|attach file|browse|choose file|choose files|select file|select files|add|add another|add more|remove|delete|clear|reset|edit|cancel|close|dismiss|next|previous|prev|back|continue|save|save and continue|save & continue|review|sign in|signin|log in|login|sign out|sign up|signup|register|search|autofill|autofill from resume|autofill with resume|use my resume|drag and drop|select\.\.\.|select one|choose\.\.\.|choose one)$/.test(
+    value,
+  );
+}

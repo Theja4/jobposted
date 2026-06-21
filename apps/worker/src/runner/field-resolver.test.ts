@@ -77,6 +77,30 @@ describe("worker field-resolver (mirror of @jobposted/shared)", () => {
     expect(outside.value).toBe("No");
   });
 
+  it("defaults company-specific previous employment to No unless work experience matches the company", () => {
+    const noMatch = resolveFieldValue(
+      field({ label: "Do you currently or have you previously worked for Databricks in the past?", options: ["Yes", "No"] }),
+      profile({
+        experience: [{ title: "Engineer", company: "ION Group", startDate: "2022-01", endDate: null, current: true, bullets: [] }],
+        answers: [],
+      }),
+      { demographicsEnabled: false },
+    );
+    const matched = resolveFieldValue(
+      field({ label: "Do you currently or have you previously worked for Databricks in the past?", options: ["Yes", "No"] }),
+      profile({
+        experience: [{ title: "Engineer", company: "data bricks", startDate: "2021-01", endDate: "2022-01", current: false, bullets: [] }],
+        answers: [],
+      }),
+      { demographicsEnabled: false },
+    );
+
+    expect(noMatch.canonicalKey).toBe("answers.screening.previous_company_employment");
+    expect(noMatch.value).toBe("No");
+    expect(matched.canonicalKey).toBe("answers.screening.previous_company_employment");
+    expect(matched.value).toBe("Yes");
+  });
+
   it("answers non-compete, affiliated-company, and ex-employee questions with the setup default (No)", () => {
     const p = profile({
       answers: [
@@ -96,6 +120,31 @@ describe("worker field-resolver (mirror of @jobposted/shared)", () => {
     // "ex-employee" reuses the previous-employment answer.
     expect(exEmployee.canonicalKey).toBe("answers.screening.previous_company_employment");
     expect(exEmployee.value).toBe("No");
+  });
+
+  it("answers current-firm questions from the current or latest organization", () => {
+    const p = profile({
+      experience: [
+        { title: "Engineer", company: "Past Co", startDate: "2021-01", endDate: "2023-12", current: false, bullets: [] },
+        { title: "Staff Engineer", company: "Current Co", startDate: "2024-01", endDate: null, current: true, bullets: [] },
+      ],
+    });
+    const current = resolveFieldValue(field({ label: "Current firm you're part of?" }), p, { demographicsEnabled: false });
+    expect(current.canonicalKey).toBe("experience.currentCompany");
+    expect(current.value).toBe("Current Co");
+
+    const latest = resolveFieldValue(
+      field({ label: "Name of your current employer" }),
+      profile({
+        experience: [
+          { title: "Engineer", company: "Older Co", startDate: "2020-01", endDate: "2021-12", current: false, bullets: [] },
+          { title: "Lead Engineer", company: "Latest Co", startDate: "2022-01", endDate: "2023-12", current: false, bullets: [] },
+        ],
+      }),
+      { demographicsEnabled: false },
+    );
+    expect(latest.canonicalKey).toBe("experience.currentCompany");
+    expect(latest.value).toBe("Latest Co");
   });
 
   it("answers current and expected salary questions separately; generic salary stays review-only", () => {

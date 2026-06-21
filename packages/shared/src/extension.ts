@@ -105,6 +105,8 @@ export type CanonicalFieldKey =
   | "identity.preferredName"
   | "identity.email"
   | "identity.phone"
+  | "identity.phoneCountryCode"
+  | "identity.phoneNational"
   | "location.street"
   | "location.city"
   | "location.state"
@@ -128,6 +130,7 @@ export type CanonicalFieldKey =
   | "demographics.hispanicLatino"
   | "documents.resume"
   | "documents.coverLetter"
+  | "experience.currentCompany"
   | "experience"
   | "education"
   | "skills"
@@ -201,9 +204,39 @@ export interface ExtensionApplicationResponse {
   ok: true;
   applicationId: string | null;
   jobId: string | null;
+  duplicate?: boolean;
   queued?: boolean;
   attempts?: number;
   queuedAt?: string | null;
+}
+
+export interface ExtensionJobContext {
+  platform: ExtensionPlatform;
+  company: string;
+  role: string;
+  jobUrl: string;
+  jobDescription: string;
+}
+
+export interface ExtensionTailorResponse {
+  ok: true;
+  kind: "tailor";
+  jobId: string | null;
+  applicationId?: string | null;
+  resumeUrl: string | null;
+  resumeDocxUrl?: string | null;
+  matchScore?: number | null;
+  changed?: boolean;
+}
+
+export interface ExtensionCoverLetterResponse {
+  ok: true;
+  kind: "cover_letter";
+  jobId: string | null;
+  applicationId?: string | null;
+  documentId?: string | null;
+  coverLetterUrl: string | null;
+  preview?: string | null;
 }
 
 export interface ExtensionSyncQueueStatus {
@@ -213,11 +246,28 @@ export interface ExtensionSyncQueueStatus {
   nextRetryAt?: string | null;
 }
 
+export interface ExtensionAutofillRunResult {
+  platform: ExtensionPlatform;
+  stepName: string;
+  jobUrl: string;
+  company: string;
+  role: string;
+  filled: number;
+  needsUser: number;
+  skipped: number;
+  failed: number;
+  total: number;
+  fields: ExtensionFieldFillRecord[];
+  tracker?: ExtensionApplicationResponse | null;
+  trackerError?: string | null;
+}
+
 export interface ExtensionSettings {
   submissionPolicy: "review" | "auto";
   autoAdvance: boolean;
   overwriteFilledFields: boolean;
   enableGenericFallback: boolean;
+  autoTrackAutofill: boolean;
   enabledPlatforms: Partial<Record<ExtensionPlatform, boolean>>;
   demographicsEnabled: boolean;
   humanPace: "careful" | "balanced" | "fast";
@@ -228,6 +278,7 @@ export const DEFAULT_EXTENSION_SETTINGS: ExtensionSettings = {
   autoAdvance: true,
   overwriteFilledFields: false,
   enableGenericFallback: false,
+  autoTrackAutofill: true,
   enabledPlatforms: {},
   demographicsEnabled: false,
   humanPace: "balanced",
@@ -248,9 +299,13 @@ export type ExtensionMessage =
   | { type: "AUTH_STATUS" }
   | { type: "AUTH_SIGN_OUT" }
   | { type: "AUTH_SESSION_DELIVERY"; requestId?: string; session: ExtensionAuthSession }
-  | { type: "PROFILE_GET"; forceRefresh?: boolean }
+  | { type: "PROFILE_GET"; forceRefresh?: boolean; cachedOnly?: boolean }
   | { type: "RESUME_GET"; jobId?: string | null }
   | { type: "FIELD_MAP"; field: ExtensionFieldContext; profile: MasterProfile }
+  | { type: "AUTOFILL_ACTIVE_TAB"; continueSteps?: boolean }
+  | { type: "TRACKER_ADD_ACTIVE_TAB" }
+  | { type: "TAILOR_ACTIVE_TAB" }
+  | { type: "COVER_LETTER_ACTIVE_TAB" }
   | { type: "APPLICATION_SYNC"; payload: ExtensionApplicationUpsert }
   | { type: "APPLICATION_SYNC_RETRY" }
   | { type: "SYNC_QUEUE_STATUS" }
@@ -263,9 +318,13 @@ export type ExtensionMessageResponse =
   | { ok: true; type: "AUTH_STATUS"; authenticated: boolean; email?: string | null }
   | { ok: true; type: "AUTH_START"; requestId: string }
   | { ok: true; type: "AUTH_SIGN_OUT" }
-  | { ok: true; type: "PROFILE_GET"; profile: MasterProfile }
+  | { ok: true; type: "PROFILE_GET"; profile: MasterProfile | null }
   | { ok: true; type: "RESUME_GET"; resume: ExtensionResumeResponse }
   | { ok: true; type: "FIELD_MAP"; mapping: ExtensionFieldMapping }
+  | { ok: true; type: "AUTOFILL_ACTIVE_TAB"; result: ExtensionAutofillRunResult }
+  | { ok: true; type: "TRACKER_ADD_ACTIVE_TAB"; result: ExtensionApplicationResponse }
+  | { ok: true; type: "TAILOR_ACTIVE_TAB"; result: ExtensionTailorResponse }
+  | { ok: true; type: "COVER_LETTER_ACTIVE_TAB"; result: ExtensionCoverLetterResponse }
   | { ok: true; type: "APPLICATION_SYNC"; result: ExtensionApplicationResponse }
   | { ok: true; type: "APPLICATION_SYNC_RETRY"; status: ExtensionSyncQueueStatus }
   | { ok: true; type: "SYNC_QUEUE_STATUS"; status: ExtensionSyncQueueStatus }

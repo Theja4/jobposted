@@ -1,8 +1,10 @@
 import React, { useMemo, useRef, useState } from "react";
 import ReactDOM from "react-dom/client";
 import type {
+  ExtensionAutofillRunResult,
   ExtensionAuthSession,
   ExtensionFieldFillRecord,
+  ExtensionJobContext,
   ExtensionMessageResponse,
   ExtensionSettings,
   MasterProfile,
@@ -57,6 +59,10 @@ const CONTENT_MATCHES = [
   "https://www.jobposted.ai/*",
   ...(includeLocalhost ? ["http://localhost/*", "http://127.0.0.1/*"] : []),
 ].filter((value, index, all) => all.indexOf(value) === index);
+
+const CONTENT_AUTOFILL_MESSAGE = "JOBPOSTED_AUTOFILL_CURRENT_PAGE";
+const CONTENT_TRACK_MESSAGE = "JOBPOSTED_TRACK_CURRENT_PAGE";
+const CONTENT_JOB_CONTEXT_MESSAGE = "JOBPOSTED_JOB_CONTEXT";
 
 function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
@@ -133,7 +139,19 @@ function message<T extends ExtensionMessageResponse>(payload: unknown): Promise<
   return chrome.runtime.sendMessage(payload) as Promise<T>;
 }
 
+function isTopFrame() {
+  try {
+    return window.self === window.top;
+  } catch {
+    return true;
+  }
+}
+
 function installBridgeListener() {
+  const state = globalThis as typeof globalThis & { __jobpostedBridgeListener?: boolean };
+  if (state.__jobpostedBridgeListener) return;
+  state.__jobpostedBridgeListener = true;
+
   window.addEventListener("message", (event) => {
     if (event.source !== window || event.origin !== window.location.origin) return;
     const data = event.data as Record<string, unknown> | null;
@@ -201,6 +219,201 @@ function waitForStepChange() {
   });
 }
 
+async function loadAutofillPrereqs(adapter: ReturnType<typeof detectAdapter>, forceGenericFallback: boolean) {
+  const [settingsResponse, profileResponse] = await Promise.all([
+    message<ExtensionMessageResponse>({ type: "SETTINGS_GET" }),
+    message<ExtensionMessageResponse>({ type: "PROFILE_GET" }),
+  ]);
+  if (!settingsResponse.ok || settingsResponse.type !== "SETTINGS_GET") {
+    throw new Error(settingsResponse.ok ? "Settings unavailable." : settingsResponse.error);
+  }
+  if (!profileResponse.ok || profileResponse.type !== "PROFILE_GET" || !profileResponse.profile) {
+    throw new Error(profileResponse.ok ? "Profile unavailable." : profileResponse.error);
+  }
+
+  const settings = settingsResponse.settings;
+  if (settings.enabledPlatforms[adapter.id] === false) {
+    throw new Error(`${adapter.label} is disabled in JobPosted options.`);
+  }
+  if (adapter.id === "generic" && !settings.enableGenericFallback && !forceGenericFallback) {
+    throw new Error("Generic fallback is off. Enable it in options for unknown forms.");
+  }
+
+  return {
+    settings,
+    profile: profileResponse.profile,
+  };
+}
+
+async function syncAutofill(fieldsFilled: ExtensionFieldFillRecord[], platform: ReturnType<typeof detectAdapter>["id"]) {
+  const payload = {
+    ...applicationMetadata(platform),
+    status: "filled" as const,
+    appliedAt: new Date().toISOString(),
+    fieldsFilled,
+  };
+  return message<ExtensionMessageResponse>({ type: "APPLICATION_SYNC", payload });
+}
+
+async function trackCurrentPage() {
+  const adapter = detectAdapter();
+  const response = await syncAutofill([], adapter.id);
+  if (!response.ok || response.type !== "APPLICATION_SYNC") {
+    throw new Error(response.ok ? "Tracker did not return a result." : response.error);
+  }
+  return response.result;
+}
+
+function jobContextForCurrentPage(): ExtensionJobContext {
+  const adapter = detectAdapter();
+  const metadata = applicationMetadata(adapter.id);
+  const mainText =
+    document.querySelector("main")?.textContent ||
+    document.querySelector("[data-testid*='job' i], [class*='job' i], article")?.textContent ||
+    document.body?.textContent ||
+    "";
+  return {
+    platform: adapter.id,
+    company: metadata.company,
+    role: metadata.role,
+    jobUrl: metadata.jobUrl,
+    jobDescription: mainText.replace(/\s+/g, " ").trim().slice(0, 25_000),
+  };
+}
+
+function summarizeRunResult(args: {
+  platform: ReturnType<typeof detectAdapter>["id"];
+  stepName: string;
+  fields: ExtensionFieldFillRecord[];
+}): ExtensionAutofillRunResult {
+  const metadata = applicationMetadata(args.platform);
+  return {
+    platform: args.platform,
+    stepName: args.stepName,
+    jobUrl: metadata.jobUrl,
+    company: metadata.company,
+    role: metadata.role,
+    fields: args.fields,
+    filled: args.fields.filter((record) => record.status === "filled").length,
+    needsUser: args.fields.filter((record) => record.status === "needs_user").length,
+    skipped: args.fields.filter((record) => record.status === "skipped").length,
+    failed: args.fields.filter((record) => record.status === "failed").length,
+    total: args.fields.length,
+  };
+}
+
+async function runAutofillPage(args: {
+  continueSteps: boolean;
+  forceGenericFallback: boolean;
+  onField?: (record: ExtensionFieldFillRecord, fields: ExtensionFieldFillRecord[]) => void;
+  onStep?: (stepName: string) => void;
+  onSyncQueued?: () => void;
+  suppressAutoTrack?: boolean;
+  shouldStop?: () => boolean;
+}): Promise<ExtensionAutofillRunResult> {
+  const adapter = detectAdapter();
+  const { settings, profile } = await loadAutofillPrereqs(adapter, args.forceGenericFallback);
+  const allRecords: ExtensionFieldFillRecord[] = [];
+  let stepName = adapter.detectStep(document).name;
+
+  for (let step = 0; step < (args.continueSteps ? 8 : 1); step += 1) {
+    if (args.shouldStop?.()) break;
+    stepName = adapter.detectStep(document).name;
+    args.onStep?.(stepName);
+    const result = await fillCurrentStep({
+      adapter,
+      profile: profile as MasterProfile,
+      settings: settings as ExtensionSettings,
+      onField: (record) => {
+        allRecords.push(record);
+        args.onField?.(record, [...allRecords]);
+      },
+    });
+
+    const submit = adapter.findSubmit(document);
+    const canAdvance = args.continueSteps && settings.autoAdvance;
+    if (!canAdvance || args.shouldStop?.()) break;
+    if (submit) break;
+
+    const next = adapter.findAdvance(document);
+    if (!next) break;
+    await humanDelay(settings);
+    next.click();
+    await waitForStepChange();
+    if (result.total === 0) break;
+  }
+
+  if (!args.suppressAutoTrack && settings.autoTrackAutofill && allRecords.length > 0) {
+    void syncAutofill(allRecords, adapter.id)
+      .then((syncResponse) => {
+        if (syncResponse.ok && syncResponse.type === "APPLICATION_SYNC" && syncResponse.result.queued) {
+          args.onSyncQueued?.();
+        }
+      })
+      .catch(() => undefined);
+  }
+  return summarizeRunResult({ platform: adapter.id, stepName, fields: allRecords });
+}
+
+function installAutofillCommandListener() {
+  const state = globalThis as typeof globalThis & { __jobpostedAutofillCommandListener?: boolean };
+  if (state.__jobpostedAutofillCommandListener) return;
+  state.__jobpostedAutofillCommandListener = true;
+
+  chrome.runtime.onMessage.addListener((payload, _sender, sendResponse) => {
+    if (!payload || typeof payload !== "object") return false;
+    const request = payload as {
+      type?: unknown;
+      continueSteps?: unknown;
+      forceGenericFallback?: unknown;
+      suppressAutoTrack?: unknown;
+    };
+    if (request.type === CONTENT_TRACK_MESSAGE) {
+      void trackCurrentPage()
+        .then((result) => {
+          sendResponse({ ok: true, type: "TRACKER_ADD_ACTIVE_TAB", result } satisfies ExtensionMessageResponse);
+        })
+        .catch((error: unknown) => {
+          sendResponse({
+            ok: false,
+            error: error instanceof Error ? error.message : "Could not add this job to the tracker.",
+          } satisfies ExtensionMessageResponse);
+        });
+      return true;
+    }
+
+    if (request.type === CONTENT_JOB_CONTEXT_MESSAGE) {
+      try {
+        sendResponse({ ok: true, type: "JOB_CONTEXT", context: jobContextForCurrentPage() });
+      } catch (error) {
+        sendResponse({
+          ok: false,
+          error: error instanceof Error ? error.message : "Could not read this job page.",
+        });
+      }
+      return true;
+    }
+
+    if (request.type !== CONTENT_AUTOFILL_MESSAGE) return false;
+
+    void runAutofillPage({
+      continueSteps: request.continueSteps === true,
+      forceGenericFallback: request.forceGenericFallback === true,
+      suppressAutoTrack: request.suppressAutoTrack === true,
+    })
+      .then((result) => {
+        sendResponse({ ok: true, type: "AUTOFILL_ACTIVE_TAB", result } satisfies ExtensionMessageResponse);
+      })
+      .catch((error: unknown) => {
+        sendResponse({
+          ok: false,
+          error: error instanceof Error ? error.message : "Autofill failed.",
+        } satisfies ExtensionMessageResponse);
+      });
+    return true;
+  });
+}
+
 function JobPostedOverlayApp() {
   const adapter = useMemo(() => detectAdapter(), []);
   const [state, setState] = useState<OverlayRunState>("idle");
@@ -209,81 +422,22 @@ function JobPostedOverlayApp() {
   const [stepName, setStepName] = useState(adapter.detectStep(document).name);
   const stopRequested = useRef(false);
 
-  async function loadPrereqs() {
-    setState("loading");
-    const [settingsResponse, profileResponse] = await Promise.all([
-      message<ExtensionMessageResponse>({ type: "SETTINGS_GET" }),
-      message<ExtensionMessageResponse>({ type: "PROFILE_GET" }),
-    ]);
-    if (!settingsResponse.ok || settingsResponse.type !== "SETTINGS_GET") {
-      throw new Error(settingsResponse.ok ? "Settings unavailable." : settingsResponse.error);
-    }
-    if (!profileResponse.ok || profileResponse.type !== "PROFILE_GET") {
-      throw new Error(profileResponse.ok ? "Profile unavailable." : profileResponse.error);
-    }
-    return {
-      settings: settingsResponse.settings,
-      profile: profileResponse.profile,
-    };
-  }
-
-  async function sync(fieldsFilled: ExtensionFieldFillRecord[], status: "filled" | "submitted") {
-    const payload = {
-      ...applicationMetadata(adapter.id),
-      status,
-      appliedAt: new Date().toISOString(),
-      fieldsFilled,
-    };
-    const response = await message<ExtensionMessageResponse>({ type: "APPLICATION_SYNC", payload });
-    if (response.ok && response.type === "APPLICATION_SYNC" && response.result.queued) {
-      setError("Saved locally. JobPosted will retry syncing this application automatically.");
-    }
-  }
-
   async function run(continueSteps: boolean) {
     stopRequested.current = false;
     setError(null);
     setFields([]);
     try {
-      const { settings, profile } = await loadPrereqs();
-      if (settings.enabledPlatforms[adapter.id] === false) {
-        throw new Error(`${adapter.label} is disabled in JobPosted options.`);
-      }
-      if (adapter.id === "generic" && !settings.enableGenericFallback) {
-        throw new Error("Generic fallback is off. Enable it in options for unknown forms.");
-      }
-
+      setState("loading");
       setState("filling");
-      const allRecords: ExtensionFieldFillRecord[] = [];
-      for (let step = 0; step < (continueSteps ? 8 : 1); step += 1) {
-        if (stopRequested.current) break;
-        setStepName(adapter.detectStep(document).name);
-        const result = await fillCurrentStep({
-          adapter,
-          profile: profile as MasterProfile,
-          settings: settings as ExtensionSettings,
-          onField: (record) => {
-            allRecords.push(record);
-            setFields([...allRecords]);
-          },
-        });
-
-        const submit = adapter.findSubmit(document);
-        const canAdvance = continueSteps && settings.autoAdvance;
-        if (!canAdvance || stopRequested.current) break;
-        if (submit) {
-          break;
-        }
-
-        const next = adapter.findAdvance(document);
-        if (!next) break;
-        await humanDelay(settings);
-        next.click();
-        await waitForStepChange();
-        if (result.total === 0) break;
-      }
-
-      await sync(allRecords, "filled");
+      const result = await runAutofillPage({
+        continueSteps,
+        forceGenericFallback: false,
+        shouldStop: () => stopRequested.current,
+        onStep: setStepName,
+        onField: (_record, currentFields) => setFields(currentFields),
+        onSyncQueued: () => setError("Saved locally. JobPosted will retry syncing this application automatically."),
+      });
+      setFields(result.fields);
       setState("done");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Autofill failed.");
@@ -312,20 +466,29 @@ function JobPostedOverlayApp() {
 
 export default defineContentScript({
   matches: CONTENT_MATCHES,
+  allFrames: true,
+  matchAboutBlank: true,
   runAt: "document_idle",
   cssInjectionMode: "manual",
   async main(ctx) {
+    installAutofillCommandListener();
     installBridgeListener();
     if (isJobPostedWebAppHost()) {
-      void syncStoredWebSession();
+      if (isTopFrame()) void syncStoredWebSession();
       return;
     }
     injectPageHighlightStyle();
+    if (!isTopFrame()) return;
+
     const adapter = detectAdapter();
     if (adapter.id === "generic") {
       const settings = await message<ExtensionMessageResponse>({ type: "SETTINGS_GET" });
       if (!settings.ok || settings.type !== "SETTINGS_GET" || !settings.settings.enableGenericFallback) return;
     }
+
+    const contentState = globalThis as typeof globalThis & { __jobpostedOverlayMounted?: boolean };
+    if (contentState.__jobpostedOverlayMounted) return;
+    contentState.__jobpostedOverlayMounted = true;
 
     const ui = await createShadowRootUi(ctx, {
       name: "jobposted-autofill-overlay",
@@ -345,6 +508,7 @@ export default defineContentScript({
       },
       onRemove(root) {
         root?.unmount();
+        contentState.__jobpostedOverlayMounted = false;
       },
     });
     ui.mount();

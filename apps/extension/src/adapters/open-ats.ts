@@ -7,14 +7,43 @@ export const greenhouseAdapter: PlatformAdapter = {
   match: (url) => /(^|\.)greenhouse\.io$/i.test(url.hostname),
   detectStep: genericStep,
   mapFields: () => [
-    { selector: "#first_name, input[name='job_application[first_name]'], input[name='first_name']", key: "identity.firstName" },
-    { selector: "#last_name, input[name='job_application[last_name]'], input[name='last_name']", key: "identity.lastName" },
-    { selector: "#email, input[type='email'], input[name='job_application[email]']", key: "identity.email" },
-    { selector: "#phone, input[type='tel'], input[name='job_application[phone]']", key: "identity.phone" },
-    { selector: "#resume, input[type='file'][name*='resume']", key: "documents.resume" },
-    { selector: "#cover_letter, input[type='file'][name*='cover']", key: "documents.coverLetter" },
-    { selector: "input[name*='linkedin']", key: "links.linkedin" },
-    { selector: "input[name*='website'], input[name*='portfolio']", key: "links.portfolio" },
+    {
+      selector:
+        "#first_name, input[name='job_application[first_name]'], input[name='first_name'], input[autocomplete='given-name'], input[data-source='first_name']",
+      key: "identity.firstName",
+    },
+    {
+      selector:
+        "#last_name, input[name='job_application[last_name]'], input[name='last_name'], input[autocomplete='family-name'], input[data-source='last_name']",
+      key: "identity.lastName",
+    },
+    {
+      selector:
+        "#email, input[type='email'], input[name='job_application[email]'], input[name='email'], input[autocomplete='email'], input[data-source='email']",
+      key: "identity.email",
+    },
+    {
+      selector:
+        "#phone, input[type='tel'], input[name='job_application[phone]'], input[name='phone'], input[autocomplete='tel'], input[data-source='phone']",
+      key: "identity.phone",
+    },
+    {
+      selector:
+        "#resume, input[type='file'][name*='resume' i], input[type='file'][id*='resume' i], input[type='file'][aria-label*='resume' i]",
+      key: "documents.resume",
+    },
+    {
+      selector:
+        "#cover_letter, input[type='file'][name*='cover' i], input[type='file'][id*='cover' i], input[type='file'][aria-label*='cover' i]",
+      key: "documents.coverLetter",
+    },
+    { selector: "input[name*='linkedin' i], input[id*='linkedin' i], input[aria-label*='linkedin' i]", key: "links.linkedin" },
+    { selector: "input[name*='github' i], input[id*='github' i], input[aria-label*='github' i]", key: "links.github" },
+    {
+      selector:
+        "input[name*='website' i], input[name*='portfolio' i], input[id*='website' i], input[id*='portfolio' i], input[autocomplete='url']",
+      key: "links.portfolio",
+    },
   ],
   findAdvance: genericAdvance,
   findSubmit: genericSubmit,
@@ -28,13 +57,24 @@ export const leverAdapter: PlatformAdapter = {
   match: (url) => /(^|\.)lever\.co$/i.test(url.hostname),
   detectStep: genericStep,
   mapFields: () => [
-    { selector: "input[name='name']", key: "identity.fullName" },
-    { selector: "input[name='email']", key: "identity.email" },
-    { selector: "input[name='phone']", key: "identity.phone" },
-    { selector: "input[name='urls[LinkedIn]'], input[name*='linkedin' i]", key: "links.linkedin" },
-    { selector: "input[name='urls[Portfolio]'], input[name*='portfolio' i], input[name*='website' i]", key: "links.portfolio" },
-    { selector: "input[type='file'][name*='resume' i]", key: "documents.resume" },
-    { selector: "input[type='file'][name*='cover' i]", key: "documents.coverLetter" },
+    { selector: "input[name='name'], input[name='fullName'], input[autocomplete='name']", key: "identity.fullName" },
+    { selector: "input[name='email'], input[type='email'], input[autocomplete='email']", key: "identity.email" },
+    { selector: "input[name='phone'], input[type='tel'], input[autocomplete='tel']", key: "identity.phone" },
+    { selector: "input[name='urls[LinkedIn]'], input[name*='linkedin' i], input[id*='linkedin' i]", key: "links.linkedin" },
+    { selector: "input[name='urls[GitHub]'], input[name*='github' i], input[id*='github' i]", key: "links.github" },
+    {
+      selector:
+        "input[name='urls[Portfolio]'], input[name*='portfolio' i], input[name*='website' i], input[id*='portfolio' i], input[id*='website' i]",
+      key: "links.portfolio",
+    },
+    {
+      selector: "input[type='file'][name*='resume' i], input[type='file'][id*='resume' i], input[type='file'][aria-label*='resume' i]",
+      key: "documents.resume",
+    },
+    {
+      selector: "input[type='file'][name*='cover' i], input[type='file'][id*='cover' i], input[type='file'][aria-label*='cover' i]",
+      key: "documents.coverLetter",
+    },
   ],
   findAdvance: genericAdvance,
   findSubmit: genericSubmit,
@@ -48,13 +88,34 @@ export const ashbyAdapter: PlatformAdapter = {
   match: (url) => /(^|\.)ashbyhq\.com$/i.test(url.hostname),
   detectStep: genericStep,
   mapFields: () => [
-    { selector: "input[name='firstName'], input[autocomplete='given-name']", key: "identity.firstName" },
-    { selector: "input[name='lastName'], input[autocomplete='family-name']", key: "identity.lastName" },
-    { selector: "input[name='email'], input[type='email']", key: "identity.email" },
-    { selector: "input[name='phone'], input[type='tel']", key: "identity.phone" },
-    { selector: "input[type='file'][name*='resume' i], input[type='file'][accept*='pdf']", key: "documents.resume" },
-    { selector: "input[name*='linkedin' i]", key: "links.linkedin" },
-    { selector: "input[name*='website' i], input[name*='portfolio' i]", key: "links.portfolio" },
+    { selector: "input[name='name'], input[name='_systemfield_name'], input[autocomplete='name']", key: "identity.fullName" },
+    {
+      selector: "input[name='firstName'], input[name='_systemfield_firstName'], input[autocomplete='given-name']",
+      key: "identity.firstName",
+    },
+    {
+      selector: "input[name='lastName'], input[name='_systemfield_lastName'], input[autocomplete='family-name']",
+      key: "identity.lastName",
+    },
+    { selector: "input[name='email'], input[name='_systemfield_email'], input[type='email'], input[autocomplete='email']", key: "identity.email" },
+    { selector: "input[name='phone'], input[name='_systemfield_phone'], input[type='tel'], input[autocomplete='tel']", key: "identity.phone" },
+    {
+      selector:
+        "input[type='file'][name*='resume' i], input[type='file'][id*='resume' i], input[type='file'][aria-label*='resume' i], [data-testid*='resume' i] input[type='file']",
+      key: "documents.resume",
+    },
+    {
+      selector:
+        "input[type='file'][name*='cover' i], input[type='file'][id*='cover' i], input[type='file'][aria-label*='cover' i], [data-testid*='cover' i] input[type='file']",
+      key: "documents.coverLetter",
+    },
+    { selector: "input[name*='linkedin' i], input[id*='linkedin' i], input[aria-label*='linkedin' i]", key: "links.linkedin" },
+    { selector: "input[name*='github' i], input[id*='github' i], input[aria-label*='github' i]", key: "links.github" },
+    {
+      selector:
+        "input[name*='website' i], input[name*='portfolio' i], input[id*='website' i], input[id*='portfolio' i], input[autocomplete='url']",
+      key: "links.portfolio",
+    },
   ],
   findAdvance: genericAdvance,
   findSubmit: genericSubmit,
