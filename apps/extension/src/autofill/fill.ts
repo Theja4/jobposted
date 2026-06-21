@@ -142,9 +142,23 @@ function hasValue(field: FieldDescriptor) {
     const text = visibleText(element.getAttribute("aria-valuetext") || element.textContent);
     return !looksLikePlaceholder(text, field);
   }
+  if (looksLikeStructuredChoiceRoot(element)) return !looksLikePlaceholder(fieldCurrentText(field), field);
   if (element.getAttribute("role") === "textbox") return !looksLikePlaceholder(visibleText(element.textContent || element.getAttribute("aria-valuetext")), field);
   if (element.isContentEditable) return !looksLikePlaceholder(element.textContent ?? "", field);
   return false;
+}
+
+function structuredChoiceDisplayText(element: HTMLElement) {
+  const display = element.querySelector<HTMLElement>(
+    [
+      "[class*='select__single-value' i]",
+      "[class*='select2-chosen' i]",
+      "[class*='single-value' i]",
+      "[data-testid*='selected' i]",
+      "[aria-live='polite']",
+    ].join(","),
+  );
+  return visibleText(display?.textContent || display?.getAttribute("aria-label"));
 }
 
 function fieldCurrentText(field: FieldDescriptor) {
@@ -154,6 +168,8 @@ function fieldCurrentText(field: FieldDescriptor) {
     return visibleText(`${selected?.textContent ?? ""} ${element.value}`);
   }
   if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) return visibleText(element.value);
+  const structuredDisplay = structuredChoiceDisplayText(element);
+  if (structuredDisplay) return structuredDisplay;
   return visibleText(element.getAttribute("aria-valuetext") || element.textContent || element.getAttribute("value"));
 }
 
@@ -474,7 +490,7 @@ function comboboxControlledRoots(field: FieldDescriptor) {
 function activeComboboxPopup(field: FieldDescriptor) {
   const active = field.element.ownerDocument.activeElement;
   if (!(active instanceof HTMLElement)) return null;
-  return active.closest<HTMLElement>("[role='listbox'], [role='menu'], [role='dialog']");
+  return active.closest<HTMLElement>("[role='listbox'], [role='menu'], [role='dialog'], [class*='select2-drop' i], [class*='select__menu' i]");
 }
 
 function comboboxCandidateRoots(field: FieldDescriptor) {
@@ -485,6 +501,52 @@ function comboboxCandidateRoots(field: FieldDescriptor) {
       ? activePopup
       : null;
   return uniqueElements([...controlled, scopedActivePopup]);
+}
+
+function looksLikeStructuredChoiceRoot(element: HTMLElement) {
+  return Boolean(
+    element.querySelector(
+      [
+        "button[aria-label*='toggle' i]",
+        "[class*='select2-container' i]",
+        "[class^='select__control']",
+        "[class*=' select__control']",
+        "[class^='select-shell']",
+        "[class*=' select-shell']",
+        "select option",
+      ].join(","),
+    ),
+  );
+}
+
+function comboboxActivationTargets(field: FieldDescriptor) {
+  const nested = Array.from(
+    field.element.querySelectorAll<HTMLElement>(
+      [
+        "[role='combobox']",
+        "[aria-haspopup='listbox']",
+        "[aria-haspopup='menu']",
+        "button[aria-label*='toggle' i]",
+        "[class^='select__control']",
+        "[class*=' select__control']",
+        "[class^='select-shell'] > div:not([class])",
+        "[class*=' select-shell'] > div:not([class])",
+        "[class*='select2-container' i] a",
+        "[class*='select2-container' i] [class*='select2-choice' i]",
+      ].join(","),
+    ),
+  ).filter(isVisible);
+  if (nested.length > 0) return uniqueElements(nested);
+  return [field.element];
+}
+
+async function openCombobox(field: FieldDescriptor, mapping: ExtensionFieldMapping, ignoredGlobalOptions: ReadonlySet<HTMLElement>) {
+  for (const target of comboboxActivationTargets(field)) {
+    target.focus?.();
+    activateElement(target);
+    await sleep(140);
+    if (comboboxOptionCandidates(field, mapping, ignoredGlobalOptions).length > 0) return;
+  }
 }
 
 function comboboxEditableTargets(field: FieldDescriptor) {
@@ -750,12 +812,13 @@ function comboboxOptionCandidates(
   ignoredGlobalOptions: ReadonlySet<HTMLElement> | null = null,
 ) {
   const doc = field.element.ownerDocument;
-  const scopedRoots = comboboxCandidateRoots(field);
+  const scopedRoots = uniqueElements([field.element, ...comboboxCandidateRoots(field)]);
   const scoped = scopedRoots.flatMap((root) =>
-    Array.from(root.querySelectorAll<HTMLElement>("[role='option'], [role='menuitem'], option, li")),
+    Array.from(root.querySelectorAll<HTMLElement>("[role='option'], [role='menuitem'], option, li, [class*='option' i]")),
   );
   const scopedVisible = scoped.filter((option, index, all) => {
     if (all.indexOf(option) !== index) return false;
+    if (option.tagName === "OPTION" && option.closest("select") !== field.element) return false;
     if (!isVisible(option)) return false;
     const text = labelForChoice(option);
     return text.length > 0;
@@ -767,12 +830,16 @@ function comboboxOptionCandidates(
     "[role='listbox'] [role='option']",
     "[role='listbox'] li",
     "[role='menu'] [role='menuitem']",
+    "[class*='select2-drop' i] li",
+    "[class*='select2-result' i]",
+    "[class*='select__menu' i] [class*='option' i]",
     "[data-testid*='option' i]",
     "[class*='option' i]",
   ].join(",");
   const candidates = [...scoped, ...Array.from(doc.querySelectorAll<HTMLElement>(selectors))];
   return candidates.filter((option, index, all) => {
     if (all.indexOf(option) !== index) return false;
+    if (option.tagName === "OPTION" && option.closest("select") !== field.element) return false;
     if (ignoredGlobalOptions?.has(option) && !scoped.includes(option)) return false;
     if (!isVisible(option)) return false;
     const text = labelForChoice(option);
@@ -859,6 +926,7 @@ function isFreeTextCombobox(field: FieldDescriptor) {
   if (field.options.length > 0) return false;
   if (comboboxControlledRoots(field).length > 0) return false;
   if (field.element.getAttribute("aria-haspopup")) return false;
+  if (looksLikeStructuredChoiceRoot(field.element)) return false;
   return !looksLikePhoneCountryField(field);
 }
 
@@ -875,9 +943,7 @@ async function fillCombobox(
   // control untouched for the user instead of writing a confidently-wrong value.
   const allowBlindKeyCommit = mapping.canonicalKey !== "identity.phoneCountryCode";
   const ignoredGlobalOptions = new Set(comboboxOptionCandidates(field, mapping));
-  field.element.focus();
-  activateElement(field.element);
-  await sleep(120);
+  await openCombobox(field, mapping, ignoredGlobalOptions);
   if (await waitForComboboxOption(field, mapping, countryHint, ignoredGlobalOptions)) return true;
 
   for (const searchValue of comboboxSearchValues(mapping, countryHint)) {

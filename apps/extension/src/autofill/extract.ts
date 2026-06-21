@@ -127,6 +127,44 @@ function isChoiceLike(element: HTMLElement) {
   );
 }
 
+function hasClassToken(element: HTMLElement, token: string) {
+  return Array.from(element.classList).some((item) => item === token);
+}
+
+function isGreenhouseReactSelectRoot(element: HTMLElement) {
+  return (
+    hasClassToken(element, "select") &&
+    Boolean(
+      element.querySelector(
+        [
+          "button[aria-label*='toggle' i]",
+          "[class^='select__control']",
+          "[class*=' select__control']",
+          "input[class*='select__input' i]",
+          "[class^='select-shell']",
+          "[class*=' select-shell']",
+        ].join(","),
+      ),
+    )
+  );
+}
+
+function select2FieldRoot(element: HTMLElement) {
+  const select2 = element.closest<HTMLElement>("[class*='select2-container' i]");
+  if (!select2) return null;
+  return select2.closest<HTMLElement>(".field, fieldset, [data-testid], [data-automation-id]") ?? select2;
+}
+
+function greenhouseChoiceContainerFor(element: HTMLElement) {
+  const reactSelect = element.closest<HTMLElement>(".select");
+  if (reactSelect && isGreenhouseReactSelectRoot(reactSelect)) return reactSelect;
+  const select2 = select2FieldRoot(element);
+  if (select2) return select2;
+  const field = element.closest<HTMLElement>(".field, fieldset, [data-testid], [data-automation-id]");
+  if (field?.querySelector("[class*='select2-container' i]")) return field;
+  return null;
+}
+
 function labelFor(element: HTMLElement): string {
   if (element.getAttribute("role") === "radio") {
     const groupLabel = customRadioGroupLabel(element);
@@ -271,6 +309,8 @@ function isVisible(element: HTMLElement): boolean {
 function isDropdownInternalControl(element: HTMLElement) {
   const popup = element.closest("[role='listbox'], [role='menu'], [role='option'], [role='menuitem']");
   if (popup && popup !== element) return true;
+  const greenhouseChoice = greenhouseChoiceContainerFor(element);
+  if (greenhouseChoice && greenhouseChoice !== element) return true;
   const combobox = element.closest("[role='combobox'], [aria-haspopup='listbox'], [aria-haspopup='menu']");
   return Boolean(combobox && combobox !== element);
 }
@@ -332,6 +372,66 @@ function buttonGroupContainer(button: HTMLElement, candidates: ReadonlySet<HTMLE
     if (node.querySelectorAll(FIELD_SELECTOR).length > 0) return null;
   }
   return null;
+}
+
+function uniqueByElement(elements: HTMLElement[]) {
+  return elements.filter((element, index, all) => all.indexOf(element) === index);
+}
+
+function greenhouseChoiceRoots(dom: Document) {
+  const reactSelects = Array.from(dom.querySelectorAll<HTMLElement>(".select")).filter(isGreenhouseReactSelectRoot);
+  const select2Roots = Array.from(dom.querySelectorAll<HTMLElement>("[class*='select2-container' i]"))
+    .map((element) => select2FieldRoot(element) ?? element)
+    .filter((element): element is HTMLElement => Boolean(element));
+  return uniqueByElement([...reactSelects, ...select2Roots]).filter(isVisible);
+}
+
+function greenhouseChoiceLabel(container: HTMLElement) {
+  const labelledBy = textById(container.ownerDocument, container.getAttribute("aria-labelledby"));
+  if (labelledBy) return labelledBy;
+  const label = container.querySelector<HTMLElement>(
+    "label, [data-automation-id*='label' i], [data-testid*='label' i], [id*='label' i], [class*='label' i], [class*='heading' i]",
+  );
+  if (label?.textContent) return visibleText(label.textContent);
+  return textWithoutControls(container).slice(0, 160);
+}
+
+function greenhouseChoiceOptions(container: HTMLElement) {
+  const options = Array.from(
+    container.querySelectorAll<HTMLElement>("[role='option'], [role='menuitem'], option, li, [class*='option' i]"),
+  )
+    .map((option) => visibleText(option.textContent || option.getAttribute("aria-label") || option.getAttribute("data-value") || option.getAttribute("value")))
+    .filter((option) => option && !isPlaceholderText(option));
+  return options.filter((option, index, all) => all.indexOf(option) === index);
+}
+
+/**
+ * Greenhouse has two common custom-select families that often hide the real field behind a
+ * search input/select2 shell. Emit the visible wrapper as the field so filling opens and selects
+ * the widget instead of typing "Yes"/"No" into its internal search box.
+ */
+function extractGreenhouseChoiceWidgets(dom: Document, platform: string, existing: FieldDescriptor[]): FieldDescriptor[] {
+  const fields: FieldDescriptor[] = [];
+  for (const container of greenhouseChoiceRoots(dom)) {
+    if (existing.some((field) => field.element === container || container.contains(field.element) || field.element.contains(container))) continue;
+    const label = greenhouseChoiceLabel(container);
+    if (!label) continue;
+    const context = fieldContext(container);
+    const type = "combobox" as const;
+    const options = greenhouseChoiceOptions(container);
+    const signature = signatureFor({ platform, label, context, type, options });
+    fields.push({
+      id: `${type}:${signature}:${existing.length + fields.length}`,
+      element: container,
+      label,
+      context,
+      type,
+      required: requiredFor(container, label, context),
+      options,
+      signature,
+    });
+  }
+  return fields;
 }
 
 /**
@@ -415,6 +515,7 @@ export function extractFields(dom: Document, platform: string, hints: AdapterHin
     });
   }
 
+  fields.push(...extractGreenhouseChoiceWidgets(dom, platform, fields));
   fields.push(...extractButtonChoiceGroups(dom, platform, fields));
   applyHints(dom, fields, hints);
   return fields;

@@ -1034,6 +1034,125 @@ describe("fillField custom choice controls", () => {
     expect(button.textContent).toContain("Employee referral");
   });
 
+  it("extracts Greenhouse React select wrappers instead of their internal search input", async () => {
+    const { document, window } = parseHTML(`
+      <div id="auth-select" class="select">
+        <label>Are you legally authorized to work in the country in which you are applying? *</label>
+        <div class="select-shell">
+          <div>
+            <div id="auth-control" class="select__control">
+              <input class="select__input" />
+            </div>
+            <button type="button" aria-label="Toggle flyout"></button>
+          </div>
+        </div>
+      </div>
+      <div id="portal-root"></div>
+    `);
+    installDomGlobals(window);
+    const select = document.getElementById("auth-select") as HTMLElement;
+    const control = document.getElementById("auth-control") as HTMLElement;
+    control.addEventListener("mouseup", () => {
+      if (document.getElementById("auth-option-yes")) return;
+      const menu = document.createElement("div");
+      menu.className = "select__menu";
+      const yes = document.createElement("div");
+      yes.id = "auth-option-yes";
+      yes.className = "select__option";
+      yes.textContent = "Yes";
+      const no = document.createElement("div");
+      no.className = "select__option";
+      no.textContent = "No";
+      yes.addEventListener("mousedown", () => {
+        const selected = document.createElement("div");
+        selected.className = "select__single-value";
+        selected.textContent = "Yes";
+        select.append(selected);
+      });
+      menu.append(yes, no);
+      document.getElementById("portal-root")?.append(menu);
+    });
+
+    const fields = extractFields(document, "greenhouse");
+    const field = fields[0]!;
+    const record = await fillField(
+      field,
+      {
+        canonicalKey: "workAuth.authorizedToWork",
+        value: true,
+        confidence: 0.9,
+        source: "heuristic",
+      },
+      context,
+    );
+
+    expect(fields).toHaveLength(1);
+    expect(field.element).toBe(select);
+    expect(field.type).toBe("combobox");
+    expect(field.label).toBe("Are you legally authorized to work in the country in which you are applying? *");
+    expect(record.status).toBe("filled");
+    expect(select.textContent).toContain("Yes");
+    expect((document.querySelector(".select__input") as HTMLInputElement).value).toBe("");
+  });
+
+  it("fills Greenhouse Select2 dropdown shells by opening the visible trigger", async () => {
+    const { document, window } = parseHTML(`
+      <div id="sponsor-field" class="field">
+        <label>Do you now or will you in the future need sponsorship for employment visa status? *</label>
+        <select>
+          <option>Select...</option>
+          <option>Yes</option>
+          <option>No</option>
+        </select>
+        <div class="select2-container">
+          <a id="sponsor-trigger" href="#"><span class="select2-chosen">Select...</span></a>
+        </div>
+      </div>
+      <div id="portal-root"></div>
+    `);
+    installDomGlobals(window);
+    const fieldRoot = document.getElementById("sponsor-field") as HTMLElement;
+    const trigger = document.getElementById("sponsor-trigger") as HTMLElement;
+    const chosen = document.querySelector(".select2-chosen") as HTMLElement;
+    trigger.addEventListener("mousedown", () => {
+      if (document.getElementById("sponsor-option-no")) return;
+      const dropdown = document.createElement("div");
+      dropdown.className = "select2-drop-active";
+      const list = document.createElement("ul");
+      const yes = document.createElement("li");
+      yes.textContent = "Yes";
+      const no = document.createElement("li");
+      no.id = "sponsor-option-no";
+      no.textContent = "No";
+      no.addEventListener("mouseup", () => {
+        chosen.textContent = "No";
+      });
+      list.append(yes, no);
+      dropdown.append(list);
+      document.getElementById("portal-root")?.append(dropdown);
+    });
+
+    const fields = extractFields(document, "greenhouse");
+    const field = fields[0]!;
+    const record = await fillField(
+      field,
+      {
+        canonicalKey: "workAuth.requiresSponsorship",
+        value: false,
+        confidence: 0.92,
+        source: "heuristic",
+      },
+      context,
+    );
+
+    expect(fields).toHaveLength(1);
+    expect(field.element).toBe(fieldRoot);
+    expect(field.type).toBe("combobox");
+    expect(field.options).toEqual(["Yes", "No"]);
+    expect(record.status).toBe("filled");
+    expect(chosen.textContent).toBe("No");
+  });
+
   it("falls back to nested text inputs for editable custom dropdowns", async () => {
     const { document, window } = parseHTML(`
       <div>
