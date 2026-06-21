@@ -86,15 +86,16 @@ export async function getExtensionAuthContext(request: Request): Promise<Extensi
     throw new ExtensionAuthError(401, "Missing extension session.");
   }
 
-  const supabase = createClient(url, anonKey, {
+  // Validate the token with a CLEAN client. The user token must not be in
+  // `global.headers` here: getUser() appends its own capital-case `Authorization`
+  // header, which collides with a lowercase `authorization` global header and
+  // gets sent as a duplicated `Authorization: Bearer x, Bearer x` that GoTrue
+  // rejects with "This endpoint requires a valid Bearer token".
+  const authClient = createClient(url, anonKey, {
     auth: { persistSession: false, autoRefreshToken: false },
-    db: { schema: "jobposted" },
-    global: {
-      headers: { authorization: `Bearer ${token}` },
-    },
   });
 
-  const { data, error } = await supabase.auth.getUser(token);
+  const { data, error } = await authClient.auth.getUser(token);
   if (error || !data.user) {
     console.error(
       "[extension auth] getUser rejected token —",
@@ -104,6 +105,17 @@ export async function getExtensionAuthContext(request: Request): Promise<Extensi
     );
     throw new ExtensionAuthError(401, "Invalid or expired extension session.");
   }
+
+  // Data client scoped to the user (RLS) + the `jobposted` schema. It only runs
+  // PostgREST/storage queries (never getUser), so the single forwarded
+  // `Authorization` header is safe here.
+  const supabase = createClient(url, anonKey, {
+    auth: { persistSession: false, autoRefreshToken: false },
+    db: { schema: "jobposted" },
+    global: {
+      headers: { Authorization: `Bearer ${token}` },
+    },
+  });
 
   return { supabase, user: data.user, token };
 }
