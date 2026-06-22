@@ -73,6 +73,15 @@ describe("field resolution", () => {
     );
   });
 
+  it("detects embedded Greenhouse applications on Databricks gh_jid pages", async () => {
+    const { adapter } = await loadHtml(
+      `<!doctype html><form><input data-source="first_name" /></form>`,
+      "https://www.databricks.com/company/careers/engineering/sr-engineering-manager---notebook-dataplane-8190108002?gh_jid=8190108002",
+    );
+
+    expect(adapter.id).toBe("greenhouse");
+  });
+
   it("maps Lever full name and links", async () => {
     const { adapter, fields } = await loadFixture("lever", "https://jobs.lever.co/acme/1");
     const mappings = await Promise.all(fields.map((field) => resolveField({ field, profile, platform: adapter.id, url: "", demographicsEnabled: false })));
@@ -261,6 +270,47 @@ describe("field resolution", () => {
       canonicalKey: "workAuth.authorizedToWork",
       value: true,
       source: "answer",
+    });
+    expect(byLabel.get("Do you now or will you in the future need sponsorship for employment visa status in the country in which you are applying?*")).toMatchObject({
+      canonicalKey: "workAuth.requiresSponsorship",
+      value: false,
+      source: "answer",
+    });
+  });
+
+  it("infers setup work authorization from non-exact sponsorship answers", async () => {
+    const { adapter, fields } = await loadHtml(
+      `<!doctype html>
+      <form>
+        <div class="field">
+          <div class="field-heading">Are you legally authorized to work in the country in which you are applying?<span aria-hidden="true">*</span></div>
+          <button aria-haspopup="listbox" aria-label="Select..." aria-controls="auth-options">Select...</button>
+          <ul id="auth-options" role="listbox"><li role="option">Yes</li><li role="option">No</li></ul>
+        </div>
+        <div class="field">
+          <div class="field-heading">Do you now or will you in the future need sponsorship for employment visa status in the country in which you are applying?<span aria-hidden="true">*</span></div>
+          <button aria-haspopup="listbox" aria-label="Select..." aria-controls="sponsor-options">Select...</button>
+          <ul id="sponsor-options" role="listbox"><li role="option">Yes</li><li role="option">No</li></ul>
+        </div>
+      </form>`,
+      "https://www.databricks.com/company/careers/engineering/sr-engineering-manager---notebook-dataplane-8305835325",
+    );
+    const fallbackProfile: MasterProfile = {
+      ...profile,
+      workAuth: { authorizedToWork: null, requiresSponsorship: null, country: "United States" },
+      answers: [
+        { key: "screening.visa_sponsorship", prompt: "Will you now or in the future require visa sponsorship?", value: "No" },
+      ],
+    };
+    const mappings = await Promise.all(
+      fields.map((field) => resolveField({ field, profile: fallbackProfile, platform: adapter.id, url: "", demographicsEnabled: false })),
+    );
+    const byLabel = new Map(fields.map((field, index) => [field.label, mappings[index]]));
+
+    expect(byLabel.get("Are you legally authorized to work in the country in which you are applying?*")).toMatchObject({
+      canonicalKey: "workAuth.authorizedToWork",
+      value: true,
+      source: "heuristic",
     });
     expect(byLabel.get("Do you now or will you in the future need sponsorship for employment visa status in the country in which you are applying?*")).toMatchObject({
       canonicalKey: "workAuth.requiresSponsorship",

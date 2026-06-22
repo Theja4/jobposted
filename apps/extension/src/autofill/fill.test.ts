@@ -1,8 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { parseHTML } from "linkedom";
 import type { ExtensionFieldMapping, MasterProfile } from "@jobposted/shared";
+import { workdayAdapter } from "../adapters/workday";
 import { extractFields } from "./extract";
 import { fillField } from "./fill";
+import { resolveField } from "./resolve";
+import { fillWorkAuthFallbacks } from "./work-auth-fallback";
 import type { FieldDescriptor, FillContext } from "./types";
 
 function installDomGlobals(window: unknown) {
@@ -130,7 +133,7 @@ describe("fillField phone normalization", () => {
     expect(record.valuePreview).toBe("7330007006");
   });
 
-  it("corrects an already-filled Indian phone number with a leading trunk zero even when overwrite is off", async () => {
+  it("skips an already-filled phone number instead of normalizing it", async () => {
     const { document, window } = parseHTML(`<input id="phone" value="073300 07006" />`);
     installDomGlobals(window);
     const element = document.querySelector("input") as HTMLInputElement;
@@ -154,8 +157,9 @@ describe("fillField phone normalization", () => {
       context,
     );
 
-    expect(record.status).toBe("filled");
-    expect(element.value).toBe("7330007006");
+    expect(record.status).toBe("skipped");
+    expect(record.error).toBe("Already filled.");
+    expect(element.value).toBe("073300 07006");
     expect(record.valuePreview).toBe("7330007006");
   });
 
@@ -198,6 +202,7 @@ describe("fillField phone normalization", () => {
   it("infers the calling code from international phone digits even without a plus sign", async () => {
     const { document, window } = parseHTML(`
       <select id="country">
+        <option value="">Select...</option>
         <option value="+1">United States +1</option>
         <option value="+91">India +91</option>
       </select>
@@ -236,7 +241,7 @@ describe("fillField phone normalization", () => {
     expect(record.valuePreview).toBe("+91");
   });
 
-  it("corrects an already-filled wrong phone country code even when overwrite is off", async () => {
+  it("skips an already-selected phone country code instead of correcting it", async () => {
     const { document, window } = parseHTML(`
       <select id="country">
         <option value="+93" selected>Afghanistan +93</option>
@@ -265,8 +270,9 @@ describe("fillField phone normalization", () => {
       context,
     );
 
-    expect(record.status).toBe("filled");
-    expect(Array.from(element.options).find((option) => option.selected)?.value).toBe("+91");
+    expect(record.status).toBe("skipped");
+    expect(record.error).toBe("Already filled.");
+    expect(Array.from(element.options).find((option) => option.selected)?.value).toBe("+93");
   });
 
   it("does not select the first custom phone country option when the exact code is missing", async () => {
@@ -343,7 +349,7 @@ describe("fillField phone normalization", () => {
     expect(button.textContent).toBe("Select...");
   });
 
-  it("corrects a custom phone country combobox that is already on the wrong code", async () => {
+  it("skips a custom phone country combobox that already has a value", async () => {
     const { document, window } = parseHTML(`
       <button role="combobox" aria-controls="phone-countries">Afghanistan +93</button>
       <ul id="phone-countries" role="listbox">
@@ -378,11 +384,12 @@ describe("fillField phone normalization", () => {
       context,
     );
 
-    expect(record.status).toBe("filled");
-    expect(button.textContent).toBe("India +91");
+    expect(record.status).toBe("skipped");
+    expect(record.error).toBe("Already filled.");
+    expect(button.textContent).toBe("Afghanistan +93");
   });
 
-  it("corrects a phone-country combobox that was previously corrupted with phone digits", async () => {
+  it("skips a phone-country combobox that was previously populated with phone digits", async () => {
     const { document, window } = parseHTML(`
       <button role="combobox" aria-controls="phone-countries">7330007006</button>
       <ul id="phone-countries" role="listbox">
@@ -416,8 +423,9 @@ describe("fillField phone normalization", () => {
       context,
     );
 
-    expect(record.status).toBe("filled");
-    expect(button.textContent).toBe("India +91");
+    expect(record.status).toBe("skipped");
+    expect(record.error).toBe("Already filled.");
+    expect(button.textContent).toBe("7330007006");
   });
 
   it("recovers a stale phone-number mapping for a phone country-code field", async () => {
@@ -480,7 +488,7 @@ describe("fillField phone normalization", () => {
 
   it("types the calling code into searchable custom phone country comboboxes", async () => {
     const { document, window } = parseHTML(`
-      <button role="combobox" aria-controls="phone-countries">Finland +358</button>
+      <button role="combobox" aria-controls="phone-countries">Select...</button>
       <ul id="phone-countries" role="listbox">
         <input role="textbox" />
       </ul>
@@ -609,7 +617,121 @@ describe("fillField phone normalization", () => {
   });
 });
 
+describe("fillField Workday dropdown variants", () => {
+  it("selects direct Workday listbox dropdowns", async () => {
+    const { document, window } = parseHTML(`
+      <form data-automation-id="workdayApplication">
+        <div data-automation-id="authorizedToWork">
+          <label>Are you legally authorized to work?</label>
+          <button id="auth" type="button" aria-haspopup="listbox" aria-controls="auth-options">Select One</button>
+          <div id="auth-options" role="listbox">
+            <div role="option" id="auth-yes">Yes</div>
+            <div role="option">No</div>
+          </div>
+        </div>
+      </form>
+    `);
+    installDomGlobals(window);
+    const button = document.getElementById("auth") as HTMLElement;
+    document.getElementById("auth-yes")?.addEventListener("mousedown", () => {
+      button.textContent = "Yes";
+    });
+    const field = extractFields(document, "workday", workdayAdapter.mapFields(document))[0]!;
+    const mapping = await resolveField({
+      field,
+      profile: context.profile,
+      platform: "workday",
+      url: "https://acme.myworkdayjobs.com/job/apply",
+      demographicsEnabled: false,
+    });
+    const record = await fillField(field, mapping, { ...context, platform: "workday" });
+
+    expect(field.type).toBe("combobox");
+    expect(mapping.canonicalKey).toBe("workAuth.authorizedToWork");
+    expect(record.status).toBe("filled");
+    expect(button.textContent).toBe("Yes");
+  });
+
+  it("submits searchable Workday dropdowns that render options after Enter", async () => {
+    const { document, window } = parseHTML(`
+      <form data-automation-id="workdayApplication">
+        <div data-automation-id="country">
+          <label for="country-input">Country</label>
+          <input id="country-input" aria-autocomplete="list" aria-controls="country-options" />
+          <div id="country-options" role="listbox"></div>
+        </div>
+      </form>
+    `);
+    installDomGlobals(window);
+    const input = document.getElementById("country-input") as HTMLInputElement;
+    const listbox = document.getElementById("country-options") as HTMLElement;
+    let enterSearches = 0;
+    input.addEventListener("keydown", () => {
+      if (document.getElementById("country-us")) return;
+      enterSearches += 1;
+      const option = document.createElement("div");
+      option.id = "country-us";
+      option.setAttribute("role", "option");
+      option.textContent = "United States";
+      option.addEventListener("mousedown", () => {
+        input.value = "United States";
+      });
+      listbox.append(option);
+    });
+    const workdayProfile: MasterProfile = {
+      ...context.profile,
+      location: { ...context.profile.location, country: "United States" },
+    };
+    const field = extractFields(document, "workday", workdayAdapter.mapFields(document))[0]!;
+    const mapping = await resolveField({
+      field,
+      profile: workdayProfile,
+      platform: "workday",
+      url: "https://acme.myworkdayjobs.com/job/apply",
+      demographicsEnabled: false,
+    });
+    const record = await fillField(field, mapping, { ...context, platform: "workday", profile: workdayProfile });
+
+    expect(field.type).toBe("combobox");
+    expect(mapping.canonicalKey).toBe("location.country");
+    expect(record.status).toBe("filled");
+    expect(enterSearches).toBe(1);
+    expect(input.value).toBe("United States");
+  });
+});
+
 describe("fillField custom choice controls", () => {
+  it("skips already-checked checkboxes even when overwrite is enabled", async () => {
+    const { document, window } = parseHTML(`
+      <label><input id="none" type="checkbox" checked /> None of the above</label>
+    `);
+    installDomGlobals(window);
+    const input = document.getElementById("none") as HTMLInputElement;
+    const record = await fillField(
+      {
+        id: "none",
+        element: input,
+        label: "None of the above",
+        context: "Please confirm whether any applies to you for U.S. sanctions and export controls.",
+        type: "checkbox",
+        required: true,
+        options: [],
+        signature: "none",
+      },
+      {
+        canonicalKey: "answers.screening.compliance_none_of_above",
+        value: false,
+        confidence: 0.88,
+        source: "heuristic",
+      },
+      { ...context, overwrite: true },
+    );
+
+    expect(record.status).toBe("skipped");
+    expect(record.error).toBe("Already filled.");
+    expect(input.hasAttribute("checked")).toBe(true);
+  });
+
   it("checks native neutral compliance checkboxes", async () => {
     const { document, window } = parseHTML(`
       <label><input id="none" type="checkbox" /> None of the above</label>
@@ -638,6 +760,62 @@ describe("fillField custom choice controls", () => {
 
     expect(record.status).toBe("filled");
     expect(input.checked).toBe(true);
+  });
+
+  it("skips already-selected native radio groups", async () => {
+    const { document, window } = parseHTML(`
+      <fieldset>
+        <legend>Are you legally authorized to work?</legend>
+        <label><input type="radio" name="auth" value="yes" /> Yes</label>
+        <label><input type="radio" name="auth" value="no" checked /> No</label>
+      </fieldset>
+    `);
+    installDomGlobals(window);
+    const field = extractFields(document, "greenhouse")[0]!;
+    const yes = document.querySelector("input[value='yes']") as HTMLInputElement;
+    const no = document.querySelector("input[value='no']") as HTMLInputElement;
+    const record = await fillField(
+      field,
+      {
+        canonicalKey: "workAuth.authorizedToWork",
+        value: true,
+        confidence: 0.94,
+        source: "heuristic",
+      },
+      { ...context, overwrite: true },
+    );
+
+    expect(record.status).toBe("skipped");
+    expect(record.error).toBe("Already filled.");
+    expect(yes.hasAttribute("checked")).toBe(false);
+    expect(no.hasAttribute("checked")).toBe(true);
+  });
+
+  it("skips already-selected button choice groups", async () => {
+    const { document, window } = parseHTML(`
+      <div>
+        <p>Do you now or will you in the future need sponsorship?</p>
+        <button type="button" aria-pressed="false">Yes</button>
+        <button type="button" aria-pressed="true">No</button>
+      </div>
+    `);
+    installDomGlobals(window);
+    const field = extractFields(document, "greenhouse")[0]!;
+    const buttons = Array.from(document.querySelectorAll("button"));
+    const record = await fillField(
+      field,
+      {
+        canonicalKey: "workAuth.requiresSponsorship",
+        value: true,
+        confidence: 0.92,
+        source: "heuristic",
+      },
+      { ...context, overwrite: true },
+    );
+
+    expect(record.status).toBe("skipped");
+    expect(record.error).toBe("Already filled.");
+    expect(buttons.map((button) => button.getAttribute("aria-pressed"))).toEqual(["false", "true"]);
   });
 
   it("selects portal-rendered custom dropdown options when the controlled root is empty", async () => {
@@ -919,6 +1097,157 @@ describe("fillField custom choice controls", () => {
     expect(record.status).toBe("filled");
     expect(sponsorButton.textContent).toBe("No");
     expect(authButton.textContent).toBe("Select...");
+  });
+
+  it("ignores yes/no options inside hidden closed dropdown menus", async () => {
+    const { document, window } = parseHTML(`
+      <button id="sponsor" role="combobox" aria-controls="sponsor-options">Select...</button>
+      <div id="sponsor-options" role="listbox"></div>
+      <div id="closed-auth-options" role="listbox">
+        <div role="option" id="hidden-no">No</div>
+        <div role="option">Yes</div>
+      </div>
+      <div id="portal-root"></div>
+    `);
+    installDomGlobals(window);
+    const styledWindow = window as unknown as {
+      getComputedStyle?: (element: Element) => Pick<CSSStyleDeclaration, "display" | "visibility">;
+    };
+    const previousGetComputedStyle = styledWindow.getComputedStyle;
+    styledWindow.getComputedStyle = (element) => ({
+      display: element.id === "closed-auth-options" ? "none" : "block",
+      visibility: "visible",
+    });
+    const visibleRect = {
+      x: 0,
+      y: 0,
+      left: 0,
+      top: 0,
+      right: 120,
+      bottom: 24,
+      width: 120,
+      height: 24,
+      toJSON: () => ({}),
+    } as DOMRect;
+    const button = document.getElementById("sponsor") as HTMLElement;
+    document.getElementById("hidden-no")?.addEventListener("mousedown", () => {
+      button.textContent = "Hidden No";
+    });
+    button.addEventListener("mousedown", () => {
+      if (document.getElementById("fresh-no")) return;
+      const listbox = document.createElement("div");
+      listbox.setAttribute("role", "listbox");
+      const yes = document.createElement("div");
+      yes.setAttribute("role", "option");
+      yes.textContent = "Yes";
+      yes.getBoundingClientRect = () => visibleRect;
+      const no = document.createElement("div");
+      no.id = "fresh-no";
+      no.setAttribute("role", "option");
+      no.textContent = "No";
+      no.getBoundingClientRect = () => visibleRect;
+      no.addEventListener("mousedown", () => {
+        button.textContent = "No";
+      });
+      listbox.append(yes, no);
+      document.getElementById("portal-root")?.append(listbox);
+    });
+
+    const record = await fillField(
+      {
+        id: "sponsor",
+        element: button,
+        label: "Do you now or will you in the future need sponsorship for employment visa status in the country in which you are applying? *",
+        context: "",
+        type: "combobox",
+        required: true,
+        options: [],
+        signature: "sponsor",
+      },
+      {
+        canonicalKey: "workAuth.requiresSponsorship",
+        value: false,
+        confidence: 0.92,
+        source: "heuristic",
+      },
+      context,
+    );
+
+    expect(record.status).toBe("filled");
+    expect(button.textContent).toBe("No");
+    if (previousGetComputedStyle) {
+      styledWindow.getComputedStyle = previousGetComputedStyle;
+    } else {
+      delete styledWindow.getComputedStyle;
+    }
+  });
+
+  it("fills embedded Greenhouse work-auth dropdowns in the fallback pass", async () => {
+    const { document, window } = parseHTML(`
+      <form>
+        <div class="field" id="auth-field">
+          <div class="field-heading">Are you legally authorized to work in the country in which you are applying? *</div>
+          <button id="auth" role="combobox" aria-controls="auth-options">Select...</button>
+          <div id="auth-options" role="listbox"></div>
+        </div>
+        <div class="field" id="sponsor-field">
+          <div class="field-heading">Do you now or will you in the future need sponsorship for employment visa status in the country in which you are applying? *</div>
+          <button id="sponsor" role="combobox" aria-controls="sponsor-options">Select...</button>
+          <div id="sponsor-options" role="listbox"></div>
+        </div>
+        <div id="portal-root"></div>
+      </form>
+    `);
+    installDomGlobals(window);
+    const auth = document.getElementById("auth") as HTMLElement;
+    const sponsor = document.getElementById("sponsor") as HTMLElement;
+    auth.addEventListener("mousedown", () => {
+      if (document.getElementById("auth-yes")) return;
+      const listbox = document.createElement("div");
+      listbox.setAttribute("role", "listbox");
+      const yes = document.createElement("div");
+      yes.id = "auth-yes";
+      yes.setAttribute("role", "option");
+      yes.textContent = "Yes";
+      yes.addEventListener("mousedown", () => {
+        auth.textContent = "Yes";
+      });
+      const no = document.createElement("div");
+      no.setAttribute("role", "option");
+      no.textContent = "No";
+      listbox.append(yes, no);
+      document.getElementById("portal-root")?.append(listbox);
+    });
+    sponsor.addEventListener("mousedown", () => {
+      if (document.getElementById("sponsor-no")) return;
+      const listbox = document.createElement("div");
+      listbox.setAttribute("role", "listbox");
+      const yes = document.createElement("div");
+      yes.setAttribute("role", "option");
+      yes.textContent = "Yes";
+      const no = document.createElement("div");
+      no.id = "sponsor-no";
+      no.setAttribute("role", "option");
+      no.textContent = "No";
+      no.addEventListener("mousedown", () => {
+        sponsor.textContent = "No";
+      });
+      listbox.append(yes, no);
+      document.getElementById("portal-root")?.append(listbox);
+    });
+
+    const records = await fillWorkAuthFallbacks({
+      profile: context.profile,
+      platform: "greenhouse",
+      url: "https://www.databricks.com/company/careers/engineering/role?gh_jid=123",
+      demographicsEnabled: false,
+      context,
+      existingRecords: [],
+    });
+
+    expect(records.map((record) => record.status)).toEqual(["filled", "filled"]);
+    expect(auth.textContent).toBe("Yes");
+    expect(sponsor.textContent).toBe("No");
   });
 
   it("selects phone country codes from a portal opened after an empty controlled root", async () => {

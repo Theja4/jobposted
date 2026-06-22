@@ -9,6 +9,7 @@ import type {
 import { fillField } from "./fill";
 import { extractFields } from "./extract";
 import { resolveField, toFieldContext } from "./resolve";
+import { fillWorkAuthFallbacks } from "./work-auth-fallback";
 import type { AutofillResult, PlatformAdapter } from "./types";
 
 function runtimeMessage<T extends ExtensionMessageResponse>(message: unknown): Promise<T> {
@@ -55,7 +56,7 @@ export async function fillCurrentStep(args: {
       },
     });
 
-    const record = await fillField(field, mapping, {
+    const fillContext = {
       profile,
       platform: adapter.id,
       url: window.location.href,
@@ -75,7 +76,31 @@ export async function fillCurrentStep(args: {
             }
           : { resumeUrl: profile.documents.resumeUrl ?? null, coverLetterUrl: profile.documents.coverLetterUrl };
       },
-    });
+    };
+    const record = await fillField(field, mapping, fillContext);
+    records.push(record);
+    onField(record);
+    await humanDelay(settings);
+  }
+
+  const fallbackRecords = await fillWorkAuthFallbacks({
+    profile,
+    platform: adapter.id,
+    url: window.location.href,
+    demographicsEnabled: settings.demographicsEnabled,
+    context: {
+      profile,
+      platform: adapter.id,
+      url: window.location.href,
+      overwrite: settings.overwriteFilledFields,
+      demographicsEnabled: settings.demographicsEnabled,
+      onField,
+      llmMap: async () => null,
+      getResume: async () => ({ resumeUrl: profile.documents.resumeUrl ?? null, coverLetterUrl: profile.documents.coverLetterUrl ?? null }),
+    },
+    existingRecords: records,
+  });
+  for (const record of fallbackRecords) {
     records.push(record);
     onField(record);
     await humanDelay(settings);

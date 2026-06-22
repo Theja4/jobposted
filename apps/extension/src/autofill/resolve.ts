@@ -174,9 +174,48 @@ function hasUsableRuleValue(value: ExtensionFieldMapping["value"]) {
 
 function yesNoBoolean(value: string) {
   const text = normalizeText(value);
-  if (/^(yes|y|true|1)$/.test(text)) return true;
-  if (/^(no|n|false|0)$/.test(text)) return false;
+  if (/^(yes|y|true|1)$/.test(text) || /\byes\b/.test(text)) return true;
+  if (/^(no|n|false|0)$/.test(text) || /\bno\b/.test(text)) return false;
   return value;
+}
+
+function workAuthAnswerMatches(
+  canonicalKey: ExtensionFieldMapping["canonicalKey"],
+  answer: MasterProfile["answers"][number],
+) {
+  const text = normalizeText(`${answer.key} ${answer.prompt}`);
+  if (canonicalKey === "workAuth.authorizedToWork") {
+    return (
+      /\b(?:authorized|authorised|eligible|right to work|work authorization|work authorisation|allowed to work|able to work)\b/.test(text) &&
+      !/\b(?:sponsor|sponsorship|visa)\b/.test(text)
+    );
+  }
+  if (canonicalKey === "workAuth.requiresSponsorship") {
+    return /\b(?:sponsor|sponsorship|visa)\b/.test(text);
+  }
+  return false;
+}
+
+function inferredWorkAuthMapping(
+  canonicalKey: ExtensionFieldMapping["canonicalKey"],
+  profile: MasterProfile,
+  confidence: number,
+): ExtensionFieldMapping | null {
+  const sponsorshipAnswer = profile.answers.find((item) => isUsableAnswerValue(item) && workAuthAnswerMatches("workAuth.requiresSponsorship", item));
+  const sponsorshipValue = sponsorshipAnswer ? yesNoBoolean(sponsorshipAnswer.value) : null;
+  if (
+    canonicalKey === "workAuth.authorizedToWork" &&
+    (profile.workAuth.requiresSponsorship === false || sponsorshipValue === false)
+  ) {
+    return {
+      canonicalKey,
+      value: true,
+      confidence: Math.min(confidence, 0.86),
+      source: "heuristic",
+      reason: "Inferred work authorization from the setup sponsorship answer.",
+    };
+  }
+  return null;
 }
 
 function workAuthAnswerMapping(
@@ -194,8 +233,11 @@ function workAuthAnswerMapping(
   const answer = profile.answers.find((item) => {
     if (!isUsableAnswerValue(item)) return false;
     return answerKeys.includes(normalizeText(item.key));
+  }) ?? profile.answers.find((item) => {
+    if (!isUsableAnswerValue(item)) return false;
+    return workAuthAnswerMatches(canonicalKey, item);
   });
-  if (!answer) return null;
+  if (!answer) return inferredWorkAuthMapping(canonicalKey, profile, confidence);
   return {
     canonicalKey,
     value: yesNoBoolean(answer.value),

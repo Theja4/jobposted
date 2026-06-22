@@ -4,7 +4,19 @@ import { genericAdvance, genericStep, genericSubmit } from "./common";
 export const greenhouseAdapter: PlatformAdapter = {
   id: "greenhouse",
   label: "Greenhouse",
-  match: (url) => /(^|\.)greenhouse\.io$/i.test(url.hostname),
+  match: (url, dom) =>
+    /(^|\.)greenhouse\.io$/i.test(url.hostname) ||
+    url.searchParams.has("gh_jid") ||
+    Boolean(
+      dom.querySelector(
+        [
+          "form[action*='greenhouse' i]",
+          "iframe[src*='greenhouse.io' i]",
+          "input[name^='job_application']",
+          "input[data-source='first_name']",
+        ].join(","),
+      ),
+    ),
   detectStep: genericStep,
   mapFields: () => [
     {

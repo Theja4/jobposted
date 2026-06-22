@@ -159,15 +159,42 @@ function valueEchoesPrompt(field: FieldDescriptor, value: ExtensionFieldMapping[
   return Boolean(text === label || text === context || text === prompt || (enoughWords && (prompt.includes(text) || text.includes(prompt))));
 }
 
+function choiceIsSelected(element: HTMLElement) {
+  if (element instanceof HTMLInputElement && (element.type === "radio" || element.type === "checkbox")) {
+    return element.checked === true || element.hasAttribute("checked");
+  }
+  if (
+    element.getAttribute("aria-checked") === "true" ||
+    element.getAttribute("aria-selected") === "true" ||
+    element.getAttribute("aria-pressed") === "true"
+  ) {
+    return true;
+  }
+  const state = normalizedText(element.getAttribute("data-state") || element.getAttribute("data-selected"));
+  if (/^(active|checked|on|selected|true)$/.test(state)) return true;
+  return Array.from(element.classList).some((token) => /^(active|checked|selected)$/.test(normalizedText(token)));
+}
+
+function radioOrButtonGroupHasValue(field: FieldDescriptor) {
+  if (field.type !== "radio") return false;
+  return radioGroup(field).some(choiceIsSelected);
+}
+
 function hasValue(field: FieldDescriptor) {
+  if (radioOrButtonGroupHasValue(field)) return true;
   const element = field.element;
   if (element instanceof HTMLInputElement) {
-    if (element.type === "checkbox" || element.type === "radio") return element.checked;
+    if (element.type === "checkbox" || element.type === "radio") return element.checked === true || element.hasAttribute("checked");
     if (element.type === "file") return Boolean(element.files?.length);
     return !looksLikePlaceholder(element.value, field);
   }
   if (element instanceof HTMLTextAreaElement) return !looksLikePlaceholder(element.value, field);
-  if (element instanceof HTMLSelectElement) return Boolean(element.value);
+  if (element instanceof HTMLSelectElement) {
+    const selected = Array.from(element.options).find((option) => option.selected || option.hasAttribute("selected"));
+    const value = typeof element.value === "string" ? element.value : (selected?.value ?? "");
+    if (!selected && !value) return false;
+    return !looksLikePlaceholder(fieldCurrentText(field), field);
+  }
   if (element.getAttribute("role") === "radio" || element.getAttribute("role") === "checkbox") {
     return element.getAttribute("aria-checked") === "true";
   }
@@ -197,8 +224,9 @@ function structuredChoiceDisplayText(element: HTMLElement) {
 function fieldCurrentText(field: FieldDescriptor) {
   const element = field.element;
   if (element instanceof HTMLSelectElement) {
-    const selected = Array.from(element.options).find((option) => option.selected);
-    return visibleText(`${selected?.textContent ?? ""} ${element.value}`);
+    const selected = Array.from(element.options).find((option) => option.selected || option.hasAttribute("selected"));
+    const value = typeof element.value === "string" ? element.value : (selected?.value ?? "");
+    return visibleText(`${selected?.textContent ?? ""} ${value}`);
   }
   if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) return visibleText(element.value);
   const structuredDisplay = structuredChoiceDisplayText(element);
@@ -232,27 +260,6 @@ function fieldChoiceValueMatches(
 function editableValueMatches(element: HTMLElement, value: ExtensionFieldMapping["value"]) {
   const desired = desiredString(value);
   return Boolean(desired && optionScore(elementCurrentText(element), desired) >= 0.82);
-}
-
-function shouldCorrectExistingValue(
-  field: FieldDescriptor,
-  mapping: ExtensionFieldMapping,
-  countryHint: string | null | undefined,
-) {
-  if (mapping.canonicalKey === "identity.phoneCountryCode") {
-    const desiredCode = callingCodeDigits(mapping.value);
-    if (!desiredCode) return false;
-    return hasValue(field) && !phoneCountryMatches(field, mapping.value, countryHint);
-  }
-  if (isPhoneNumberKey(mapping.canonicalKey) && looksLikePhoneField(field)) {
-    const desired = desiredString(mapping.value);
-    const desiredDigits = phoneDigits(desired);
-    const current = fieldCurrentText(field);
-    const currentDigits = phoneDigits(current);
-    if (!desiredDigits || !currentDigits || currentDigits === desiredDigits) return false;
-    return phoneNationalNumber(current, countryHint) === phoneNationalNumber(desired, countryHint);
-  }
-  return false;
 }
 
 function desiredString(value: ExtensionFieldMapping["value"]) {
@@ -509,13 +516,17 @@ function pickOption(
 }
 
 export function isVisible(element: HTMLElement) {
-  if (element.hasAttribute("hidden") || element.getAttribute("aria-hidden") === "true") return false;
   const getComputedStyle = element.ownerDocument.defaultView?.getComputedStyle;
-  const style = typeof getComputedStyle === "function" ? getComputedStyle(element) : null;
-  if (style && (style.display === "none" || style.visibility === "hidden")) return false;
+  for (let node: HTMLElement | null = element; node; node = node.parentElement) {
+    if (node.hasAttribute("hidden") || node.getAttribute("aria-hidden") === "true") return false;
+    const style = typeof getComputedStyle === "function" ? getComputedStyle(node) : null;
+    if (style && (style.display === "none" || style.visibility === "hidden" || style.visibility === "collapse")) return false;
+  }
   const rect = element.getBoundingClientRect();
   if (rect.width > 0 && rect.height > 0) return true;
-  return !element.closest("[hidden]");
+  const rects = element.getClientRects?.();
+  if (rects && Array.from(rects).some((item) => item.width > 0 && item.height > 0)) return true;
+  return typeof getComputedStyle !== "function";
 }
 
 function editableTarget(element: HTMLElement): HTMLElement | null {
@@ -990,6 +1001,29 @@ function isFreeTextCombobox(field: FieldDescriptor) {
   return !looksLikePhoneCountryField(field);
 }
 
+function shouldSubmitComboboxSearch(field: FieldDescriptor, editable: HTMLElement) {
+  if (field.type !== "combobox" && field.type !== "typeahead") return false;
+  return Boolean(
+    editable !== field.element ||
+      editable.getAttribute("aria-autocomplete") === "list" ||
+      editable.getAttribute("aria-controls") ||
+      editable.getAttribute("aria-owns") ||
+      comboboxControlledRoots(field).length > 0,
+  );
+}
+
+function requiresOptionSelection(field: FieldDescriptor) {
+  if (isFreeTextCombobox(field)) return false;
+  const editable = directOwnedEditableTarget(field);
+  return Boolean(
+    editable &&
+      (editable.getAttribute("aria-autocomplete") === "list" ||
+        editable.getAttribute("aria-controls") ||
+        editable.getAttribute("aria-owns") ||
+        comboboxControlledRoots(field).length > 0),
+  );
+}
+
 async function fillCombobox(
   field: FieldDescriptor,
   mapping: ExtensionFieldMapping,
@@ -1013,12 +1047,20 @@ async function fillCombobox(
       await sleep(120);
       if (await waitForComboboxOption(field, mapping, countryHint, ignoredGlobalOptions)) return true;
       if (isFreeTextCombobox(field) && editableValueMatches(editable, mapping.value)) return true;
+      if (shouldSubmitComboboxSearch(field, editable) && comboboxOptionCandidates(field, mapping, ignoredGlobalOptions).length === 0) {
+        dispatchKey(editable, "Enter");
+        dispatchFieldEvents(editable);
+        await sleep(180);
+        if (await waitForComboboxOption(field, mapping, countryHint, ignoredGlobalOptions, 700)) return true;
+        if (!requiresOptionSelection(field) && fieldChoiceValueMatches(field, mapping, countryHint)) return true;
+        if (isFreeTextCombobox(field) && editableValueMatches(editable, mapping.value)) return true;
+      }
       if (allowBlindKeyCommit) {
         dispatchKey(editable, "ArrowDown");
         dispatchKey(editable, "Enter");
         dispatchFieldEvents(editable);
         await sleep(120);
-        if (fieldChoiceValueMatches(field, mapping, countryHint)) return true;
+        if (!requiresOptionSelection(field) && fieldChoiceValueMatches(field, mapping, countryHint)) return true;
         if (isFreeTextCombobox(field) && editableValueMatches(editable, mapping.value)) return true;
       }
     }
@@ -1107,7 +1149,7 @@ export async function fillField(
     field.element.classList.add("jp-field-highlight");
     return { ...base, status: field.required ? "needs_user" : "skipped", error: "Saved answer matches the question." };
   }
-  if (!context.overwrite && hasValue(field) && !shouldCorrectExistingValue(field, effectiveMapping, context.profile.location.country)) {
+  if (hasValue(field)) {
     return { ...base, status: "skipped", error: "Already filled." };
   }
   if (field.type === "file") {

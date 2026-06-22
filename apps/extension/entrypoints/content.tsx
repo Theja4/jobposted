@@ -222,7 +222,7 @@ function waitForStepChange() {
 async function loadAutofillPrereqs(adapter: ReturnType<typeof detectAdapter>, forceGenericFallback: boolean) {
   const [settingsResponse, profileResponse] = await Promise.all([
     message<ExtensionMessageResponse>({ type: "SETTINGS_GET" }),
-    message<ExtensionMessageResponse>({ type: "PROFILE_GET" }),
+    message<ExtensionMessageResponse>({ type: "PROFILE_GET", forceRefresh: true }),
   ]);
   if (!settingsResponse.ok || settingsResponse.type !== "SETTINGS_GET") {
     throw new Error(settingsResponse.ok ? "Settings unavailable." : settingsResponse.error);

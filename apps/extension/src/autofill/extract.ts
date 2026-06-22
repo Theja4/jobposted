@@ -225,6 +225,23 @@ function fieldContext(element: HTMLElement): string {
     .join(" ");
 }
 
+function controlsChoicePopup(element: HTMLElement) {
+  const ids = [element.getAttribute("aria-controls"), element.getAttribute("aria-owns")]
+    .filter(Boolean)
+    .join(" ")
+    .split(/\s+/)
+    .filter(Boolean);
+  return ids.some((id) => {
+    const controlled = element.ownerDocument.getElementById(id);
+    return Boolean(
+      controlled &&
+        (controlled.getAttribute("role") === "listbox" ||
+          controlled.getAttribute("role") === "menu" ||
+          controlled.querySelector("[role='option'], [role='menuitem'], option, li")),
+    );
+  });
+}
+
 function controlType(element: HTMLElement): FieldDescriptor["type"] {
   const role = element.getAttribute("role");
   if (role === "radio") return "radio";
@@ -244,6 +261,7 @@ function controlType(element: HTMLElement): FieldDescriptor["type"] {
     if (type === "checkbox") return "checkbox";
     if (type === "radio") return "radio";
     if (type === "date" || type === "month") return "date";
+    if (element.getAttribute("aria-autocomplete") === "list" || controlsChoicePopup(element)) return "combobox";
   }
   return "text";
 }
@@ -297,13 +315,17 @@ function requiredFor(element: HTMLElement, label: string, context: string) {
 }
 
 function isVisible(element: HTMLElement): boolean {
-  if (element.hasAttribute("hidden") || element.getAttribute("aria-hidden") === "true") return false;
   const getComputedStyle = element.ownerDocument.defaultView?.getComputedStyle;
-  const style = typeof getComputedStyle === "function" ? getComputedStyle(element) : null;
-  if (style && (style.display === "none" || style.visibility === "hidden")) return false;
+  for (let node: HTMLElement | null = element; node; node = node.parentElement) {
+    if (node.hasAttribute("hidden") || node.getAttribute("aria-hidden") === "true") return false;
+    const style = typeof getComputedStyle === "function" ? getComputedStyle(node) : null;
+    if (style && (style.display === "none" || style.visibility === "hidden" || style.visibility === "collapse")) return false;
+  }
   const rect = element.getBoundingClientRect();
   if (rect.width > 0 && rect.height > 0) return true;
-  return !element.closest("[hidden]");
+  const rects = element.getClientRects?.();
+  if (rects && Array.from(rects).some((item) => item.width > 0 && item.height > 0)) return true;
+  return typeof getComputedStyle !== "function";
 }
 
 function isDropdownInternalControl(element: HTMLElement) {
@@ -376,6 +398,14 @@ function buttonGroupContainer(button: HTMLElement, candidates: ReadonlySet<HTMLE
 
 function uniqueByElement(elements: HTMLElement[]) {
   return elements.filter((element, index, all) => all.indexOf(element) === index);
+}
+
+function documentOrder(a: FieldDescriptor, b: FieldDescriptor) {
+  if (a.element === b.element) return 0;
+  const position = a.element.compareDocumentPosition(b.element);
+  if (position & 2) return 1; // DOCUMENT_POSITION_PRECEDING
+  if (position & 4) return -1; // DOCUMENT_POSITION_FOLLOWING
+  return 0;
 }
 
 function greenhouseChoiceRoots(dom: Document) {
@@ -517,6 +547,7 @@ export function extractFields(dom: Document, platform: string, hints: AdapterHin
 
   fields.push(...extractGreenhouseChoiceWidgets(dom, platform, fields));
   fields.push(...extractButtonChoiceGroups(dom, platform, fields));
+  fields.sort(documentOrder);
   applyHints(dom, fields, hints);
   return fields;
 }

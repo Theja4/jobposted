@@ -104,6 +104,8 @@ export const workdayAdapter: PlatformAdapter = {
     await fillWorkdayExperience(context);
   },
   findAdvance(dom) {
+    const footerNext = dom.querySelector<HTMLElement>("[data-automation-id='pageFooterNextButton']");
+    if (footerNext) return footerNext;
     return buttonByText(dom, [/^save and continue$/i, /^save & continue$/i]) ?? genericAdvance(dom);
   },
   findSubmit: genericSubmit,

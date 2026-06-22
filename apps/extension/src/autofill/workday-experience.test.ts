@@ -274,3 +274,201 @@ describe("Workday My Experience extraction guardrails", () => {
     expect(workdayAdapter.detectStep(document)).toEqual({ name: "3. My Experience", total: 2 });
   });
 });
+
+describe("fillWorkdayExperience — blank repeater pages", () => {
+  function blankHtml() {
+    return `<!doctype html>
+      <div data-automation-id="progressBarActiveStep">My Experience</div>
+      <main data-automation-id="applyFlowMyExpPage">
+        <h3>Work Experience</h3>
+        <div data-automation-id="workExperienceSection"></div>
+        <button type="button" data-automation-id="add-button" data-section="work">Add</button>
+        <h3>Education</h3>
+        <div data-automation-id="educationSection"></div>
+        <button type="button" data-automation-id="add-button" data-section="education">Add</button>
+        <h3>Languages</h3>
+        <button type="button" data-automation-id="add-button" data-section="languages">Add</button>
+        <h3>Skills</h3>
+        <div data-automation-id="formField-skills">
+          <div data-automation-id="multiSelectContainer">
+            <div data-automation-id="multiselectInputContainer"><input /></div>
+          </div>
+        </div>
+        <button type="button" data-automation-id="pageFooterNextButton">Save and Continue</button>
+      </main>`;
+  }
+
+  const WORK_ROW_TEMPLATE = `<section role="group" data-row="work">
+      <div data-automation-id="formField-jobTitle"><input /></div>
+      <div data-automation-id="formField-companyName"><input /></div>
+      <div data-automation-id="formField-location"><input /></div>
+      <div data-automation-id="formField-currentlyWorkHere"><input type="checkbox" /></div>
+      <div data-automation-id="formField-startDate"><input data-automation-id="dateSectionMonth-input" aria-label="Month" /><input data-automation-id="dateSectionYear-input" aria-label="Year" /></div>
+      <div data-automation-id="formField-endDate"><input data-automation-id="dateSectionMonth-input" aria-label="Month" /><input data-automation-id="dateSectionYear-input" aria-label="Year" /></div>
+      <div data-automation-id="formField-roleDescription"><textarea></textarea></div>
+    </section>`;
+  const EDUCATION_ROW_TEMPLATE = `<section role="group" data-row="education">
+      <div data-automation-id="formField-schoolName"><input /></div>
+      <div data-automation-id="formField-degree"><button type="button" aria-haspopup="listbox">Select One</button></div>
+      <div data-automation-id="formField-fieldOfStudy"><div data-automation-id="multiSelectContainer"><div data-automation-id="multiselectInputContainer"><input /></div></div></div>
+      <div data-automation-id="formField-gradeAverage"><input /></div>
+      <div data-automation-id="formField-firstYearAttended"><input data-automation-id="dateSectionYear-input" aria-label="Year" /></div>
+      <div data-automation-id="formField-lastYearAttended"><input data-automation-id="dateSectionYear-input" aria-label="Year" /></div>
+    </section>`;
+
+  function wireAddButton(
+    document: Document,
+    button: HTMLElement,
+    template: string,
+    onRow?: (row: HTMLElement) => void,
+  ) {
+    button.addEventListener("click", () => {
+      const holder = document.createElement("div");
+      holder.innerHTML = template;
+      const row = holder.firstElementChild as HTMLElement;
+      button.parentElement?.insertBefore(row, button);
+      onRow?.(row);
+    });
+  }
+
+  function input(scope: Element | null, selector: string) {
+    return scope?.querySelector(selector) as HTMLInputElement | null;
+  }
+
+  function setupBlank() {
+    const { document } = setupExperienceDom(blankHtml());
+    const addButtons = Array.from(document.querySelectorAll<HTMLElement>("[data-automation-id='add-button']"));
+    const bySection = (section: string) =>
+      addButtons.find((button) => button.getAttribute("data-section") === section) as HTMLElement;
+    const clicks = { work: 0, education: 0, languages: 0 };
+    bySection("work").addEventListener("click", () => (clicks.work += 1));
+    bySection("education").addEventListener("click", () => (clicks.education += 1));
+    bySection("languages").addEventListener("click", () => (clicks.languages += 1));
+
+    wireAddButton(document, bySection("work"), WORK_ROW_TEMPLATE, (row) => {
+      // Simulate a real checkbox toggling its `checked` attribute on click (linkedom does not).
+      const box = row.querySelector("[data-automation-id='formField-currentlyWorkHere'] input") as HTMLElement;
+      box?.addEventListener("click", () => {
+        if (box.hasAttribute("checked")) box.removeAttribute("checked");
+        else box.setAttribute("checked", "");
+      });
+    });
+    wireAddButton(document, bySection("education"), EDUCATION_ROW_TEMPLATE, (row) => {
+      wireDegree(document, row.querySelector("[data-automation-id='formField-degree'] button") as HTMLElement, [
+        "High School",
+        "Bachelor's Degree",
+        "Master's Degree",
+      ]);
+      wireTypeahead(document, row.querySelector("[data-automation-id='formField-fieldOfStudy']") as HTMLElement, [
+        "Computer Science",
+        "Physics",
+        "Mathematics",
+      ]);
+    });
+    wireTypeahead(document, document.querySelector("[data-automation-id='formField-skills']") as HTMLElement, [
+      "TypeScript",
+      "React",
+    ]);
+    return { document, clicks };
+  }
+
+  const filledProfile: MasterProfile = {
+    ...baseProfile,
+    experience: [
+      {
+        title: "Senior Engineer",
+        company: "Acme Corp",
+        location: "Remote",
+        startDate: "2021-03",
+        endDate: "2023-06",
+        current: false,
+        bullets: ["Built things", "Led the team"],
+      },
+    ],
+    education: [
+      {
+        school: "Stanford University",
+        degree: "Master's Degree",
+        field: "Computer Science",
+        gpa: "3.9",
+        startDate: "2016",
+        endDate: "2018",
+      },
+    ],
+    skills: ["TypeScript"],
+  };
+
+  it("clicks Add and fills a fresh Work Experience and Education row", async () => {
+    const { document, clicks } = setupBlank();
+
+    await fillWorkdayExperience(context(filledProfile));
+
+    const work = document.querySelector("[data-row='work']") as HTMLElement;
+    expect(input(work, "[data-automation-id='formField-jobTitle'] input")?.value).toBe("Senior Engineer");
+    expect(input(work, "[data-automation-id='formField-companyName'] input")?.value).toBe("Acme Corp");
+    expect(input(work, "[data-automation-id='formField-location'] input")?.value).toBe("Remote");
+    expect(work.querySelector("[data-automation-id='formField-currentlyWorkHere'] input")?.hasAttribute("checked")).toBe(false);
+    const start = work.querySelector("[data-automation-id='formField-startDate']");
+    expect(input(start, "[data-automation-id='dateSectionMonth-input']")?.value).toBe("03");
+    expect(input(start, "[data-automation-id='dateSectionYear-input']")?.value).toBe("2021");
+    const end = work.querySelector("[data-automation-id='formField-endDate']");
+    expect(input(end, "[data-automation-id='dateSectionMonth-input']")?.value).toBe("06");
+    expect(input(end, "[data-automation-id='dateSectionYear-input']")?.value).toBe("2023");
+    expect((work.querySelector("[data-automation-id='formField-roleDescription'] textarea") as HTMLTextAreaElement).value).toBe(
+      "Built things\nLed the team",
+    );
+
+    const edu = document.querySelector("[data-row='education']") as HTMLElement;
+    expect(input(edu, "[data-automation-id='formField-schoolName'] input")?.value).toBe("Stanford University");
+    expect(edu.querySelector("[data-automation-id='formField-degree'] button")?.textContent).toBe("Master's Degree");
+    expect(selectedItems(edu.querySelector("[data-automation-id='formField-fieldOfStudy']") as HTMLElement)).toEqual([
+      "Computer Science",
+    ]);
+    expect(input(edu, "[data-automation-id='formField-gradeAverage'] input")?.value).toBe("3.9");
+    expect(input(edu, "[data-automation-id='formField-firstYearAttended'] input")?.value).toBe("2016");
+    expect(input(edu, "[data-automation-id='formField-lastYearAttended'] input")?.value).toBe("2018");
+
+    expect(selectedItems(document.querySelector("[data-automation-id='formField-skills']") as HTMLElement)).toEqual([
+      "TypeScript",
+    ]);
+    expect(clicks).toEqual({ work: 1, education: 1, languages: 0 });
+  });
+
+  it("checks 'currently work here' and leaves the end date empty for a current role", async () => {
+    const { document } = setupBlank();
+
+    await fillWorkdayExperience(
+      context({
+        ...baseProfile,
+        experience: [
+          {
+            title: "Staff Engineer",
+            company: "NowCo",
+            startDate: "2022-01",
+            endDate: null,
+            current: true,
+            bullets: [],
+          },
+        ],
+        education: [],
+        skills: [],
+      }),
+    );
+
+    const work = document.querySelector("[data-row='work']") as HTMLElement;
+    expect(work.querySelector("[data-automation-id='formField-currentlyWorkHere'] input")?.hasAttribute("checked")).toBe(true);
+    const end = work.querySelector("[data-automation-id='formField-endDate']");
+    expect(input(end, "[data-automation-id='dateSectionYear-input']")?.value).toBe("");
+  });
+
+  it("does not add or refill rows on a second run", async () => {
+    const { document, clicks } = setupBlank();
+
+    await fillWorkdayExperience(context(filledProfile));
+    await fillWorkdayExperience(context(filledProfile));
+
+    expect(document.querySelectorAll("[data-row='work']").length).toBe(1);
+    expect(document.querySelectorAll("[data-row='education']").length).toBe(1);
+    expect(clicks).toEqual({ work: 1, education: 1, languages: 0 });
+  });
+});
