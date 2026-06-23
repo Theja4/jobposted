@@ -1448,6 +1448,74 @@ describe("fillWorkdayExperience", () => {
     expect(ms.textContent).toBe("Masters degree (e.g. MBA, MA, MS, Meng)");
   });
 
+  it("selects the correct plain degree levels when qualified variants are also available", async () => {
+    const { document } = setupExperienceDom(`<!doctype html>
+      <div data-automation-id="progressBarActiveStep">My Experience</div>
+      <main data-automation-id="applyFlowMyExpPage">
+        <section role="group" data-row="btech">
+          <div data-automation-id="formField-schoolName"><input value="BTech University" /></div>
+          <div data-automation-id="formField-degree"><button type="button" aria-haspopup="listbox">Select One</button></div>
+        </section>
+        <section role="group" data-row="mtech">
+          <div data-automation-id="formField-schoolName"><input value="MTech University" /></div>
+          <div data-automation-id="formField-degree"><button type="button" aria-haspopup="listbox">Select One</button></div>
+        </section>
+        <section role="group" data-row="phd">
+          <div data-automation-id="formField-schoolName"><input value="PhD University" /></div>
+          <div data-automation-id="formField-degree"><button type="button" aria-haspopup="listbox">Select One</button></div>
+        </section>
+        <section role="group" data-row="diploma">
+          <div data-automation-id="formField-schoolName"><input value="Diploma Institute" /></div>
+          <div data-automation-id="formField-degree"><button type="button" aria-haspopup="listbox">Select One</button></div>
+        </section>
+        <section role="group" data-row="hsc">
+          <div data-automation-id="formField-schoolName"><input value="Higher Secondary School" /></div>
+          <div data-automation-id="formField-degree"><button type="button" aria-haspopup="listbox">Select One</button></div>
+        </section>
+      </main>`);
+    const btech = document.querySelector("[data-row='btech'] [data-automation-id='formField-degree'] button") as HTMLElement;
+    const mtech = document.querySelector("[data-row='mtech'] [data-automation-id='formField-degree'] button") as HTMLElement;
+    const phd = document.querySelector("[data-row='phd'] [data-automation-id='formField-degree'] button") as HTMLElement;
+    const diploma = document.querySelector("[data-row='diploma'] [data-automation-id='formField-degree'] button") as HTMLElement;
+    const hsc = document.querySelector("[data-row='hsc'] [data-automation-id='formField-degree'] button") as HTMLElement;
+    const options = [
+      "Select One",
+      "Associates",
+      "Honours Bachelor",
+      "Bachelors",
+      "Honours Master",
+      "Masters",
+      "Doctorate",
+      "Certificate",
+      "High School",
+    ];
+    wireDegree(document, btech, options);
+    wireDegree(document, mtech, options);
+    wireDegree(document, phd, options);
+    wireDegree(document, diploma, options);
+    wireDegree(document, hsc, options);
+
+    await fillWorkdayExperience(
+      context({
+        ...baseProfile,
+        education: [
+          { school: "BTech University", degree: "Bachelor of Technology B.Tech" },
+          { school: "MTech University", degree: "Master of Technology M.Tech" },
+          { school: "PhD University", degree: "PhD" },
+          { school: "Diploma Institute", degree: "Postgraduate Diploma" },
+          { school: "Higher Secondary School", degree: "Higher Secondary" },
+        ],
+        skills: [],
+      }),
+    );
+
+    expect(btech.textContent).toBe("Bachelors");
+    expect(mtech.textContent).toBe("Masters");
+    expect(phd.textContent).toBe("Doctorate");
+    expect(diploma.textContent).toBe("Certificate");
+    expect(hsc.textContent).toBe("High School");
+  });
+
   it("selects a degree whose listbox renders late and only commits the option on Enter", async () => {
     const { document } = setupExperienceDom(`<!doctype html>
       <div data-automation-id="progressBarActiveStep">My Experience</div>

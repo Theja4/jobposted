@@ -94,6 +94,8 @@ const PREVIOUS_COMPANY_EMPLOYMENT_PATTERNS = [
   /\b(?:previously|formerly|ever|in\s+the\s+past)\s+(?:been\s+)?(?:employed|worked|work)\s+(?:by|at|for|with)\b/,
   /\b(?:been\s+)?(?:employed|worked)\s+(?:by|at|for|with).*\b(?:previously|formerly|before|in\s+the\s+past|past)\b/,
   /\b(?:former|ex)[\s-]?employee\b/,
+  /\b(?:current|currently)\s+or\s+(?:previous|previously|former|formerly)\s+(?:employee|contractor|intern)\b/,
+  /\b(?:current|currently)\s+or\s+(?:previous|previously|former|formerly)\s+(?:employed|worked|work)\b/,
   /\b(?:subsidiar(?:y|ies)|affiliate|affiliates)\b.*\b(?:previously|formerly|employed|worked|past)\b/,
 ] as const;
 
@@ -127,6 +129,13 @@ const OUTSIDE_BUSINESS_ACTIVITIES_PATTERNS = [
   /\boutside\s+(?:employment|work|consulting)\b/,
   /\bconflict\s+of\s+interest\b.*\b(?:business|employment|activity|activities)\b/,
 ] as const;
+
+type ScreeningFieldLike = {
+  label?: string;
+  context?: string;
+  options?: string[];
+  type?: string;
+};
 
 function answerForKeys<T extends readonly string[]>(profile: MasterProfile, keys: T) {
   return profile.answers.find((answer) => keys.includes(answer.key as T[number]) && isUsableAnswerValue(answer)) ?? null;
@@ -209,6 +218,132 @@ function matchScreeningReusableAnswer(text: string, profile: MasterProfile) {
     matchNonCompeteAnswer(text, profile) ??
     matchOutsideBusinessActivitiesAnswer(text, profile)
   );
+}
+
+function isChoiceLikeField(field: ScreeningFieldLike) {
+  const type = normalizeText(field.type ?? "");
+  return Boolean(
+    (field.options?.length ?? 0) > 0 ||
+      /\b(?:select|radio|checkbox|combobox|typeahead|multiselect|boolean|choice)\b/.test(type),
+  );
+}
+
+function isConditionalDetailField(text: string) {
+  return (
+    /\bif\s+(?:you|yes|applicable|selected|referred|related)\b/.test(text) &&
+    /\b(?:list|name|names|explain|describe|provide|share|specify|details?|dates?|functional area)\b/.test(text)
+  );
+}
+
+function normalizedOptions(field: ScreeningFieldLike) {
+  return (field.options ?? [])
+    .map((option) => ({ raw: option, text: normalizeText(option) }))
+    .filter((option) => option.text && !/^(select|select one|choose|choose one|please select)$/.test(option.text));
+}
+
+function optionMatching(field: ScreeningFieldLike, predicate: (text: string) => boolean) {
+  return normalizedOptions(field).find((option) => predicate(option.text))?.raw ?? null;
+}
+
+function hasYesNoOptions(field: ScreeningFieldLike) {
+  const options = normalizedOptions(field).map((option) => option.text);
+  return options.some((option) => /^yes\b|^y$/.test(option)) && options.some((option) => /^no\b|^n$/.test(option));
+}
+
+function defaultNegativeChoiceValue(field: ScreeningFieldLike): string | boolean {
+  if (normalizeText(field.type ?? "") === "checkbox") return false;
+  return (
+    optionMatching(
+      field,
+      (option) =>
+        /^no\b/.test(option) ||
+        /\bnever\b/.test(option) ||
+        /\bno\s+previous\b/.test(option) ||
+        /\bnot\s+(?:employed|employee|referred|related|applicable)\b/.test(option),
+    ) ??
+    (hasYesNoOptions(field) ? "No" : "No")
+  );
+}
+
+function defaultCompanyConnectionKey(text: string) {
+  if (/\b(?:related|relative|relatives|family|family member|family members|spouse|partner)\b/.test(text)) {
+    return "screening.company_relative_connection";
+  }
+  if (/\b(?:referred|referral|refer|influence|influenced)\b/.test(text)) {
+    return "screening.company_employee_connection";
+  }
+  return "screening.company_employee_connection";
+}
+
+function defaultAiOptOutValue(field: ScreeningFieldLike): string | boolean {
+  if (normalizeText(field.type ?? "") === "checkbox") return false;
+  return (
+    optionMatching(
+      field,
+      (option) =>
+        /\b(?:do not|don t|dont|not)\b.*\bopt\s*out\b/.test(option) ||
+        /\bno\b.*\bopt\s*out\b/.test(option),
+    ) ??
+    (hasYesNoOptions(field) ? "No" : "I do not wish to opt out")
+  );
+}
+
+function defaultFutureContactValue(field: ScreeningFieldLike): string | boolean {
+  if (normalizeText(field.type ?? "") === "checkbox") return true;
+  return (
+    optionMatching(
+      field,
+      (option) =>
+        /\byes\b.*\bagree\b/.test(option) ||
+        /\byes\b.*\bconsent\b/.test(option) ||
+        /^agree\b/.test(option) ||
+        /\bi agree\b/.test(option) ||
+        /\byes please\b/.test(option),
+    ) ??
+    (hasYesNoOptions(field) ? "Yes" : "Yes, I agree")
+  );
+}
+
+function matchDefaultScreeningAnswer(field: ScreeningFieldLike) {
+  if (!isChoiceLikeField(field)) return null;
+  const text = normalizeText(`${field.label ?? ""} ${field.context ?? ""}`);
+  if (includesAny(text, PREVIOUS_COMPANY_EMPLOYMENT_PATTERNS)) {
+    return {
+      key: "screening.previous_company_employment",
+      prompt: "Previous company employment",
+      value: defaultNegativeChoiceValue(field),
+    };
+  }
+  if (includesAny(text, COMPANY_CONNECTION_PATTERNS) || /\b(?:influence|influenced)\b.*\b(?:apply|refer|referred|role|company)\b/.test(text)) {
+    const key = defaultCompanyConnectionKey(text);
+    return {
+      key,
+      prompt: key === "screening.company_relative_connection" ? "Company relative connection" : "Company employee connection",
+      value: defaultNegativeChoiceValue(field),
+    };
+  }
+  if (
+    /\bopt\s*out\b/.test(text) &&
+    /\b(?:artificial intelligence|ai|automated|algorithm|algorithmic|machine learning)\b/.test(text) &&
+    /\b(?:recruitment|recruiting|hiring|screening|selection|candidate|application|employment)\b/.test(text)
+  ) {
+    return {
+      key: "screening.ai_recruiting_opt_out",
+      prompt: "Opt out of AI use in recruitment",
+      value: defaultAiOptOutValue(field),
+    };
+  }
+  if (
+    /\b(?:contact|contacted|communicate|communication|reach out|consider|considered|retain|keep)\b/.test(text) &&
+    /\b(?:future|another role|other role|roles|opportunit(?:y|ies)|talent pool|talent community|good fit)\b/.test(text)
+  ) {
+    return {
+      key: "screening.future_role_contact_consent",
+      prompt: "Consent to future role contact",
+      value: defaultFutureContactValue(field),
+    };
+  }
+  return null;
 }
 
 type Rule = { key: string; confidence: number; patterns: RegExp[]; needsDemographics?: boolean };
@@ -548,7 +683,7 @@ export type ResolvedField = { canonicalKey: string; value: string | string[] | b
 function matchReusableAnswer(field: ResolvableField, profile: MasterProfile): ResolvedField | null {
   const text = normalizeText(`${field.label} ${field.context ?? ""} ${(field.options ?? []).join(" ")}`);
   const questionText = normalizeText(`${field.label} ${field.context ?? ""}`);
-  const semanticAnswer = matchScreeningReusableAnswer(text, profile);
+  const semanticAnswer = isConditionalDetailField(questionText) ? null : matchScreeningReusableAnswer(text, profile);
   if (semanticAnswer && isUsableAnswerValue(semanticAnswer, questionText)) {
     return {
       canonicalKey: `answers.${semanticAnswer.key}`,
@@ -563,12 +698,18 @@ function matchReusableAnswer(field: ResolvableField, profile: MasterProfile): Re
     const prompt = normalizeText(item.prompt);
     return (key && text.includes(key)) || (prompt && (text.includes(prompt) || prompt.includes(text)));
   });
-  if (!answer) return null;
-  return { canonicalKey: `answers.${answer.key}`, value: answer.value, confidence: 0.8, source: "answer" };
+  if (answer) return { canonicalKey: `answers.${answer.key}`, value: answer.value, confidence: 0.8, source: "answer" };
+  const defaultAnswer = matchDefaultScreeningAnswer(field);
+  if (!defaultAnswer) return null;
+  return { canonicalKey: `answers.${defaultAnswer.key}`, value: defaultAnswer.value, confidence: 0.78, source: "heuristic" };
 }
 
 export function resolveFieldValue(field: ResolvableField, profile: MasterProfile, opts: { demographicsEnabled: boolean }): ResolvedField {
   const text = normalizeText(`${field.label} ${field.context ?? ""} ${(field.options ?? []).join(" ")}`);
+  if (matchDefaultScreeningAnswer(field)) {
+    const answer = matchReusableAnswer(field, profile);
+    if (answer) return answer;
+  }
   for (const rule of FIELD_RULES) {
     if (rule.needsDemographics && !opts.demographicsEnabled) continue;
     if (!includesAny(text, rule.patterns)) continue;

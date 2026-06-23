@@ -37,6 +37,19 @@ function dispatchFieldEvents(element: HTMLElement) {
   element.dispatchEvent(new FocusEvent("blur", { bubbles: true }));
 }
 
+function dispatchMouseSequence(element: HTMLElement) {
+  const view = element.ownerDocument.defaultView;
+  const MouseEventCtor = view?.MouseEvent ?? (typeof MouseEvent !== "undefined" ? MouseEvent : undefined);
+  const EventCtor = MouseEventCtor ?? Event;
+  for (const type of ["pointerdown", "mousedown", "mouseup", "click"]) {
+    try {
+      element.dispatchEvent(new EventCtor(type, { bubbles: true, cancelable: true }));
+    } catch {
+      element.dispatchEvent(new Event(type, { bubbles: true, cancelable: true }));
+    }
+  }
+}
+
 function dispatchInputChange(element: HTMLElement) {
   element.dispatchEvent(new Event("input", { bubbles: true }));
   element.dispatchEvent(new Event("change", { bubbles: true }));
@@ -156,21 +169,35 @@ function safeDocumentFilename(url: string, contentDisposition: string | null, mi
 
 function fileListFromFile(element: HTMLElement, file: File) {
   type DataTransferConstructor = new () => DataTransfer;
-  const view = element.ownerDocument.defaultView as (Window & { DataTransfer?: DataTransferConstructor }) | null;
+  type FileConstructor = new (fileBits: BlobPart[], fileName: string, options?: FilePropertyBag) => File;
+  const view = element.ownerDocument.defaultView as (Window & { DataTransfer?: DataTransferConstructor; File?: FileConstructor }) | null;
+  const PageFile = view?.File ?? (typeof File !== "undefined" ? File : undefined);
+  let pageFile = file;
+  if (PageFile) {
+    let isSameRealmFile = false;
+    try {
+      isSameRealmFile = file instanceof PageFile;
+    } catch {
+      isSameRealmFile = false;
+    }
+    if (!isSameRealmFile) {
+      pageFile = new PageFile([file], file.name, { type: file.type, lastModified: file.lastModified });
+    }
+  }
   const DataTransferCtor = view?.DataTransfer ?? (typeof DataTransfer !== "undefined" ? DataTransfer : undefined);
   if (DataTransferCtor) {
     try {
       const transfer = new DataTransferCtor();
-      transfer.items.add(file);
+      transfer.items.add(pageFile);
       return transfer.files;
     } catch {
       // Some DOM shims expose DataTransfer without a constructible implementation.
     }
   }
-  const files = [file] as unknown as FileList;
+  const files = [pageFile] as unknown as FileList;
   Object.defineProperty(files, "item", {
     configurable: true,
-    value: (index: number) => (index === 0 ? file : null),
+    value: (index: number) => (index === 0 ? pageFile : null),
   });
   return files;
 }
@@ -1136,11 +1163,17 @@ function activateChoice(element: HTMLElement, group: HTMLElement[]) {
   if (element instanceof HTMLInputElement) {
     if (element.type === "radio") {
       for (const item of group) {
-        if (item instanceof HTMLInputElement && item.type === "radio") item.checked = item === element;
+        if (item instanceof HTMLInputElement && item.type === "radio") nativeCheckedSetter(item, item === element);
       }
     }
+    const label = element.closest("label");
+    const explicitLabel = element.id ? element.ownerDocument.querySelector<HTMLElement>(`label[for="${cssEscape(element.id)}"]`) : null;
+    const visibleTarget = label ?? explicitLabel ?? element;
+    dispatchMouseSequence(visibleTarget);
+    if (!element.checked) nativeCheckedSetter(element, true);
     element.click();
     dispatchFieldEvents(element);
+    if (visibleTarget !== element) dispatchFieldEvents(visibleTarget);
     return;
   }
   for (const item of group) {
@@ -1169,7 +1202,8 @@ function fillRadio(field: FieldDescriptor, mapping: ExtensionFieldMapping) {
   const threshold = isReferralSourceKey(mapping.canonicalKey) ? 0.1 : 0.4;
   if (!best || best.score < threshold) return false;
   activateChoice(best.input, group);
-  return true;
+  if (!(best.input instanceof HTMLInputElement) && best.input.getAttribute("role") !== "radio") return true;
+  return choiceIsSelected(best.input);
 }
 
 function fillCheckbox(field: FieldDescriptor, value: ExtensionFieldMapping["value"]) {

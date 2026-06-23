@@ -90,6 +90,191 @@ describe("field resolution", () => {
     );
   });
 
+  it("extracts Lever application cards with hidden native radio groups", async () => {
+    const { adapter, fields } = await loadHtml(
+      `<!doctype html>
+      <form class="application">
+        <li class="application-question">
+          <div class="application-label full-width text"><div class="text">Full name<span class="required">*</span></div></div>
+          <div class="application-field full-width required-field"><input name="name" required /></div>
+        </li>
+        <li class="application-question">
+          <div class="application-label full-width text"><div class="text">Email<span class="required">*</span></div></div>
+          <div class="application-field full-width required-field"><input name="email" type="email" required /></div>
+        </li>
+        <li class="application-question">
+          <div class="application-label full-width text"><div class="text">Phone <span class="required">*</span></div></div>
+          <div class="application-field full-width required-field"><input name="phone" required /></div>
+        </li>
+        <li class="application-question">
+          <div class="application-label full-width text"><div class="text">LinkedIn URL</div></div>
+          <div class="application-field full-width"><input name="urls[LinkedIn]" /></div>
+        </li>
+        <li class="application-question custom-question">
+          <div class="application-label full-width multiple-choice">
+            <div class="text">Are you a current or previous employee of Dun &amp; Bradstreet?<span class="required">*</span></div>
+          </div>
+          <div class="application-field full-width required-field">
+            <ul data-qa="multiple-choice">
+              <li><label><input type="radio" name="cards[dnb][field0]" value="No previous work experience with the company" required style="display:none" /><span>No previous work experience with the company</span></label></li>
+              <li><label><input type="radio" name="cards[dnb][field0]" value="Former employee or intern" required style="display:none" /><span>Former employee or intern</span></label></li>
+            </ul>
+          </div>
+        </li>
+        <li class="application-question custom-question">
+          <div class="application-label full-width multiple-choice">
+            <div class="text">Do you have a family member or relative who is currently employed by Dun &amp; Bradstreet?<span class="required">*</span></div>
+          </div>
+          <div class="application-field full-width required-field">
+            <ul data-qa="multiple-choice">
+              <li><label><input type="radio" name="cards[dnb][field1]" value="Yes" required style="display:none" /><span>Yes</span></label></li>
+              <li><label><input type="radio" name="cards[dnb][field1]" value="No" required style="display:none" /><span>No</span></label></li>
+            </ul>
+          </div>
+        </li>
+        <li class="application-question">
+          <div class="application-label full-width text"><div class="text">Resume/CV <span class="required">*</span></div></div>
+          <div class="application-field full-width required-field"><input type="file" name="resume" /></div>
+        </li>
+      </form>`,
+      "https://jobs.lever.co/dnb/8eb0cdd5-1bf4-4865-9e84-7db8ec89fba2/apply",
+    );
+    expect(adapter.id).toBe("lever");
+    expect(fields.map((field) => field.label)).toEqual(
+      expect.arrayContaining(["Full name*", "Email*", "Phone *", "LinkedIn URL", "Resume/CV *"]),
+    );
+    const radioFields = fields.filter((field) => field.type === "radio");
+    expect(radioFields).toHaveLength(2);
+    expect(radioFields[0]).toMatchObject({
+      label: "Are you a current or previous employee of Dun & Bradstreet?*",
+      required: true,
+      options: ["No previous work experience with the company", "Former employee or intern"],
+    });
+    expect(radioFields[1]).toMatchObject({
+      label: "Do you have a family member or relative who is currently employed by Dun & Bradstreet?*",
+      required: true,
+      options: ["Yes", "No"],
+    });
+  });
+
+  it("answers D&B Lever background radios with safe negative defaults", async () => {
+    const { adapter, fields } = await loadHtml(
+      `<!doctype html>
+      <form class="application">
+        <li class="application-question custom-question">
+          <div class="application-label full-width multiple-choice">
+            <div class="text">Are you a current or previous employee of Dun &amp; Bradstreet?<span class="required">*</span></div>
+          </div>
+          <div class="application-field full-width required-field">
+            <ul data-qa="multiple-choice">
+              <li><label><input type="radio" name="cards[dnb][field0]" value="No previous work experience with the company" required /><span>No previous work experience with the company</span></label></li>
+              <li><label><input type="radio" name="cards[dnb][field0]" value="Former employee or intern" required /><span>Former employee or intern</span></label></li>
+              <li><label><input type="radio" name="cards[dnb][field0]" value="Former contractor" required /><span>Former contractor</span></label></li>
+              <li><label><input type="radio" name="cards[dnb][field0]" value="Current employee or intern" required /><span>Current employee or intern</span></label></li>
+              <li><label><input type="radio" name="cards[dnb][field0]" value="Current contractor" required /><span>Current contractor</span></label></li>
+            </ul>
+          </div>
+        </li>
+        <li class="application-question custom-question">
+          <div class="application-label full-width multiple-choice">
+            <div class="text">Do you have a family member or relative who is currently employed by Dun &amp; Bradstreet?<span class="required">*</span></div>
+          </div>
+          <div class="application-field full-width required-field">
+            <ul data-qa="multiple-choice">
+              <li><label><input type="radio" name="cards[dnb][field1]" value="Yes" required /><span>Yes</span></label></li>
+              <li><label><input type="radio" name="cards[dnb][field1]" value="No" required /><span>No</span></label></li>
+            </ul>
+          </div>
+        </li>
+        <li class="application-question custom-question">
+          <div class="application-label full-width text"><div class="text">If you have a family member or relative currently employed by Dun &amp; Bradstreet, please list their name(s):</div></div>
+          <div class="application-field full-width"><input class="card-field-input" type="text" name="cards[dnb][field2]" /></div>
+        </li>
+        <li class="application-question custom-question">
+          <div class="application-label full-width multiple-choice">
+            <div class="text">Did a current Dun &amp; Bradstreet employee influence you to apply or refer you to the company/role?<span class="required">*</span></div>
+          </div>
+          <div class="application-field full-width required-field">
+            <ul data-qa="multiple-choice">
+              <li><label><input type="radio" name="cards[dnb][field3]" value="Yes" required /><span>Yes</span></label></li>
+              <li><label><input type="radio" name="cards[dnb][field3]" value="No" required /><span>No</span></label></li>
+            </ul>
+          </div>
+        </li>
+        <li class="application-question custom-question">
+          <div class="application-label full-width text"><div class="text">If you were referred by a Dun &amp; Bradstreet employee, please list their name:</div></div>
+          <div class="application-field full-width"><input class="card-field-input" type="text" name="cards[dnb][field4]" /></div>
+        </li>
+      </form>`,
+      "https://jobs.lever.co/dnb/8eb0cdd5-1bf4-4865-9e84-7db8ec89fba2/apply",
+    );
+    expect(adapter.id).toBe("lever");
+    const mappings = await Promise.all(fields.map((field) => resolveField({ field, profile, platform: adapter.id, url: "", demographicsEnabled: false })));
+    const byLabel = new Map(fields.map((field, index) => [field.label, mappings[index]]));
+
+    expect(byLabel.get("Are you a current or previous employee of Dun & Bradstreet?*")).toMatchObject({
+      canonicalKey: "answers.screening.previous_company_employment",
+      value: "No",
+    });
+    expect(byLabel.get("Do you have a family member or relative who is currently employed by Dun & Bradstreet?*")).toMatchObject({
+      canonicalKey: "answers.screening.company_relative_connection",
+      value: "No",
+      source: "heuristic",
+    });
+    expect(byLabel.get("Did a current Dun & Bradstreet employee influence you to apply or refer you to the company/role?*")).toMatchObject({
+      canonicalKey: "answers.screening.company_employee_connection",
+      value: "No",
+      source: "heuristic",
+    });
+    expect(byLabel.get("If you have a family member or relative currently employed by Dun & Bradstreet, please list their name(s):")?.canonicalKey).toBe("unknown");
+    expect(byLabel.get("If you were referred by a Dun & Bradstreet employee, please list their name:")?.canonicalKey).toBe("unknown");
+  });
+
+  it("falls back to Lever form controls when visibility checks report no fields", async () => {
+    const { document, window } = parseHTML(
+      `<!doctype html>
+      <form class="application">
+        <li class="application-question">
+          <div class="application-label full-width text"><div class="text">Full name<span class="required">*</span></div></div>
+          <div class="application-field full-width required-field"><input name="name" required /></div>
+        </li>
+        <li class="application-question">
+          <div class="application-label full-width text"><div class="text">Email<span class="required">*</span></div></div>
+          <div class="application-field full-width required-field"><input name="email" type="email" required /></div>
+        </li>
+        <li class="application-question">
+          <div class="application-label full-width text"><div class="text">Phone <span class="required">*</span></div></div>
+          <div class="application-field full-width required-field"><input name="phone" required /></div>
+        </li>
+        <li class="application-question">
+          <div class="application-label full-width text"><div class="text">Resume/CV <span class="required">*</span></div></div>
+          <div class="application-field full-width required-field"><input type="file" name="resume" /></div>
+        </li>
+      </form>`,
+    );
+    Object.defineProperty(window, "getComputedStyle", {
+      configurable: true,
+      value: () => ({ display: "block", visibility: "visible" }),
+    });
+    Object.assign(globalThis, {
+      window,
+      document,
+      HTMLElement: window.HTMLElement,
+      HTMLInputElement: window.HTMLInputElement,
+      HTMLTextAreaElement: window.HTMLTextAreaElement,
+      HTMLSelectElement: window.HTMLSelectElement,
+      CSS: { escape: (value: string) => value.replace(/["\\]/g, "\\$&") },
+    });
+
+    const adapter = detectAdapter("https://jobs.lever.co/dnb/8eb0cdd5-1bf4-4865-9e84-7db8ec89fba2/apply", document);
+    const fields = extractFields(document, adapter.id, adapter.mapFields(document));
+
+    expect(adapter.id).toBe("lever");
+    expect(fields.map((field) => field.label)).toEqual(
+      expect.arrayContaining(["Full name*", "Email*", "Phone *", "Resume/CV *"]),
+    );
+  });
+
   it("maps Ashby named inputs", async () => {
     const { adapter, fields } = await loadFixture("ashby", "https://jobs.ashbyhq.com/acme/1");
     const mappings = await Promise.all(fields.map((field) => resolveField({ field, profile, platform: adapter.id, url: "", demographicsEnabled: false })));
@@ -624,9 +809,54 @@ describe("field resolution", () => {
     );
     expect(adapter.id).toBe("workday");
     const mappings = await Promise.all(fields.map((field) => resolveField({ field, profile, platform: adapter.id, url: "", demographicsEnabled: false })));
+    const byLabel = new Map(fields.map((field, index) => [field.label, mappings[index]]));
     expect(mappings.map((mapping) => mapping.canonicalKey)).toEqual(
       expect.arrayContaining(["location.street", "location.city", "location.state", "location.postalCode"]),
     );
+    expect(byLabel.get("Address Line 1")).toMatchObject({ canonicalKey: "location.street", value: "1 Market St" });
+    expect(byLabel.get("City")).toMatchObject({ canonicalKey: "location.city", value: "San Francisco" });
+    expect(byLabel.get("Postal Code")).toMatchObject({ canonicalKey: "location.postalCode", value: "94105" });
+  });
+
+  it("answers Workday AI opt-out and future-contact dropdown questions with safe defaults", async () => {
+    const { adapter, fields } = await loadHtml(
+      `<!doctype html>
+      <form data-automation-id="workdayApplication">
+        <div data-automation-id="formField-aiOptOut">
+          <label id="ai-label">Do you request to opt-out of the use of artificial intelligence in the recruitment process?<span>*</span></label>
+          <button role="combobox" aria-labelledby="ai-label" aria-controls="ai-options">Select One</button>
+          <div id="ai-options" role="listbox">
+            <div role="option">I wish to opt out</div>
+            <div role="option">I do not wish to opt out</div>
+          </div>
+        </div>
+        <div data-automation-id="formField-futureContact">
+          <label id="contact-label">Do you agree to be contacted in future if you are a good fit for another role?<span>*</span></label>
+          <button role="combobox" aria-labelledby="contact-label" aria-controls="contact-options">Select One</button>
+          <div id="contact-options" role="listbox">
+            <div role="option">Yes, I agree</div>
+            <div role="option">No, I do not agree</div>
+          </div>
+        </div>
+      </form>`,
+      "https://acme.wd5.myworkdayjobs.com/jobs/job/1",
+    );
+    expect(adapter.id).toBe("workday");
+    const mappings = await Promise.all(fields.map((field) => resolveField({ field, profile, platform: adapter.id, url: "", demographicsEnabled: false })));
+    const byLabel = new Map(fields.map((field, index) => [field.label, mappings[index]]));
+    const aiOptOutLabel = fields.find((field) => /artificial intelligence/i.test(field.label))?.label;
+    const futureContactLabel = fields.find((field) => /good fit for another role/i.test(field.label))?.label;
+
+    expect(byLabel.get(aiOptOutLabel ?? "")).toMatchObject({
+      canonicalKey: "answers.screening.ai_recruiting_opt_out",
+      value: "I do not wish to opt out",
+      source: "heuristic",
+    });
+    expect(byLabel.get(futureContactLabel ?? "")).toMatchObject({
+      canonicalKey: "answers.screening.future_role_contact_consent",
+      value: "Yes, I agree",
+      source: "heuristic",
+    });
   });
 
   it("uses generic heuristics and reusable answers", async () => {
