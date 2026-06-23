@@ -1621,9 +1621,13 @@ function headingPosition(root: HTMLElement, pattern: RegExp) {
   const start = headings.find((heading) => pattern.test(visibleText(heading.textContent)));
   if (!start) return null;
   const startIndex = order.indexOf(start);
+  // The section ends at the next heading that belongs to a DIFFERENT section. Workday repeats a
+  // numbered sub-heading per entry ("Work Experience 1", "Work Experience 2"), which also match the
+  // section pattern — treating one of those as the boundary collapses the range to empty and hides
+  // the section's "Add Another" button (so the 2nd job/school never gets added). Skip them.
   const nextHeadingIndex = headings
     .map((heading) => order.indexOf(heading))
-    .filter((index) => index > startIndex)
+    .filter((index) => index > startIndex && !pattern.test(visibleText(order[index].textContent)))
     .sort((a, b) => a - b)[0];
   return { order, startIndex, endIndex: nextHeadingIndex ?? order.length };
 }

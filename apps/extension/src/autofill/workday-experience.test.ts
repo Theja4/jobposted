@@ -1973,6 +1973,70 @@ describe("fillWorkdayExperience — blank repeater pages", () => {
     expect(clicks).toBe(1);
   });
 
+  it("adds the second work experience when each entry has its own numbered sub-heading", async () => {
+    const { document } = setupExperienceDom(`<!doctype html>
+      <div data-automation-id="progressBarActiveStep">My Experience</div>
+      <main data-automation-id="applyFlowMyExpPage">
+        <h3>Work Experience</h3>
+        <h4>Work Experience 1</h4>
+        ${WORK_ROW_TEMPLATE}
+        <button type="button">Add Another</button>
+        <h3>Education</h3>
+      </main>`);
+    const addButton = Array.from(document.querySelectorAll("button")).find((button) =>
+      button.textContent?.trim() === "Add Another",
+    ) as HTMLElement;
+    let clicks = 0;
+    addButton.addEventListener("click", () => {
+      clicks += 1;
+      const lastRow = Array.from(document.querySelectorAll("[data-row='work']")).pop() as HTMLElement;
+      if (!input(lastRow, "[data-automation-id='formField-jobTitle'] input")?.value) return;
+      const count = document.querySelectorAll("[data-row='work']").length;
+      const subHeading = document.createElement("h4");
+      subHeading.textContent = `Work Experience ${count + 1}`;
+      const holder = document.createElement("div");
+      holder.innerHTML = WORK_ROW_TEMPLATE;
+      addButton.parentElement?.insertBefore(subHeading, addButton);
+      addButton.parentElement?.insertBefore(holder.firstElementChild as HTMLElement, addButton);
+    });
+
+    await fillWorkdayExperience(
+      context({
+        ...baseProfile,
+        experience: [
+          {
+            title: "Analyst (Product)",
+            company: "ION Group",
+            location: "Hyderabad, India",
+            startDate: "2021-10",
+            endDate: "2026-03",
+            current: false,
+            bullets: [],
+          },
+          {
+            title: "Product Intern",
+            company: "Acme Labs",
+            location: "Remote",
+            startDate: "2020-01",
+            endDate: "2021-09",
+            current: false,
+            bullets: [],
+          },
+        ],
+        education: [],
+        skills: [],
+      }),
+    );
+
+    const workRows = Array.from(document.querySelectorAll<HTMLElement>("[data-row='work']"));
+    expect(workRows).toHaveLength(2);
+    expect(workRows.map((row) => input(row, "[data-automation-id='formField-jobTitle'] input")?.value)).toEqual([
+      "Analyst (Product)",
+      "Product Intern",
+    ]);
+    expect(clicks).toBe(1);
+  });
+
   it("detects Workday work rows even when row wrappers do not expose role=group", async () => {
     const workRow = WORK_ROW_TEMPLATE.replace('section role="group"', "section");
     const { document } = setupExperienceDom(`<!doctype html>
