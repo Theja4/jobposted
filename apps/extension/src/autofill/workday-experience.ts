@@ -1628,12 +1628,6 @@ function headingPosition(root: HTMLElement, pattern: RegExp) {
   return { order, startIndex, endIndex: nextHeadingIndex ?? order.length };
 }
 
-function elementWithinHeadingPosition(element: HTMLElement, located: ReturnType<typeof headingPosition>) {
-  if (!located) return true;
-  const index = located.order.indexOf(element);
-  return index > located.startIndex && index < located.endIndex;
-}
-
 function selectorMatchesSelfOrDescendant(element: HTMLElement, selector: string) {
   return element.matches(selector) || Boolean(element.querySelector(selector));
 }
@@ -1646,6 +1640,10 @@ function repeaterFieldCount(element: HTMLElement, allSelectors: readonly string[
   return allSelectors.filter((selector) => selectorMatchesSelfOrDescendant(element, selector)).length;
 }
 
+// Walk up from a required field (job title / school) to the element that wraps the whole repeater
+// entry: the nearest ancestor that still holds exactly one required field but two or more of the
+// section's fields. This copes with rows that have no [role='group'] wrapper, rows whose fields are
+// split across nested sub-groups, and rows where role='group' sits on the individual field wrappers.
 function rowForField(field: HTMLElement, root: HTMLElement, requiredSelector: string, allSelectors: readonly string[]) {
   let best: HTMLElement | null = null;
   for (let node: HTMLElement | null = field; node && node !== root && node !== field.ownerDocument.body; node = node.parentElement) {
@@ -1656,16 +1654,19 @@ function rowForField(field: HTMLElement, root: HTMLElement, requiredSelector: st
   return best ?? field.parentElement ?? field;
 }
 
-function rowsBySectionFields(root: HTMLElement, pattern: RegExp, requiredSelector: string, allSelectors: readonly string[]) {
-  const located = headingPosition(root, pattern);
-  const fields = Array.from(root.querySelectorAll<HTMLElement>(requiredSelector)).filter((field) =>
-    elementWithinHeadingPosition(field, located),
-  );
+// Detect rows directly from their required field rather than by scanning between section headings:
+// real Workday gives every entry its own numbered sub-heading ("Education 1", "Education 2"), which
+// collapsed the "between this heading and the next" range to empty and made us miss every row — so
+// nothing got filled and the empty-looking section got an extra "Add Another" row tacked on. The
+// required selector (job title vs. school) is already section-specific, so heading scoping was
+// redundant anyway.
+function rowsBySectionFields(root: HTMLElement, requiredSelector: string, allSelectors: readonly string[]) {
+  const fields = Array.from(root.querySelectorAll<HTMLElement>(requiredSelector));
   return uniqueElements(fields.map((field) => rowForField(field, root, requiredSelector, allSelectors)));
 }
 
 function experienceRows(root: HTMLElement) {
-  return rowsBySectionFields(root, /work experience|employment/i, EXPERIENCE_FIELDS.jobTitle, [
+  return rowsBySectionFields(root, EXPERIENCE_FIELDS.jobTitle, [
     EXPERIENCE_FIELDS.jobTitle,
     EXPERIENCE_FIELDS.company,
     EXPERIENCE_FIELDS.location,
@@ -1677,7 +1678,7 @@ function experienceRows(root: HTMLElement) {
 }
 
 function educationRows(root: HTMLElement) {
-  return rowsBySectionFields(root, /education/i, EDUCATION_FIELDS.school, [
+  return rowsBySectionFields(root, EDUCATION_FIELDS.school, [
     EDUCATION_FIELDS.school,
     EDUCATION_FIELDS.degree,
     EDUCATION_FIELDS.field,
