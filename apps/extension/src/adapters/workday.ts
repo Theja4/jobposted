@@ -1,6 +1,36 @@
+import type { ExtensionFieldMapping } from "@jobposted/shared";
+import { extractFields } from "../autofill/extract";
+import { fillField } from "../autofill/fill";
 import type { PlatformAdapter } from "../autofill/types";
 import { fillWorkdayExperience } from "../autofill/workday-experience";
 import { buttonByText, genericAdvance, genericSubmit } from "./common";
+
+async function fillWorkdayDocumentUploads(context: Parameters<NonNullable<PlatformAdapter["fillExtras"]>>[0]) {
+  const fields = extractFields(document, "workday", workdayAdapter.mapFields(document)).filter(
+    (field) =>
+      field.type === "file" &&
+      (field.adapterKey === "documents.resume" ||
+        field.adapterKey === "documents.coverLetter" ||
+        /\b(?:resume|cv|cover letter)\b/i.test(`${field.label} ${field.context}`)),
+  );
+
+  for (const field of fields) {
+    if (context.shouldStop?.()) break;
+    if (field.element instanceof HTMLInputElement && field.element.files?.length) continue;
+    const canonicalKey: ExtensionFieldMapping["canonicalKey"] =
+      field.adapterKey === "documents.coverLetter" || /\bcover letter\b/i.test(`${field.label} ${field.context}`)
+        ? "documents.coverLetter"
+        : "documents.resume";
+    const mapping: ExtensionFieldMapping = {
+      canonicalKey,
+      value: canonicalKey === "documents.coverLetter" ? context.profile.documents.coverLetterUrl ?? null : context.profile.documents.resumeUrl ?? null,
+      confidence: field.adapterConfidence ?? 0.96,
+      source: "adapter",
+      reason: "Matched Workday document upload.",
+    };
+    context.onField(await fillField(field, mapping, context));
+  }
+}
 
 export const workdayAdapter: PlatformAdapter = {
   id: "workday",
@@ -106,6 +136,7 @@ export const workdayAdapter: PlatformAdapter = {
     const quickApply = buttonByText(document, [/quick apply|autofill with resume|use my resume/i]);
     quickApply?.click();
     await fillWorkdayExperience(context);
+    await fillWorkdayDocumentUploads(context);
   },
   findAdvance(dom) {
     const footerNext = dom.querySelector<HTMLElement>("[data-automation-id='pageFooterNextButton']");

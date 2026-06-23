@@ -120,6 +120,68 @@ describe("fillField file uploads", () => {
     expect(globalThis.fetch).toHaveBeenCalledWith("https://files.example.com/Theja%20CV.pdf", { credentials: "omit" });
   });
 
+  it("uses the original resume name instead of the signed storage URL filename", async () => {
+    const field = fileField(true, "Resume/CV");
+    const getResume = vi.fn(async () => ({
+      resumeUrl: "https://files.example.com/user/base/84216a92-8aac-4dd8-ad70-a543617bb33e.pdf?token=signed",
+      resumeName: "Theja Chitturi Resume.pdf",
+    }));
+    globalThis.fetch = vi.fn(async () =>
+      new Response(new Blob(["resume"], { type: "application/pdf" }), {
+        headers: { "content-type": "application/pdf" },
+      }),
+    ) as typeof fetch;
+
+    const record = await fillField(field, mapping, { ...context, getResume });
+    const input = field.element as HTMLInputElement;
+
+    expect(record.status).toBe("filled");
+    expect(record.valuePreview).toBe("Theja Chitturi Resume.pdf");
+    expect(input.files?.item(0)?.name).toBe("Theja Chitturi Resume.pdf");
+  });
+
+  it("does not attach the same resume to a second upload field on the page", async () => {
+    const { document, window } = parseHTML(`<input id="resume-one" type="file" /><input id="resume-two" type="file" />`);
+    installDomGlobals(window);
+    const first = document.querySelector<HTMLInputElement>("#resume-one") as HTMLInputElement;
+    const second = document.querySelector<HTMLInputElement>("#resume-two") as HTMLInputElement;
+    const getResume = vi.fn(async () => ({
+      resumeUrl: "https://files.example.com/user/base/84216a92-8aac-4dd8-ad70-a543617bb33e.pdf?token=signed",
+      resumeName: "Theja Chitturi Resume.pdf",
+    }));
+    globalThis.fetch = vi.fn(async () =>
+      new Response(new Blob(["resume"], { type: "application/pdf" }), {
+        headers: { "content-type": "application/pdf" },
+      }),
+    ) as typeof fetch;
+    const firstField: FieldDescriptor = {
+      id: "resume-one",
+      element: first,
+      label: "Resume/CV",
+      context: "Resume/CV",
+      type: "file",
+      required: true,
+      options: [],
+      signature: "resume-one:file",
+    };
+    const secondField: FieldDescriptor = {
+      ...firstField,
+      id: "resume-two",
+      element: second,
+      signature: "resume-two:file",
+    };
+
+    const firstRecord = await fillField(firstField, mapping, { ...context, getResume });
+    const secondRecord = await fillField(secondField, mapping, { ...context, getResume });
+
+    expect(firstRecord.status).toBe("filled");
+    expect(first.files?.item(0)?.name).toBe("Theja Chitturi Resume.pdf");
+    expect(secondRecord.status).toBe("skipped");
+    expect(secondRecord.error).toBe("Already attached resume/CV.");
+    expect(second.files?.length ?? 0).toBe(0);
+    expect(globalThis.fetch).toHaveBeenCalledOnce();
+  });
+
   it("skips optional resume uploads only when no resume/CV is available", async () => {
     const getResume = vi.fn(async () => ({ resumeUrl: null }));
     globalThis.fetch = vi.fn() as typeof fetch;

@@ -536,6 +536,23 @@ describe("field resolution", () => {
     );
   });
 
+  it("maps hidden Workday drop-zone file inputs to resume upload", async () => {
+    const { adapter, fields } = await loadHtml(
+      `<!doctype html>
+      <form data-automation-id="workdayApplication">
+        <div data-automation-id="resumeUpload">
+          <div data-automation-id="fieldLabel">Resume/CV</div>
+          <button type="button">Select files</button>
+          <input data-automation-id="file-upload-input-ref" type="file" style="display:none" />
+        </div>
+      </form>`,
+      "https://acme.wd5.myworkdayjobs.com/jobs/job/1",
+    );
+    expect(adapter.id).toBe("workday");
+    const mappings = await Promise.all(fields.map((field) => resolveField({ field, profile, platform: adapter.id, url: "", demographicsEnabled: false })));
+    expect(mappings.map((mapping) => mapping.canonicalKey)).toContain("documents.resume");
+  });
+
   it("maps Workday legal-name labels from the field label and skips local-name fields", async () => {
     const { adapter, fields } = await loadHtml(
       `<!doctype html>

@@ -154,7 +154,9 @@ export function buildMasterProfile(args: {
   answers?: ReusableAnswer[];
   onboardingData?: unknown;
   resumeUrl?: string | null;
+  resumeName?: string | null;
   coverLetterUrl?: string | null;
+  coverLetterName?: string | null;
 }): MasterProfile {
   const row = args.profileRow ?? {};
   const content = asRecord(args.resumeContent);
@@ -226,7 +228,9 @@ export function buildMasterProfile(args: {
     answers: args.answers ?? [],
     documents: {
       resumeUrl: args.resumeUrl ?? null,
+      resumeName: args.resumeName ?? onboardingProfile?.resumeName ?? null,
       coverLetterUrl: args.coverLetterUrl ?? null,
+      coverLetterName: args.coverLetterName ?? null,
     },
     source: "jobposted",
   };

@@ -32,7 +32,12 @@ export interface FillContext {
   url: string;
   overwrite: boolean;
   demographicsEnabled: boolean;
-  getResume: (jobId?: string | null) => Promise<{ resumeUrl: string | null; coverLetterUrl?: string | null }>;
+  getResume: (jobId?: string | null) => Promise<{
+    resumeUrl: string | null;
+    resumeName?: string | null;
+    coverLetterUrl?: string | null;
+    coverLetterName?: string | null;
+  }>;
   onField: (record: ExtensionFieldFillRecord) => void;
   llmMap: (field: FieldDescriptor) => Promise<ExtensionFieldMapping | null>;
   shouldStop?: () => boolean;

@@ -70,6 +70,37 @@ describe("buildMasterProfile", () => {
     expect(profile.workAuth.requiresSponsorship).toBe(true);
   });
 
+  it("carries resume display names into extension documents", () => {
+    const profile = buildMasterProfile({
+      authEmail: "dev@example.com",
+      resumeUrl: "https://files.example.com/signed",
+      resumeName: "Theja Chitturi Resume.pdf",
+      coverLetterUrl: "https://files.example.com/cover",
+      coverLetterName: "Theja Cover Letter.pdf",
+    });
+
+    expect(profile.documents).toMatchObject({
+      resumeUrl: "https://files.example.com/signed",
+      resumeName: "Theja Chitturi Resume.pdf",
+      coverLetterUrl: "https://files.example.com/cover",
+      coverLetterName: "Theja Cover Letter.pdf",
+    });
+  });
+
+  it("falls back to the setup resume name when document metadata has no display name", () => {
+    const profile = buildMasterProfile({
+      authEmail: "dev@example.com",
+      resumeUrl: "https://files.example.com/user/base/84216a92-8aac-4dd8-ad70-a543617bb33e.pdf?token=signed",
+      onboardingData: {
+        profile: {
+          resumeName: "Theja Chitturi Master Resume.pdf",
+        },
+      },
+    });
+
+    expect(profile.documents.resumeName).toBe("Theja Chitturi Master Resume.pdf");
+  });
+
   it("prefers saved onboarding setup and uses its completion score", () => {
     const profile = buildMasterProfile({
       authEmail: "old@example.com",
@@ -125,5 +156,77 @@ describe("buildMasterProfile", () => {
     expect(profile.experience[0]?.company).toBe("ION Group");
     expect(profile.education[0]?.school).toBe("VIT");
     expect(profile.completeness).toBe(100);
+  });
+
+  it("keeps setup work and education rows authoritative when resume content has extras", () => {
+    const profile = buildMasterProfile({
+      authEmail: "theja@example.com",
+      resumeContent: {
+        experience: [
+          {
+            title: "Product Analyst",
+            company: "ION Group",
+            location: "Hyderabad, India",
+            startDate: "2021-10",
+            endDate: "2026-03",
+            bullets: ["Resume ION bullet"],
+          },
+          {
+            title: "Product Intern",
+            company: "Acme",
+            location: "Bengaluru, India",
+            startDate: "2020-01",
+            endDate: "2021-09",
+            bullets: ["Resume Acme bullet"],
+          },
+        ],
+        education: [
+          {
+            school: "VIT",
+            degree: "B.Tech",
+            field: "Computer Science",
+            startDate: "2017",
+            endDate: "2021",
+          },
+          {
+            school: "Delhi Public School",
+            degree: "Higher Secondary",
+            field: "Science",
+            startDate: "2015",
+            endDate: "2017",
+          },
+        ],
+      },
+      onboardingData: {
+        profile: {
+          experience: [
+            {
+              title: "Analyst (Product)",
+              company: "ION Group",
+              location: "Hyderabad, India",
+              startDate: "10/2021",
+              endDate: "03/2026",
+              bullets: ["Setup ION bullet"],
+            },
+          ],
+          education: [
+            {
+              school: "VIT",
+              degree: "B.Tech",
+              field: "Technology",
+              startDate: "2017",
+              endDate: "2021",
+            },
+          ],
+        },
+      },
+    });
+
+    expect(profile.experience.map((item) => `${item.title} at ${item.company}`)).toEqual([
+      "Analyst (Product) at ION Group",
+    ]);
+    expect(profile.experience[0]?.bullets).toEqual(["Setup ION bullet"]);
+    expect(profile.education.map((item) => item.school)).toEqual(["VIT"]);
+    expect(profile.education[0]).toMatchObject({ field: "Technology" });
   });
 });

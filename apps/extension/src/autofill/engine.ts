@@ -52,6 +52,25 @@ export async function fillCurrentStep(args: {
   const hints = adapter.mapFields(document);
   const fields = extractFields(document, adapter.id, hints);
   const records: ExtensionFieldFillRecord[] = [];
+  const getResume = async () => {
+    const response = await runtimeMessage<ExtensionMessageResponse>({
+      type: "RESUME_GET",
+      jobId: null,
+    });
+    return response.ok && response.type === "RESUME_GET"
+      ? {
+          resumeUrl: response.resume.resumeUrl,
+          resumeName: response.resume.resumeName ?? null,
+          coverLetterUrl: response.resume.coverLetterUrl ?? null,
+          coverLetterName: response.resume.coverLetterName ?? null,
+        }
+      : {
+          resumeUrl: profile.documents.resumeUrl ?? null,
+          resumeName: profile.documents.resumeName ?? null,
+          coverLetterUrl: profile.documents.coverLetterUrl,
+          coverLetterName: profile.documents.coverLetterName ?? null,
+        };
+  };
   args.onFieldsDiscovered?.(fields);
 
   for (const field of fields) {
@@ -88,7 +107,7 @@ export async function fillCurrentStep(args: {
     onField,
     llmMap: async () => null,
     shouldStop,
-    getResume: async () => ({ resumeUrl: profile.documents.resumeUrl ?? null, coverLetterUrl: profile.documents.coverLetterUrl ?? null }),
+    getResume,
   };
   const fallbackRecords = await fillWorkAuthFallbacks({
     profile,
@@ -128,7 +147,7 @@ export async function fillCurrentStep(args: {
     },
     llmMap: async () => null,
     shouldStop,
-    getResume: async () => ({ resumeUrl: profile.documents.resumeUrl ?? null }),
+    getResume,
   });
   records.push(...extraRecords);
 
@@ -184,9 +203,16 @@ export async function fillSingleField(args: {
       return response.ok && response.type === "RESUME_GET"
         ? {
             resumeUrl: response.resume.resumeUrl,
+            resumeName: response.resume.resumeName ?? null,
             coverLetterUrl: response.resume.coverLetterUrl ?? null,
+            coverLetterName: response.resume.coverLetterName ?? null,
           }
-        : { resumeUrl: profile.documents.resumeUrl ?? null, coverLetterUrl: profile.documents.coverLetterUrl };
+        : {
+            resumeUrl: profile.documents.resumeUrl ?? null,
+            resumeName: profile.documents.resumeName ?? null,
+            coverLetterUrl: profile.documents.coverLetterUrl,
+            coverLetterName: profile.documents.coverLetterName ?? null,
+          };
     },
   };
   const record = await fillField(field, mapping, fillContext);

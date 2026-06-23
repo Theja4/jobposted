@@ -73,7 +73,9 @@ export interface ReusableAnswer {
 
 export interface MasterProfileDocuments {
   resumeUrl?: string | null;
+  resumeName?: string | null;
   coverLetterUrl?: string | null;
+  coverLetterName?: string | null;
 }
 
 export interface MasterProfile {
@@ -180,7 +182,9 @@ export interface ExtensionResumeResponse {
   jobId?: string | null;
   documentId?: string | null;
   resumeUrl: string | null;
+  resumeName?: string | null;
   coverLetterUrl?: string | null;
+  coverLetterName?: string | null;
   genericResumeUsed: boolean;
   expiresAt?: string | null;
 }

@@ -79,7 +79,9 @@ export async function GET(request: Request) {
           ? onboardingRow.data
           : null,
       resumeUrl,
+      resumeName: docs.resume?.display_name ?? null,
       coverLetterUrl,
+      coverLetterName: docs.coverLetter?.display_name ?? null,
     });
 
     return NextResponse.json({ ok: true, profile });

@@ -514,7 +514,8 @@ export function extractFields(dom: Document, platform: string, hints: AdapterHin
   const elements = Array.from(dom.querySelectorAll<HTMLElement>(FIELD_SELECTOR));
 
   for (const element of elements) {
-    if (!isVisible(element)) continue;
+    const type = controlType(element);
+    if (!isVisible(element) && type !== "file") continue;
     if (isWorkdayExperienceOwnedControl(element)) continue;
     if (isDropdownInternalControl(element)) continue;
     if (element instanceof HTMLInputElement && element.type === "radio" && element.name) {
@@ -529,7 +530,6 @@ export function extractFields(dom: Document, platform: string, hints: AdapterHin
 
     const label = labelFor(element);
     const context = fieldContext(element);
-    const type = controlType(element);
     const options = optionsFor(element);
     const signature = signatureFor({ platform, label, context, type, options });
     if (!label && type !== "file") continue;

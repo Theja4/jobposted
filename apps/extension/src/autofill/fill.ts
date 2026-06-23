@@ -70,6 +70,29 @@ function documentUrlForKey(
   return signedUrl || (typeof fallbackValue === "string" ? fallbackValue : null);
 }
 
+function documentNameForKey(
+  key: ExtensionFieldMapping["canonicalKey"],
+  docs: Awaited<ReturnType<FillContext["getResume"]>>,
+) {
+  return key === "documents.coverLetter" ? docs.coverLetterName : docs.resumeName;
+}
+
+function documentUploadFlag(key: ExtensionFieldMapping["canonicalKey"]) {
+  if (key === "documents.resume") return "jpResumeAttached";
+  if (key === "documents.coverLetter") return "jpCoverLetterAttached";
+  return null;
+}
+
+function documentUploadAlreadyHandled(doc: Document, key: ExtensionFieldMapping["canonicalKey"]) {
+  const flag = documentUploadFlag(key);
+  return Boolean(flag && doc.documentElement.dataset[flag] === "true");
+}
+
+function markDocumentUploadHandled(doc: Document, key: ExtensionFieldMapping["canonicalKey"]) {
+  const flag = documentUploadFlag(key);
+  if (flag) doc.documentElement.dataset[flag] = "true";
+}
+
 function filenameFromContentDisposition(header: string | null) {
   if (!header) return null;
   const encoded = /filename\*\s*=\s*(?:UTF-8'')?([^;]+)/i.exec(header)?.[1];
@@ -102,8 +125,8 @@ function filenameFromUrl(url: string) {
   }
 }
 
-function safeDocumentFilename(url: string, contentDisposition: string | null, mime: string, label: string) {
-  const raw = filenameFromContentDisposition(contentDisposition) ?? filenameFromUrl(url) ?? label;
+function safeDocumentFilename(url: string, contentDisposition: string | null, mime: string, label: string, preferredName?: string | null) {
+  const raw = preferredName || filenameFromContentDisposition(contentDisposition) || filenameFromUrl(url) || label;
   const clean = raw.replace(/[\\/:*?"<>|]+/g, " ").replace(/\s+/g, " ").trim() || label;
   if (/\.[a-z0-9]{2,5}$/i.test(clean)) return clean;
   return `${clean}.${extensionForMime(mime)}`;
@@ -144,12 +167,12 @@ function assignFileInput(input: HTMLInputElement, file: File) {
   return Boolean(input.files?.length);
 }
 
-async function fetchDocumentFile(url: string, label: string) {
+async function fetchDocumentFile(url: string, label: string, preferredName?: string | null) {
   const response = await fetch(url, { credentials: "omit" });
   if (!response.ok) throw new Error(`Could not download ${label}.`);
   const blob = await response.blob();
   const mime = response.headers.get("content-type") || blob.type || "application/pdf";
-  const filename = safeDocumentFilename(url, response.headers.get("content-disposition"), mime, label);
+  const filename = safeDocumentFilename(url, response.headers.get("content-disposition"), mime, label, preferredName);
   return new File([blob], filename, { type: mime });
 }
 
@@ -1438,6 +1461,9 @@ export async function fillField(
       ? phoneCountryHasCommittedChoice(targetField)
       : hasValue(targetField);
   if (alreadyFilled) {
+    if (field.type === "file" && isDocumentKey(effectiveMapping.canonicalKey)) {
+      markDocumentUploadHandled(field.element.ownerDocument, effectiveMapping.canonicalKey);
+    }
     return { ...base, status: "skipped", error: "Already filled." };
   }
   if (isWorkdayPhoneCountryCode) {
@@ -1455,17 +1481,22 @@ export async function fillField(
         field.element.classList.add("jp-field-highlight");
         return { ...base, status: field.required ? "needs_user" : "skipped", error: `Could not attach ${label} automatically.` };
       }
+      if (documentUploadAlreadyHandled(field.element.ownerDocument, effectiveMapping.canonicalKey)) {
+        return { ...base, status: "skipped", error: `Already attached ${label}.` };
+      }
       const docs = await context.getResume(null);
       const documentUrl = documentUrlForKey(effectiveMapping.canonicalKey, docs, effectiveMapping.value);
+      const documentName = documentNameForKey(effectiveMapping.canonicalKey, docs);
       if (!documentUrl) {
         if (field.required) field.element.classList.add("jp-field-highlight");
         return { ...base, status: field.required ? "needs_user" : "skipped", error: `No ${label} available.` };
       }
-      const file = await fetchDocumentFile(documentUrl, label);
+      const file = await fetchDocumentFile(documentUrl, label, documentName);
       if (!assignFileInput(field.element, file)) {
         field.element.classList.add("jp-field-highlight");
         return { ...base, status: field.required ? "needs_user" : "skipped", error: `Could not attach ${label} automatically.` };
       }
+      markDocumentUploadHandled(field.element.ownerDocument, effectiveMapping.canonicalKey);
       return { ...base, status: "filled", valuePreview: file.name };
     } catch (error) {
       field.element.classList.add("jp-field-highlight");

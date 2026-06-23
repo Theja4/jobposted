@@ -599,7 +599,7 @@ describe("fillWorkdayExperience", () => {
     expect(selectedItems(skills)).toEqual(["Python"]);
   });
 
-  it("prefers a visible clickable skill synonym over a clipped exact virtual row", async () => {
+  it("scrolls and commits a clipped literal exact skill instead of using a visible synonym", async () => {
     const { document } = setupExperienceDom(`<!doctype html>
       <div data-automation-id="progressBarActiveStep">My Experience</div>
       <main data-automation-id="applyFlowMyExpPage">
@@ -614,7 +614,7 @@ describe("fillWorkdayExperience", () => {
     const inputContainer = skills.querySelector<HTMLElement>("[data-automation-id='multiselectInputContainer']") as HTMLElement;
     const input = skills.querySelector("input") as HTMLInputElement;
 
-    const appendOption = (listbox: HTMLElement, label: string, top: number, commits: boolean) => {
+    const appendOption = (listbox: HTMLElement, label: string, top: number, commits: boolean | "after-scroll") => {
       const row = document.createElement("label");
       row.setAttribute("data-automation-id", "promptOption");
       const checkbox = document.createElement("input");
@@ -622,7 +622,7 @@ describe("fillWorkdayExperience", () => {
       row.append(checkbox, document.createTextNode(` ${label}`));
       stubRect(row, top, 0, 220, 32);
       row.addEventListener("click", () => {
-        if (!commits) return;
+        if (!commits || (commits === "after-scroll" && listbox.scrollTop < 350)) return;
         const chip = document.createElement("span");
         chip.setAttribute("data-automation-id", "selectedItem");
         chip.textContent = label;
@@ -642,7 +642,7 @@ describe("fillWorkdayExperience", () => {
       stubRect(listbox, 0, 0, 260, 96);
       appendOption(listbox, "Structured Query Language (SQL)", 0, true);
       appendOption(listbox, "U-SQL", 32, false);
-      appendOption(listbox, "SQL", 420, false);
+      appendOption(listbox, "SQL", 420, "after-scroll");
       document.body.append(listbox);
     });
 
@@ -654,7 +654,7 @@ describe("fillWorkdayExperience", () => {
       }),
     );
 
-    expect(selectedItems(skills)).toEqual(["Structured Query Language (SQL)"]);
+    expect(selectedItems(skills)).toEqual(["SQL"]);
   });
 
   it("prefers a partially visible exact skill over a fully visible parenthetical synonym", async () => {
@@ -1687,8 +1687,67 @@ describe("fillWorkdayExperience — blank repeater pages", () => {
     return () => clicks;
   }
 
+  function wireDelayedTextAddButton(
+    document: Document,
+    button: HTMLElement,
+    template: string,
+    delayMs: number,
+    onRow?: (row: HTMLElement) => void,
+  ) {
+    let clicks = 0;
+    const attach = (current: HTMLElement) => {
+      current.removeAttribute("data-automation-id");
+      current.addEventListener("click", () => {
+        const parent = current.parentElement;
+        if (!parent) return;
+        clicks += 1;
+        const timeout = document.defaultView?.setTimeout ?? window.setTimeout;
+        timeout(() => {
+          const holder = document.createElement("div");
+          holder.innerHTML = template;
+          const row = holder.firstElementChild as HTMLElement;
+          parent.insertBefore(row, current);
+          onRow?.(row);
+
+          const next = current.cloneNode(true) as HTMLElement;
+          next.removeAttribute("data-automation-id");
+          next.textContent = "Add Another";
+          current.replaceWith(next);
+          attach(next);
+        }, delayMs);
+      });
+    };
+    attach(button);
+    return () => clicks;
+  }
+
   function input(scope: Element | null, selector: string) {
     return scope?.querySelector(selector) as HTMLInputElement | null;
+  }
+
+  function wireControlledRecognition(row: HTMLElement, selector: string, key: string, recognized: Set<string>) {
+    const field = input(row, selector);
+    if (!field) return;
+    let focused = false;
+    field.addEventListener("focusin", () => {
+      focused = true;
+    });
+    const accept = () => {
+      if (focused && field.value.trim()) recognized.add(key);
+    };
+    field.addEventListener("input", accept);
+    field.addEventListener("change", accept);
+    field.addEventListener("focusout", accept);
+    field.addEventListener("blur", accept);
+  }
+
+  function wireWorkExperienceRecognition(row: HTMLElement, recognized: Set<string>) {
+    wireControlledRecognition(row, "[data-automation-id='formField-jobTitle'] input", "title", recognized);
+    wireControlledRecognition(row, "[data-automation-id='formField-companyName'] input", "company", recognized);
+    wireControlledRecognition(row, "[data-automation-id='formField-startDate'] [data-automation-id='dateSectionMonth-input']", "from-month", recognized);
+    wireControlledRecognition(row, "[data-automation-id='formField-startDate'] [data-automation-id='dateSectionYear-input']", "from-year", recognized);
+    wireControlledRecognition(row, "[data-automation-id='formField-endDate'] [data-automation-id='dateSectionMonth-input']", "to-month", recognized);
+    wireControlledRecognition(row, "[data-automation-id='formField-endDate'] [data-automation-id='dateSectionYear-input']", "to-year", recognized);
   }
 
   function setupBlank() {
@@ -1854,6 +1913,403 @@ describe("fillWorkdayExperience — blank repeater pages", () => {
       "Massachusetts Institute of Technology",
     ]);
     expect(clicks()).toEqual({ work: 2, education: 2 });
+  });
+
+  it("fills the first Workday work row before clicking Add Another for the second", async () => {
+    const { document } = setupExperienceDom(`<!doctype html>
+      <div data-automation-id="progressBarActiveStep">My Experience</div>
+      <main data-automation-id="applyFlowMyExpPage">
+        <h3>Work Experience</h3>
+        ${WORK_ROW_TEMPLATE}
+        <button type="button">Add Another</button>
+      </main>`);
+    const addButton = Array.from(document.querySelectorAll("button")).find((button) =>
+      button.textContent?.trim() === "Add Another",
+    ) as HTMLElement;
+    let clicks = 0;
+    addButton.addEventListener("click", () => {
+      clicks += 1;
+      const firstRow = document.querySelector("[data-row='work']") as HTMLElement;
+      if (!input(firstRow, "[data-automation-id='formField-jobTitle'] input")?.value) return;
+      const holder = document.createElement("div");
+      holder.innerHTML = WORK_ROW_TEMPLATE;
+      addButton.parentElement?.insertBefore(holder.firstElementChild as HTMLElement, addButton);
+    });
+
+    await fillWorkdayExperience(
+      context({
+        ...baseProfile,
+        experience: [
+          {
+            title: "Analyst (Product)",
+            company: "ION Group",
+            location: "Hyderabad, India",
+            startDate: "2021-10",
+            endDate: "2026-03",
+            current: false,
+            bullets: [],
+          },
+          {
+            title: "Product Intern",
+            company: "Acme Labs",
+            location: "Remote",
+            startDate: "2020-01",
+            endDate: "2021-09",
+            current: false,
+            bullets: [],
+          },
+        ],
+        education: [],
+        skills: [],
+      }),
+    );
+
+    const workRows = Array.from(document.querySelectorAll<HTMLElement>("[data-row='work']"));
+    expect(workRows).toHaveLength(2);
+    expect(workRows.map((row) => input(row, "[data-automation-id='formField-jobTitle'] input")?.value)).toEqual([
+      "Analyst (Product)",
+      "Product Intern",
+    ]);
+    expect(clicks).toBe(1);
+  });
+
+  it("detects Workday work rows even when row wrappers do not expose role=group", async () => {
+    const workRow = WORK_ROW_TEMPLATE.replace('section role="group"', "section");
+    const { document } = setupExperienceDom(`<!doctype html>
+      <div data-automation-id="progressBarActiveStep">My Experience</div>
+      <main data-automation-id="applyFlowMyExpPage">
+        <h3>Work Experience</h3>
+        ${workRow}
+        <button type="button">Add Another</button>
+      </main>`);
+    const addButton = Array.from(document.querySelectorAll("button")).find((button) =>
+      button.textContent?.trim() === "Add Another",
+    ) as HTMLElement;
+    addButton.addEventListener("click", () => {
+      const firstRow = document.querySelector("[data-row='work']") as HTMLElement;
+      if (!input(firstRow, "[data-automation-id='formField-jobTitle'] input")?.value) return;
+      const holder = document.createElement("div");
+      holder.innerHTML = workRow;
+      addButton.parentElement?.insertBefore(holder.firstElementChild as HTMLElement, addButton);
+    });
+
+    await fillWorkdayExperience(
+      context({
+        ...baseProfile,
+        experience: [
+          {
+            title: "Analyst (Product)",
+            company: "ION Group",
+            location: "Hyderabad, India",
+            startDate: "2021-10",
+            endDate: "2026-03",
+            current: false,
+            bullets: [],
+          },
+          {
+            title: "Product Intern",
+            company: "Acme Labs",
+            location: "Remote",
+            startDate: "2020-01",
+            endDate: "2021-09",
+            current: false,
+            bullets: [],
+          },
+        ],
+        education: [],
+        skills: [],
+      }),
+    );
+
+    const workRows = Array.from(document.querySelectorAll<HTMLElement>("[data-row='work']"));
+    expect(workRows).toHaveLength(2);
+    expect(workRows.map((row) => input(row, "[data-automation-id='formField-jobTitle'] input")?.value)).toEqual([
+      "Analyst (Product)",
+      "Product Intern",
+    ]);
+  });
+
+  it("fills Workday rows when individual field wrappers expose role=group", async () => {
+    const workRow = WORK_ROW_TEMPLATE
+      .replace('section role="group"', "section")
+      .replaceAll("<div data-automation-id=\"formField-", "<div role=\"group\" data-automation-id=\"formField-");
+    const { document } = setupExperienceDom(`<!doctype html>
+      <div data-automation-id="progressBarActiveStep">My Experience</div>
+      <main data-automation-id="applyFlowMyExpPage">
+        <h3>Work Experience</h3>
+        ${workRow}
+      </main>`);
+
+    await fillWorkdayExperience(
+      context({
+        ...baseProfile,
+        experience: [
+          {
+            title: "Analyst (Product)",
+            company: "ION Group",
+            location: "Hyderabad, India",
+            startDate: "2021-10",
+            endDate: "2026-03",
+            current: false,
+            bullets: [],
+          },
+        ],
+        education: [],
+        skills: [],
+      }),
+    );
+
+    const row = document.querySelector<HTMLElement>("[data-row='work']") as HTMLElement;
+    expect(input(row, "[data-automation-id='formField-jobTitle'] input")?.value).toBe("Analyst (Product)");
+    expect(input(row, "[data-automation-id='formField-companyName'] input")?.value).toBe("ION Group");
+    expect(input(row, "[data-automation-id='formField-location'] input")?.value).toBe("Hyderabad, India");
+  });
+
+  it("fills the whole Workday row when fields are split across nested groups", async () => {
+    const splitWorkRow = `<section data-row="work">
+      <div data-subgroup="summary">
+        <div data-automation-id="formField-jobTitle"><input /></div>
+        <div data-automation-id="formField-companyName"><input /></div>
+      </div>
+      <div data-subgroup="details">
+        <div data-automation-id="formField-location"><input /></div>
+        <div data-automation-id="formField-currentlyWorkHere"><input type="checkbox" /></div>
+        <div data-automation-id="formField-startDate"><input data-automation-id="dateSectionMonth-input" aria-label="Month" /><input data-automation-id="dateSectionYear-input" aria-label="Year" /></div>
+        <div data-automation-id="formField-endDate"><input data-automation-id="dateSectionMonth-input" aria-label="Month" /><input data-automation-id="dateSectionYear-input" aria-label="Year" /></div>
+        <div data-automation-id="formField-roleDescription"><textarea></textarea></div>
+      </div>
+    </section>`;
+    const { document } = setupExperienceDom(`<!doctype html>
+      <div data-automation-id="progressBarActiveStep">My Experience</div>
+      <main data-automation-id="applyFlowMyExpPage">
+        <h3>Work Experience</h3>
+        ${splitWorkRow}
+      </main>`);
+
+    await fillWorkdayExperience(
+      context({
+        ...baseProfile,
+        experience: [
+          {
+            title: "Analyst (Product)",
+            company: "ION Group",
+            location: "Hyderabad, India",
+            startDate: "2021-10",
+            endDate: "2026-03",
+            current: false,
+            bullets: ["Owned RAG workflow"],
+          },
+        ],
+        education: [],
+        skills: [],
+      }),
+    );
+
+    const row = document.querySelector<HTMLElement>("[data-row='work']") as HTMLElement;
+    expect(input(row, "[data-automation-id='formField-jobTitle'] input")?.value).toBe("Analyst (Product)");
+    expect(input(row, "[data-automation-id='formField-companyName'] input")?.value).toBe("ION Group");
+    expect(input(row, "[data-automation-id='formField-location'] input")?.value).toBe("Hyderabad, India");
+    expect(input(row, "[data-automation-id='formField-startDate'] [data-automation-id='dateSectionMonth-input']")?.value).toBe("10");
+    expect(input(row, "[data-automation-id='formField-startDate'] [data-automation-id='dateSectionYear-input']")?.value).toBe("2021");
+    expect(input(row, "[data-automation-id='formField-endDate'] [data-automation-id='dateSectionMonth-input']")?.value).toBe("03");
+    expect(input(row, "[data-automation-id='formField-endDate'] [data-automation-id='dateSectionYear-input']")?.value).toBe("2026");
+    expect((row.querySelector("[data-automation-id='formField-roleDescription'] textarea") as HTMLTextAreaElement).value).toBe(
+      "Owned RAG workflow",
+    );
+  });
+
+  it("fills the first Workday education row before clicking Add Another for the second", async () => {
+    const { document } = setupExperienceDom(`<!doctype html>
+      <div data-automation-id="progressBarActiveStep">My Experience</div>
+      <main data-automation-id="applyFlowMyExpPage">
+        <h3>Education</h3>
+        ${EDUCATION_ROW_TEMPLATE}
+        <button type="button">Add Another</button>
+      </main>`);
+    const addButton = Array.from(document.querySelectorAll("button")).find((button) =>
+      button.textContent?.trim() === "Add Another",
+    ) as HTMLElement;
+    addButton.addEventListener("click", () => {
+      const firstRow = document.querySelector("[data-row='education']") as HTMLElement;
+      if (!input(firstRow, "[data-automation-id='formField-schoolName'] input")?.value) return;
+      const holder = document.createElement("div");
+      holder.innerHTML = EDUCATION_ROW_TEMPLATE;
+      addButton.parentElement?.insertBefore(holder.firstElementChild as HTMLElement, addButton);
+    });
+
+    await fillWorkdayExperience(
+      context({
+        ...baseProfile,
+        experience: [],
+        education: [
+          { school: "Stanford University" },
+          { school: "Massachusetts Institute of Technology" },
+        ],
+        skills: [],
+      }),
+    );
+
+    const rows = Array.from(document.querySelectorAll<HTMLElement>("[data-row='education']"));
+    expect(rows).toHaveLength(2);
+    expect(rows.map((row) => input(row, "[data-automation-id='formField-schoolName'] input")?.value)).toEqual([
+      "Stanford University",
+      "Massachusetts Institute of Technology",
+    ]);
+  }, 15000);
+
+  it("waits for delayed text-only Add Another buttons and fills the second work experience", async () => {
+    const { document } = setupExperienceDom(blankHtml());
+    const workButton = document.querySelector<HTMLElement>("[data-section='work']") as HTMLElement;
+    const workClicks = wireDelayedTextAddButton(document, workButton, WORK_ROW_TEMPLATE, 1800);
+
+    await fillWorkdayExperience(
+      context({
+        ...baseProfile,
+        experience: [
+          {
+            title: "Analyst (Product)",
+            company: "ION Group",
+            location: "Hyderabad, India",
+            startDate: "2021-10",
+            endDate: "2026-03",
+            current: false,
+            bullets: [],
+          },
+          {
+            title: "Product Intern",
+            company: "Acme Labs",
+            location: "Remote",
+            startDate: "2020-01",
+            endDate: "2021-09",
+            current: false,
+            bullets: [],
+          },
+        ],
+        education: [],
+        skills: [],
+      }),
+    );
+
+    const workRows = Array.from(document.querySelectorAll<HTMLElement>("[data-row='work']"));
+    expect(workRows).toHaveLength(2);
+    expect(workRows.map((row) => input(row, "[data-automation-id='formField-jobTitle'] input")?.value)).toEqual([
+      "Analyst (Product)",
+      "Product Intern",
+    ]);
+    expect(workRows.map((row) => input(row, "[data-automation-id='formField-location'] input")?.value)).toEqual([
+      "Hyderabad, India",
+      "Remote",
+    ]);
+    expect(workClicks()).toBe(2);
+  }, 20000);
+
+  it("does not type suspicious metadata fragments into Workday work location", async () => {
+    const { document } = setupBlank();
+
+    await fillWorkdayExperience(
+      context({
+        ...baseProfile,
+        location: { ...baseProfile.location, city: "Hyderabad", country: "India" },
+        experience: [
+          {
+            title: "Analyst (Product)",
+            company: "ION Group",
+            location: "Platform, Tier",
+            startDate: "2021-10",
+            endDate: "2026-03",
+            current: false,
+            bullets: [],
+          },
+        ],
+        education: [],
+        skills: [],
+      }),
+    );
+
+    const work = document.querySelector("[data-row='work']") as HTMLElement;
+    expect(input(work, "[data-automation-id='formField-location'] input")?.value).toBe("Hyderabad, India");
+  });
+
+  it("commits Workday-controlled text and date fields after filling them", async () => {
+    const { document } = setupExperienceDom(blankHtml());
+    const workButton = document.querySelector<HTMLElement>("[data-section='work']") as HTMLElement;
+    const recognized = new Set<string>();
+    wireAddButton(document, workButton, WORK_ROW_TEMPLATE, (row) => wireWorkExperienceRecognition(row, recognized));
+
+    await fillWorkdayExperience(
+      context({
+        ...baseProfile,
+        experience: [
+          {
+            title: "Analyst (Product)",
+            company: "ION Group",
+            location: "Hyderabad, India",
+            startDate: "2021-10",
+            endDate: "2026-03",
+            current: false,
+            bullets: [],
+          },
+        ],
+        education: [],
+        skills: [],
+      }),
+    );
+
+    expect(Array.from(recognized).sort()).toEqual([
+      "company",
+      "from-month",
+      "from-year",
+      "title",
+      "to-month",
+      "to-year",
+    ]);
+  });
+
+  it("re-commits already-visible work row values instead of skipping the row", async () => {
+    const { document } = setupExperienceDom(`<!doctype html>
+      <div data-automation-id="progressBarActiveStep">My Experience</div>
+      <main data-automation-id="applyFlowMyExpPage">
+        <h3>Work Experience</h3>
+        ${WORK_ROW_TEMPLATE}
+        <button type="button">Add Another</button>
+      </main>`);
+    const row = document.querySelector("[data-row='work']") as HTMLElement;
+    input(row, "[data-automation-id='formField-jobTitle'] input")!.value = "Analyst (Product)";
+    input(row, "[data-automation-id='formField-companyName'] input")!.value = "ION Group";
+    input(row, "[data-automation-id='formField-startDate'] [data-automation-id='dateSectionMonth-input']")!.value = "10";
+    input(row, "[data-automation-id='formField-startDate'] [data-automation-id='dateSectionYear-input']")!.value = "2021";
+    input(row, "[data-automation-id='formField-endDate'] [data-automation-id='dateSectionMonth-input']")!.value = "03";
+    input(row, "[data-automation-id='formField-endDate'] [data-automation-id='dateSectionYear-input']")!.value = "2026";
+    const recognized = new Set<string>();
+    wireWorkExperienceRecognition(row, recognized);
+
+    await fillWorkdayExperience(
+      context({
+        ...baseProfile,
+        experience: [
+          {
+            title: "Analyst (Product)",
+            company: "ION Group",
+            location: "Hyderabad, India",
+            startDate: "2021-10",
+            endDate: "2026-03",
+            current: false,
+            bullets: [],
+          },
+        ],
+        education: [],
+        skills: [],
+      }),
+    );
+
+    expect(Array.from(recognized).sort()).toEqual([
+      "company",
+      "from-month",
+      "from-year",
+      "title",
+      "to-month",
+      "to-year",
+    ]);
   });
 
   it("checks 'currently work here' and leaves the end date empty for a current role", async () => {

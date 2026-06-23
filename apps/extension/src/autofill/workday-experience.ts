@@ -3,13 +3,13 @@ import type {
   ExtensionFieldFillRecord,
   MasterProfileEducation,
   MasterProfileExperience,
+  MasterProfileLocation,
 } from "@jobposted/shared";
 import {
   activateDropdownOption,
   activateElement,
   dispatchKey,
   isVisible,
-  setText,
   sleep,
 } from "./fill";
 import { bestMatch, fuzzyScore } from "./fuzzy-match";
@@ -33,6 +33,7 @@ const HEADING_SELECTOR = "h1, h2, h3, h4, h5, [role='heading']";
 const OPTION_MATCH_THRESHOLD = 0.55;
 const SCHOOL_MATCH_THRESHOLD = 0.55;
 const MAX_REPEATER_ROWS = 8;
+const REPEATER_ROW_WAIT_MS = 8000;
 const PROFILE_SKILLS_LIMIT = 60;
 const SKILLS_MAX_SELECTED = PROFILE_SKILLS_LIMIT;
 const SKILLS_MAX_SEARCHES = PROFILE_SKILLS_LIMIT;
@@ -42,7 +43,7 @@ const SKILL_OPTION_CLIPPED_RATIO = 0.05;
 const WORKDAY_PROMPT_ROW_SELECTOR = "[role='option'], [id^='menuItem'], [data-automation-id*='menuItem' i]";
 const WORKDAY_CHOICE_CONTROL_SELECTOR =
   "[role='checkbox'], [data-automation-id*='checkbox' i], input[type='checkbox'], [role='radio'], input[type='radio']";
-const WORKDAY_EXPERIENCE_BUILD_TAG = "wd-skills-expanded-cap-2026-06-23";
+const WORKDAY_EXPERIENCE_BUILD_TAG = "wd-setup-authoritative-exact-skills-2026-06-23";
 
 const EXPERIENCE_FIELDS = {
   jobTitle: "[data-automation-id='formField-jobTitle']",
@@ -53,6 +54,30 @@ const EXPERIENCE_FIELDS = {
   endDate: "[data-automation-id='formField-endDate']",
   description: "[data-automation-id='formField-roleDescription']",
 } as const;
+
+const NON_LOCATION_FRAGMENTS = new Set([
+  "analytics",
+  "business",
+  "business unit",
+  "department",
+  "domain",
+  "engineering",
+  "function",
+  "grade",
+  "level",
+  "platform",
+  "product",
+  "program",
+  "project",
+  "role",
+  "software",
+  "strategy",
+  "team",
+  "technology",
+  "tier",
+  "vertical",
+  "workstream",
+]);
 const EDUCATION_FIELDS = {
   school: "[data-automation-id='formField-schoolName']",
   degree: "[data-automation-id='formField-degree']",
@@ -103,6 +128,72 @@ function describeOptions(doc: Document, ignored: IgnoredOptions) {
 function dispatchInputChange(element: HTMLElement) {
   element.dispatchEvent(new Event("input", { bubbles: true }));
   element.dispatchEvent(new Event("change", { bubbles: true }));
+}
+
+function nativeTextSetter(element: HTMLInputElement | HTMLTextAreaElement, value: string) {
+  const proto = element instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+  const setter = Object.getOwnPropertyDescriptor(proto, "value")?.set;
+  setter?.call(element, value);
+  if (element.value !== value) element.value = value;
+}
+
+function dispatchFocusLike(element: HTMLElement, type: "focus" | "focusin" | "focusout" | "blur") {
+  const bubbles = type === "focusin" || type === "focusout";
+  try {
+    element.dispatchEvent(new FocusEvent(type, { bubbles }));
+  } catch {
+    element.dispatchEvent(new Event(type, { bubbles }));
+  }
+}
+
+function dispatchInputLike(element: HTMLElement, type: "beforeinput" | "input", value: string) {
+  const InputEventCtor =
+    element.ownerDocument.defaultView?.InputEvent ?? (typeof InputEvent !== "undefined" ? InputEvent : undefined);
+  if (InputEventCtor) {
+    element.dispatchEvent(
+      new InputEventCtor(type, {
+        bubbles: true,
+        cancelable: type === "beforeinput",
+        data: value,
+        inputType: "insertText",
+      }),
+    );
+    return;
+  }
+  element.dispatchEvent(new Event(type, { bubbles: true, cancelable: type === "beforeinput" }));
+}
+
+function commitWorkdayField(element: HTMLElement, wrapper?: HTMLElement | null, value = "") {
+  element.focus?.();
+  dispatchFocusLike(element, "focus");
+  dispatchFocusLike(element, "focusin");
+  dispatchInputLike(element, "input", value);
+  element.dispatchEvent(new Event("change", { bubbles: true }));
+  if (wrapper && wrapper !== element) {
+    wrapper.dispatchEvent(new Event("input", { bubbles: true }));
+    wrapper.dispatchEvent(new Event("change", { bubbles: true }));
+  }
+  dispatchKey(element, "Tab");
+  element.blur?.();
+  dispatchFocusLike(element, "focusout");
+  dispatchFocusLike(element, "blur");
+}
+
+function setWorkdayText(element: HTMLElement, value: string, wrapper?: HTMLElement | null) {
+  element.focus?.();
+  dispatchFocusLike(element, "focus");
+  dispatchFocusLike(element, "focusin");
+  dispatchInputLike(element, "beforeinput", value);
+  if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) {
+    nativeTextSetter(element, value);
+    if (element instanceof HTMLInputElement) element.setAttribute("value", value);
+  } else if (element.isContentEditable || element.getAttribute("role") === "textbox") {
+    element.textContent = value;
+    element.setAttribute("aria-valuetext", value);
+  } else {
+    element.setAttribute("value", value);
+  }
+  commitWorkdayField(element, wrapper, value);
 }
 
 function setTypeaheadText(input: HTMLInputElement, value: string) {
@@ -443,6 +534,19 @@ function strictOptionMatchesTarget(option: HTMLElement, target: string) {
   return chipTextMatchesTarget(optionLabel(option), target);
 }
 
+function optionMatchesLiteralTarget(option: HTMLElement, targets: string[]) {
+  const label = optionLabelKey(option);
+  return Boolean(label && targets.some((target) => normalizeText(target) === label));
+}
+
+function bestLiteralExactOptionForTargets(options: HTMLElement[], targets: string[]) {
+  for (const target of targets) {
+    const option = bestLiteralExactSkillOption(options, target);
+    if (option) return option;
+  }
+  return null;
+}
+
 function bestMatchingStrictOptionForTargets(options: HTMLElement[], targets: string[]) {
   for (const target of targets) {
     const option = options.find((candidate) => strictOptionMatchesTarget(candidate, target));
@@ -531,6 +635,55 @@ function bestMatchingSkillOption(options: HTMLElement[], targets: string[]) {
   return best && best.rawScore >= 0.72 ? best.option : null;
 }
 
+async function scanForLiteralExactOption(
+  doc: Document,
+  ignoredOptions: IgnoredOptions,
+  targets: string[],
+  shouldStop?: StopCheck,
+) {
+  const current = bestLiteralExactOptionForTargets(optionCandidates(doc, ignoredOptions), targets);
+  if (current) return current;
+
+  const popups = Array.from(doc.querySelectorAll<HTMLElement>(OPTION_POPUP_SELECTOR)).filter(
+    (popup) =>
+      isVisible(popup) &&
+      !popup.hasAttribute("hidden") &&
+      popup.getAttribute("aria-hidden") !== "true" &&
+      popup.scrollHeight > popup.clientHeight,
+  );
+
+  for (const popup of popups) {
+    const originalTop = popup.scrollTop;
+    const maxTop = Math.max(0, popup.scrollHeight - popup.clientHeight);
+    const step = Math.max(48, (popup.clientHeight || 160) - 32);
+    const positions = Array.from(
+      new Set([
+        0,
+        ...Array.from({ length: Math.ceil(maxTop / step) + 1 }, (_, index) => Math.min(maxTop, index * step)),
+        maxTop,
+      ]),
+    );
+
+    for (const position of positions) {
+      if (shouldStop?.()) return null;
+      popup.scrollTop = position;
+      popup.dispatchEvent(new Event("scroll", { bubbles: true }));
+      await sleep(180);
+      const found = bestLiteralExactOptionForTargets(optionCandidates(doc, ignoredOptions), targets);
+      if (found) {
+        scrollOptionIntoWorkdayView(found);
+        await sleep(160);
+        return bestLiteralExactOptionForTargets(optionCandidates(doc, ignoredOptions), targets) ?? found;
+      }
+    }
+
+    popup.scrollTop = originalTop;
+    popup.dispatchEvent(new Event("scroll", { bubbles: true }));
+  }
+
+  return null;
+}
+
 function bestSameLabelOption(options: HTMLElement[], label: string) {
   const labelKey = normalizeText(label);
   if (!labelKey) return null;
@@ -566,6 +719,7 @@ async function activationReadyOption(
   targets: string[],
   optionMatcher: (options: HTMLElement[], targets: string[]) => HTMLElement | null,
   shouldStop?: StopCheck,
+  preferLiteralExact = false,
 ) {
   let candidate = option;
   const beforeRatio = optionVisibleClipRatio(candidate);
@@ -577,7 +731,7 @@ async function activationReadyOption(
   }
 
   const afterRatio = optionVisibleClipRatio(candidate);
-  if (afterRatio <= SKILL_OPTION_CLIPPED_RATIO) {
+  if (afterRatio <= SKILL_OPTION_CLIPPED_RATIO && !(preferLiteralExact && optionMatchesLiteralTarget(candidate, targets))) {
     const candidateKey = optionLabelKey(candidate);
     const alternative = optionMatcher(
       optionCandidates(doc, ignoredOptions).filter((other) => optionLabelKey(other) !== candidateKey),
@@ -1045,6 +1199,8 @@ async function fillTypeaheadValue(
     listSettleMs?: number;
     noItemsSettleMs?: number;
     chipCommitWaitMs?: number;
+    preferLiteralExact?: boolean;
+    exhaustLiteralExactBeforeFuzzy?: boolean;
   } = {},
 ) {
   const desired = visibleText(target);
@@ -1079,6 +1235,9 @@ async function fillTypeaheadValue(
       { listSettleMs: options.listSettleMs, noItemsSettleMs: options.noItemsSettleMs },
     );
     wdlog("phase1", searchValue, "matched:", option ? optionLabel(option) : null, describeOptions(doc, ignoredOptions));
+    if (options.exhaustLiteralExactBeforeFuzzy && option && !optionMatchesLiteralTarget(option, searchTargets)) {
+      option = null;
+    }
     if (!option) {
       // Press Enter to kick off Workday's async search, then wait patiently for the result rows to
       // render (the "wait a second after Enter" step). We do NOT bail early just because some rows are
@@ -1096,6 +1255,9 @@ async function fillTypeaheadValue(
         options.optionMatcher,
         { listSettleMs: options.listSettleMs, noItemsSettleMs: options.noItemsSettleMs },
       );
+      if (options.exhaustLiteralExactBeforeFuzzy) {
+        option = (await scanForLiteralExactOption(doc, ignoredOptions, searchTargets, options.shouldStop)) ?? option;
+      }
       const matcherNow = (options.optionMatcher ?? bestMatchingOptionForTargets)(
         optionCandidates(doc, ignoredOptions),
         searchTargets,
@@ -1121,7 +1283,16 @@ async function fillTypeaheadValue(
 
     while (option && attemptedOptions.size < 4) {
       const requestedOption = option;
-      option = await activationReadyOption(option, doc, ignoredOptions, searchTargets, optionMatcher, options.shouldStop);
+      option = await activationReadyOption(
+        option,
+        doc,
+        ignoredOptions,
+        searchTargets,
+        optionMatcher,
+        options.shouldStop,
+        options.preferLiteralExact,
+      );
+      const activatedLiteralExact = Boolean(options.preferLiteralExact && optionMatchesLiteralTarget(option, searchTargets));
       attemptedOptions.add(requestedOption);
       attemptedOptions.add(option);
       attemptedSignatures.add(optionSignature(requestedOption));
@@ -1176,6 +1347,13 @@ async function fillTypeaheadValue(
         dispatchTypeaheadKey(input, "Escape");
         wdlog("SELECTED", searchValue, "->", selectedChipTexts(container));
         return true;
+      }
+      if (activatedLiteralExact) {
+        wdlog("literal exact option did not commit; not retrying synonym", {
+          requested: searchValue,
+          option: optionLabel(option),
+        });
+        break;
       }
 
       option = optionMatcher(
@@ -1252,6 +1430,8 @@ async function fillSkills(root: HTMLElement, context: FillContext) {
       listSettleMs: SKILLS_LIST_SETTLE_MS,
       noItemsSettleMs: SKILLS_NO_ITEMS_SETTLE_MS,
       chipCommitWaitMs: SKILLS_CHIP_COMMIT_WAIT_MS,
+      preferLiteralExact: true,
+      exhaustLiteralExactBeforeFuzzy: true,
     });
     misses = filled ? 0 : misses + 1;
     wdlog("skill result:", skill, "filled:", filled, "misses:", misses, "chips:", selectedChipTexts(container));
@@ -1278,7 +1458,12 @@ async function fillSkills(root: HTMLElement, context: FillContext) {
 // Plain controls: text / textarea, checkbox, segmented date
 // ---------------------------------------------------------------------------
 
-function fillTextWrapper(row: HTMLElement, selector: string, value: string | null | undefined) {
+function fillTextWrapper(
+  row: HTMLElement,
+  selector: string,
+  value: string | null | undefined,
+  options: { commitExisting?: boolean } = {},
+) {
   const desired = (value ?? "").trim(); // preserve internal newlines (multi-line role descriptions)
   if (!desired) return;
   const wrapper = row.querySelector<HTMLElement>(selector);
@@ -1288,8 +1473,11 @@ function fillTextWrapper(row: HTMLElement, selector: string, value: string | nul
   const existing = visibleText(
     (input as HTMLInputElement | HTMLTextAreaElement).value ?? input.textContent,
   );
-  if (existing) return;
-  setText(input, desired);
+  if (existing) {
+    if (options.commitExisting) commitWorkdayField(input, wrapper, existing);
+    return;
+  }
+  setWorkdayText(input, desired, wrapper);
 }
 
 function isBoxChecked(box: HTMLElement) {
@@ -1343,41 +1531,89 @@ function dateInput(wrapper: HTMLElement, idSelector: string, labelHint: RegExp) 
   );
 }
 
-function setDate(row: HTMLElement, selector: string, parsed: ParsedDate, options: { yearOnly?: boolean } = {}) {
+function setDate(
+  row: HTMLElement,
+  selector: string,
+  parsed: ParsedDate,
+  options: { yearOnly?: boolean; commitExisting?: boolean } = {},
+) {
   const wrapper = row.querySelector<HTMLElement>(selector);
   if (!wrapper || (parsed.month == null && parsed.year == null)) return;
 
   const yearField =
     dateInput(wrapper, "[data-automation-id='dateSectionYear-input']", /year/i) ??
     wrapper.querySelector<HTMLInputElement>("input:not([type='hidden'])");
-  if (yearField && parsed.year != null && !visibleText(yearField.value)) {
-    setText(yearField, String(parsed.year));
-  }
-  if (options.yearOnly) return;
-
   const monthField = dateInput(wrapper, "[data-automation-id='dateSectionMonth-input']", /month/i);
-  if (monthField && parsed.month != null && !visibleText(monthField.value)) {
-    setText(monthField, String(parsed.month).padStart(2, "0"));
+  let committed = false;
+
+  if (!options.yearOnly && monthField && parsed.month != null) {
+    const month = String(parsed.month).padStart(2, "0");
+    if (visibleText(monthField.value)) {
+      if (options.commitExisting) {
+        commitWorkdayField(monthField, wrapper, monthField.value);
+        committed = true;
+      }
+    } else {
+      setWorkdayText(monthField, month, wrapper);
+      committed = true;
+    }
   }
+  if (yearField && parsed.year != null) {
+    const year = String(parsed.year);
+    if (visibleText(yearField.value)) {
+      if (options.commitExisting) {
+        commitWorkdayField(yearField, wrapper, yearField.value);
+        committed = true;
+      }
+    } else {
+      setWorkdayText(yearField, year, wrapper);
+      committed = true;
+    }
+  }
+  const committedValue = [
+    !options.yearOnly ? visibleText(monthField?.value) : "",
+    visibleText(yearField?.value),
+  ].filter(Boolean).join("/");
+  if (committed && committedValue) {
+    wrapper.dispatchEvent(new Event("input", { bubbles: true }));
+    wrapper.dispatchEvent(new Event("change", { bubbles: true }));
+    dispatchFocusLike(wrapper, "focusout");
+    dispatchFocusLike(wrapper, "blur");
+  }
+}
+
+function profileLocationText(location: MasterProfileLocation) {
+  const parts = [location.city, location.state, location.country].map(visibleText).filter(Boolean);
+  return Array.from(new Set(parts)).join(", ");
+}
+
+function nonLocationPart(part: string) {
+  if (NON_LOCATION_FRAGMENTS.has(part)) return true;
+  const words = part.split(/\s+/).filter(Boolean);
+  return words.length > 0 && words.every((word) => NON_LOCATION_FRAGMENTS.has(word));
+}
+
+function suspiciousExperienceLocation(value: string) {
+  const text = visibleText(value);
+  if (!text) return false;
+  if (text.length > 80 || /[.!?;]/.test(text)) return true;
+  const normalized = normalizeText(text);
+  const parts = normalized.split(/[,/|]+/).map((part) => part.trim()).filter(Boolean);
+  if (parts.length > 0 && parts.every(nonLocationPart)) return true;
+  return /\bplatform\b/.test(normalized) && /\btier\b/.test(normalized);
+}
+
+function workExperienceLocation(experience: MasterProfileExperience, fallbackLocation: MasterProfileLocation) {
+  const raw = visibleText(experience.location);
+  if (raw && !suspiciousExperienceLocation(raw)) return raw;
+  const fallback = profileLocationText(fallbackLocation);
+  if (raw) wdlog("skipping suspicious work location", { raw, fallback });
+  return fallback;
 }
 
 // ---------------------------------------------------------------------------
 // Repeater rows (Work Experience, Education)
 // ---------------------------------------------------------------------------
-
-function rowsBySignature(root: HTMLElement, requiredSelector: string) {
-  return Array.from(root.querySelectorAll<HTMLElement>("[role='group']")).filter((group) =>
-    group.querySelector(requiredSelector),
-  );
-}
-
-function experienceRows(root: HTMLElement) {
-  return rowsBySignature(root, EXPERIENCE_FIELDS.jobTitle);
-}
-
-function educationRows(root: HTMLElement) {
-  return rowsBySignature(root, EDUCATION_FIELDS.school);
-}
 
 function headingPosition(root: HTMLElement, pattern: RegExp) {
   const order = Array.from(root.querySelectorAll<HTMLElement>("*"));
@@ -1392,6 +1628,65 @@ function headingPosition(root: HTMLElement, pattern: RegExp) {
   return { order, startIndex, endIndex: nextHeadingIndex ?? order.length };
 }
 
+function elementWithinHeadingPosition(element: HTMLElement, located: ReturnType<typeof headingPosition>) {
+  if (!located) return true;
+  const index = located.order.indexOf(element);
+  return index > located.startIndex && index < located.endIndex;
+}
+
+function selectorMatchesSelfOrDescendant(element: HTMLElement, selector: string) {
+  return element.matches(selector) || Boolean(element.querySelector(selector));
+}
+
+function selectorMatchCount(element: HTMLElement, selector: string) {
+  return (element.matches(selector) ? 1 : 0) + element.querySelectorAll(selector).length;
+}
+
+function repeaterFieldCount(element: HTMLElement, allSelectors: readonly string[]) {
+  return allSelectors.filter((selector) => selectorMatchesSelfOrDescendant(element, selector)).length;
+}
+
+function rowForField(field: HTMLElement, root: HTMLElement, requiredSelector: string, allSelectors: readonly string[]) {
+  let best: HTMLElement | null = null;
+  for (let node: HTMLElement | null = field; node && node !== root && node !== field.ownerDocument.body; node = node.parentElement) {
+    const requiredCount = selectorMatchCount(node, requiredSelector);
+    if (requiredCount > 1) break;
+    if (requiredCount === 1 && repeaterFieldCount(node, allSelectors) >= 2) best = node;
+  }
+  return best ?? field.parentElement ?? field;
+}
+
+function rowsBySectionFields(root: HTMLElement, pattern: RegExp, requiredSelector: string, allSelectors: readonly string[]) {
+  const located = headingPosition(root, pattern);
+  const fields = Array.from(root.querySelectorAll<HTMLElement>(requiredSelector)).filter((field) =>
+    elementWithinHeadingPosition(field, located),
+  );
+  return uniqueElements(fields.map((field) => rowForField(field, root, requiredSelector, allSelectors)));
+}
+
+function experienceRows(root: HTMLElement) {
+  return rowsBySectionFields(root, /work experience|employment/i, EXPERIENCE_FIELDS.jobTitle, [
+    EXPERIENCE_FIELDS.jobTitle,
+    EXPERIENCE_FIELDS.company,
+    EXPERIENCE_FIELDS.location,
+    EXPERIENCE_FIELDS.current,
+    EXPERIENCE_FIELDS.startDate,
+    EXPERIENCE_FIELDS.endDate,
+    EXPERIENCE_FIELDS.description,
+  ]);
+}
+
+function educationRows(root: HTMLElement) {
+  return rowsBySectionFields(root, /education/i, EDUCATION_FIELDS.school, [
+    EDUCATION_FIELDS.school,
+    EDUCATION_FIELDS.degree,
+    EDUCATION_FIELDS.field,
+    EDUCATION_FIELDS.gpa,
+    EDUCATION_FIELDS.startYear,
+    EDUCATION_FIELDS.endYear,
+  ]);
+}
+
 /** The Add / Add Another button belonging to the section whose heading matches `pattern`. */
 function sectionAddButton(root: HTMLElement, pattern: RegExp) {
   const located = headingPosition(root, pattern);
@@ -1399,9 +1694,21 @@ function sectionAddButton(root: HTMLElement, pattern: RegExp) {
   const { order, startIndex, endIndex } = located;
   for (let index = startIndex + 1; index < endIndex; index += 1) {
     const element = order[index];
-    if (element.matches?.(ADD_ROW_BUTTON) && isVisible(element)) return element;
+    if (isSectionAddButton(element) && isVisible(element)) return element;
   }
   return null;
+}
+
+function isSectionAddButton(element: HTMLElement) {
+  if (element.matches?.(ADD_ROW_BUTTON)) return true;
+  if (!element.matches?.("button, [role='button'], input[type='button'], input[type='submit']")) return false;
+  const text = visibleText(
+    (element as HTMLInputElement).value ||
+      element.getAttribute("aria-label") ||
+      element.getAttribute("title") ||
+      element.textContent,
+  );
+  return /^(?:\+?\s*)?add(?:\s+another)?$/i.test(text);
 }
 
 async function ensureRows(
@@ -1418,11 +1725,24 @@ async function ensureRows(
     const addButton = addButtonAccessor();
     if (!addButton) break;
     const before = rows.length;
+    addButton.scrollIntoView?.({ block: "center", inline: "nearest" });
     activateElement(addButton);
-    const grew = await waitForRowCount(rowsAccessor, before + 1, 1200, shouldStop);
+    let grew = await waitForRowCount(rowsAccessor, before + 1, 2800, shouldStop);
+    if (!grew) {
+      addButton.click?.();
+      grew = await waitForRowCount(rowsAccessor, before + 1, REPEATER_ROW_WAIT_MS, shouldStop);
+    }
     rows = rowsAccessor();
     attempts += 1;
-    if (!grew) break;
+    wdlog("ensureRows add attempt", {
+      desiredCount,
+      before,
+      after: rows.length,
+      grew,
+      buttonText: visibleText(addButton.textContent || addButton.getAttribute("aria-label")),
+      disabled: addButton.getAttribute("aria-disabled") || (addButton as HTMLButtonElement).disabled || null,
+    });
+    if (!grew) await sleep(500);
   }
   return rows;
 }
@@ -1441,17 +1761,22 @@ async function waitForRowCount(rowsAccessor: () => HTMLElement[], target: number
 // Section fillers
 // ---------------------------------------------------------------------------
 
-async function fillExperienceRow(row: HTMLElement, experience: MasterProfileExperience) {
-  fillTextWrapper(row, EXPERIENCE_FIELDS.jobTitle, experience.title);
-  fillTextWrapper(row, EXPERIENCE_FIELDS.company, experience.company);
-  fillTextWrapper(row, EXPERIENCE_FIELDS.location, experience.location);
+async function fillExperienceRow(
+  row: HTMLElement,
+  experience: MasterProfileExperience,
+  fallbackLocation: MasterProfileLocation,
+) {
+  const workFieldOptions = { commitExisting: true };
+  fillTextWrapper(row, EXPERIENCE_FIELDS.jobTitle, experience.title, workFieldOptions);
+  fillTextWrapper(row, EXPERIENCE_FIELDS.company, experience.company, workFieldOptions);
+  fillTextWrapper(row, EXPERIENCE_FIELDS.location, workExperienceLocation(experience, fallbackLocation), workFieldOptions);
   setCheckbox(row, EXPERIENCE_FIELDS.current, Boolean(experience.current));
-  setDate(row, EXPERIENCE_FIELDS.startDate, parseProfileDate(experience.startDate));
+  setDate(row, EXPERIENCE_FIELDS.startDate, parseProfileDate(experience.startDate), workFieldOptions);
   if (!experience.current) {
-    setDate(row, EXPERIENCE_FIELDS.endDate, parseProfileDate(experience.endDate));
+    setDate(row, EXPERIENCE_FIELDS.endDate, parseProfileDate(experience.endDate), workFieldOptions);
   }
   if (experience.bullets.length > 0) {
-    fillTextWrapper(row, EXPERIENCE_FIELDS.description, experience.bullets.join("\n"));
+    fillTextWrapper(row, EXPERIENCE_FIELDS.description, experience.bullets.join("\n"), workFieldOptions);
   }
 }
 
@@ -1459,19 +1784,43 @@ async function fillWorkExperienceSection(root: HTMLElement, context: FillContext
   const experiences = context.profile.experience.slice(0, MAX_REPEATER_ROWS);
   if (experiences.length === 0) return;
 
-  const rows = await ensureRows(
+  wdlog("work experience rows", {
+    desired: experiences.length,
+    existing: experienceRows(root).length,
+    titles: experiences.map((item) => item.title).filter(Boolean),
+  });
+
+  let rows = await ensureRows(
     () => experienceRows(root),
     () => sectionAddButton(root, /work experience|employment/i),
-    experiences.length,
+    1,
     context.shouldStop,
   );
 
-  for (let index = 0; index < rows.length && index < experiences.length; index += 1) {
+  for (let index = 0; index < experiences.length; index += 1) {
     if (context.shouldStop?.()) break;
+    rows = experienceRows(root);
+    if (rows.length <= index) {
+      rows = await ensureRows(
+        () => experienceRows(root),
+        () => sectionAddButton(root, /work experience|employment/i),
+        index + 1,
+        context.shouldStop,
+      );
+    }
     const row = rows[index];
-    const titleInput = row.querySelector<HTMLInputElement>(`${EXPERIENCE_FIELDS.jobTitle} input`);
-    if (visibleText(titleInput?.value)) continue; // respect resume-prefilled rows
-    await fillExperienceRow(row, experiences[index]);
+    if (!row) break;
+    await fillExperienceRow(row, experiences[index], context.profile.location);
+    await sleep(500);
+    if (index + 1 < experiences.length && experienceRows(root).length <= index + 1) {
+      wdlog("adding next work experience row", { nextIndex: index + 2, currentRows: experienceRows(root).length });
+      await ensureRows(
+        () => experienceRows(root),
+        () => sectionAddButton(root, /work experience|employment/i),
+        index + 2,
+        context.shouldStop,
+      );
+    }
   }
 }
 
@@ -1499,6 +1848,8 @@ async function fillSchool(row: HTMLElement, school: string | null | undefined, s
     await fillTypeaheadValue(wrapper, desired, { skipIfAnyExistingChip: true, shouldStop });
     return;
   }
+  const existing = visibleText((wrapper.querySelector("input, textarea") as HTMLInputElement | HTMLTextAreaElement | null)?.value);
+  if (existing) return;
   fillTextWrapper(row, EDUCATION_FIELDS.school, desired);
 }
 
@@ -1583,16 +1934,52 @@ async function fillEducationSection(root: HTMLElement, context: FillContext) {
   const education = context.profile.education.slice(0, MAX_REPEATER_ROWS);
   if (education.length === 0) return;
 
-  const rows = await ensureRows(
+  wdlog("education rows", {
+    desired: education.length,
+    existing: educationRows(root).length,
+    schools: education.map((item) => item.school).filter(Boolean),
+  });
+
+  let rows = educationRows(root);
+  if (rows.length >= education.length) {
+    for (const { row, education: item } of assignEducationRows(rows, education)) {
+      if (context.shouldStop?.()) break;
+      await fillEducationRow(row, item, context);
+    }
+    return;
+  }
+
+  rows = await ensureRows(
     () => educationRows(root),
     () => sectionAddButton(root, /education/i),
-    education.length,
+    1,
     context.shouldStop,
   );
 
-  for (const { row, education: item } of assignEducationRows(rows, education)) {
+  for (let index = 0; index < education.length; index += 1) {
     if (context.shouldStop?.()) break;
-    await fillEducationRow(row, item, context);
+    rows = educationRows(root);
+    if (rows.length <= index) {
+      rows = await ensureRows(
+        () => educationRows(root),
+        () => sectionAddButton(root, /education/i),
+        index + 1,
+        context.shouldStop,
+      );
+    }
+    const row = rows[index];
+    if (!row) break;
+    await fillEducationRow(row, education[index], context);
+    await sleep(500);
+    if (index + 1 < education.length && educationRows(root).length <= index + 1) {
+      wdlog("adding next education row", { nextIndex: index + 2, currentRows: educationRows(root).length });
+      await ensureRows(
+        () => educationRows(root),
+        () => sectionAddButton(root, /education/i),
+        index + 2,
+        context.shouldStop,
+      );
+    }
   }
 }
 

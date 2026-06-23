@@ -21,7 +21,9 @@ export async function GET(request: Request) {
       jobId,
       documentId: docs.resume?.id ?? null,
       resumeUrl,
+      resumeName: docs.resume?.display_name ?? null,
       coverLetterUrl,
+      coverLetterName: docs.coverLetter?.display_name ?? null,
       genericResumeUsed: docs.genericResumeUsed,
       expiresAt: resumeUrl ? new Date(Date.now() + 300_000).toISOString() : null,
     };
