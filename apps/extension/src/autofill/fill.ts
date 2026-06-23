@@ -93,6 +93,28 @@ function markDocumentUploadHandled(doc: Document, key: ExtensionFieldMapping["ca
   if (flag) doc.documentElement.dataset[flag] = "true";
 }
 
+// A successfully attached file lives in the page (Workday renders a file-upload-item with a delete
+// control), but the per-document jpResumeAttached flag is wiped whenever Workday reloads between
+// steps, and the <input type=file> reads empty once Workday has consumed the file — so without a
+// DOM check a second fill pass happily attaches the same resume again. Detect the rendered item.
+const ATTACHED_FILE_INDICATOR =
+  "[data-automation-id='file-upload-item'], [data-automation-id*='file-upload-item' i], [data-automation-id*='delete-file' i], [data-automation-id*='deleteFile' i]";
+
+// Widen from the file input to the largest ancestor that still owns just this one file input — that
+// is this upload widget's boundary, so an adjacent resume/cover-letter upload can't trip the check.
+function uploadWidgetRoot(input: HTMLElement) {
+  let widget: HTMLElement = input;
+  for (let node = input.parentElement; node && node !== input.ownerDocument.body; node = node.parentElement) {
+    if (node.querySelectorAll("input[type='file']").length > 1) break;
+    widget = node;
+  }
+  return widget;
+}
+
+function documentAlreadyAttachedInDom(input: HTMLElement) {
+  return Boolean(uploadWidgetRoot(input).querySelector(ATTACHED_FILE_INDICATOR));
+}
+
 function filenameFromContentDisposition(header: string | null) {
   if (!header) return null;
   const encoded = /filename\*\s*=\s*(?:UTF-8'')?([^;]+)/i.exec(header)?.[1];
@@ -1481,7 +1503,11 @@ export async function fillField(
         field.element.classList.add("jp-field-highlight");
         return { ...base, status: field.required ? "needs_user" : "skipped", error: `Could not attach ${label} automatically.` };
       }
-      if (documentUploadAlreadyHandled(field.element.ownerDocument, effectiveMapping.canonicalKey)) {
+      if (
+        documentUploadAlreadyHandled(field.element.ownerDocument, effectiveMapping.canonicalKey) ||
+        documentAlreadyAttachedInDom(field.element)
+      ) {
+        markDocumentUploadHandled(field.element.ownerDocument, effectiveMapping.canonicalKey);
         return { ...base, status: "skipped", error: `Already attached ${label}.` };
       }
       const docs = await context.getResume(null);

@@ -182,6 +182,51 @@ describe("fillField file uploads", () => {
     expect(globalThis.fetch).toHaveBeenCalledOnce();
   });
 
+  it("does not re-upload when Workday already shows the attached resume (e.g. after a step reload)", async () => {
+    // Fresh document with no jpResumeAttached flag — simulates Workday reloading the page between
+    // steps after the first upload. The <input type=file> is empty, but Workday re-renders the
+    // previously attached file as a file-upload-item, which must stop a second upload.
+    const { document, window } = parseHTML(`
+      <div data-automation-id="formField-resume">
+        <div data-automation-id="file-upload-drop-zone">
+          <input id="resume" type="file" data-automation-id="file-upload-input-ref" />
+        </div>
+        <ul>
+          <li data-automation-id="file-upload-item">
+            <span>Theja_Chitturi.pdf</span>
+            <button type="button" data-automation-id="delete-file">Delete</button>
+          </li>
+        </ul>
+      </div>
+    `);
+    installDomGlobals(window);
+    const input = document.querySelector<HTMLInputElement>("#resume") as HTMLInputElement;
+    const getResume = vi.fn(async () => ({
+      resumeUrl: "https://files.example.com/resume.pdf",
+      resumeName: "Theja_Chitturi.pdf",
+    }));
+    globalThis.fetch = vi.fn() as typeof fetch;
+
+    const field: FieldDescriptor = {
+      id: "resume",
+      element: input,
+      label: "Resume/CV",
+      context: "Resume/CV",
+      type: "file",
+      required: true,
+      options: [],
+      signature: "resume:file",
+    };
+
+    const record = await fillField(field, mapping, { ...context, getResume });
+
+    expect(record.status).toBe("skipped");
+    expect(record.error).toBe("Already attached resume/CV.");
+    expect(input.files?.length ?? 0).toBe(0);
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+    expect(getResume).not.toHaveBeenCalled();
+  });
+
   it("skips optional resume uploads only when no resume/CV is available", async () => {
     const getResume = vi.fn(async () => ({ resumeUrl: null }));
     globalThis.fetch = vi.fn() as typeof fetch;
