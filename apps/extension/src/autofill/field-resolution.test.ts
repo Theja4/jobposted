@@ -90,6 +90,47 @@ describe("field resolution", () => {
     );
   });
 
+  it("maps Lever pronoun checkboxes from setup gender", async () => {
+    const { adapter, fields } = await loadHtml(
+      `<!doctype html>
+      <form class="application">
+        <li class="application-question">
+          <div class="application-label multiple-select">Pronouns</div>
+          <div class="application-field">
+            <ul data-qa="candidatePronounsCheckboxes" id="candidatePronounsCheckboxes">
+              <li><label><input type="checkbox" name="pronouns" value="He/him" /><span>He/him</span></label></li>
+              <li><label><input type="checkbox" name="pronouns" value="She/her" /><span>She/her</span></label></li>
+              <li><label><input type="checkbox" name="pronouns" value="They/them" /><span>They/them</span></label></li>
+              <li><label><input type="checkbox" name="pronouns" value="Use name only" /><span>Use name only</span></label></li>
+            </ul>
+          </div>
+        </li>
+      </form>`,
+      "https://jobs.lever.co/dnb/8eb0cdd5-1bf4-4865-9e84-7db8ec89fba2/apply",
+    );
+    const maleProfile: MasterProfile = { ...profile, demographics: { gender: "Male" } };
+    const femaleProfile: MasterProfile = { ...profile, demographics: { gender: "Female" } };
+    const maleMappings = await Promise.all(
+      fields.map((field) => resolveField({ field, profile: maleProfile, platform: adapter.id, url: "", demographicsEnabled: false })),
+    );
+    const femaleMappings = await Promise.all(
+      fields.map((field) => resolveField({ field, profile: femaleProfile, platform: adapter.id, url: "", demographicsEnabled: false })),
+    );
+    const maleByLabel = new Map(fields.map((field, index) => [field.label, maleMappings[index]]));
+    const femaleByLabel = new Map(fields.map((field, index) => [field.label, femaleMappings[index]]));
+
+    expect(adapter.id).toBe("lever");
+    expect(fields.find((field) => field.label === "He/him")?.type).toBe("checkbox");
+    expect(maleByLabel.get("He/him")).toMatchObject({
+      canonicalKey: "answers.profile_pronouns",
+      value: "He/him",
+    });
+    expect(femaleByLabel.get("She/her")).toMatchObject({
+      canonicalKey: "answers.profile_pronouns",
+      value: "She/her",
+    });
+  });
+
   it("extracts Lever application cards with hidden native radio groups", async () => {
     const { adapter, fields } = await loadHtml(
       `<!doctype html>
@@ -209,7 +250,16 @@ describe("field resolution", () => {
       "https://jobs.lever.co/dnb/8eb0cdd5-1bf4-4865-9e84-7db8ec89fba2/apply",
     );
     expect(adapter.id).toBe("lever");
-    const mappings = await Promise.all(fields.map((field) => resolveField({ field, profile, platform: adapter.id, url: "", demographicsEnabled: false })));
+    const profileWithGenericConnectionYes: MasterProfile = {
+      ...profile,
+      answers: [
+        ...profile.answers,
+        { key: "screening.company_employee_connection", prompt: "Do you know anyone at this company?", value: "Yes" },
+      ],
+    };
+    const mappings = await Promise.all(
+      fields.map((field) => resolveField({ field, profile: profileWithGenericConnectionYes, platform: adapter.id, url: "", demographicsEnabled: false })),
+    );
     const byLabel = new Map(fields.map((field, index) => [field.label, mappings[index]]));
 
     expect(byLabel.get("Are you a current or previous employee of Dun & Bradstreet?*")).toMatchObject({
@@ -281,6 +331,38 @@ describe("field resolution", () => {
     expect(mappings.map((mapping) => mapping.canonicalKey)).toEqual(
       expect.arrayContaining(["identity.firstName", "identity.lastName", "identity.email", "identity.phone", "documents.resume"]),
     );
+  });
+
+  it("maps Ashby current-or-last company questions to the latest employer", async () => {
+    const { adapter, fields } = await loadHtml(
+      `<!doctype html>
+      <form data-testid="CandidateApplicationForm">
+        <div class="_fieldEntry">
+          <label class="_label" for="current-company">Current or last company you worked for</label>
+          <div class="_inputWrap"><input id="current-company" placeholder="Type here..." /></div>
+        </div>
+      </form>`,
+      "https://jobs.ashbyhq.com/hopper/0c3887e0-ea7f-40a7-aad2-0c69882a5068/application",
+    );
+    const profileWithExperience: MasterProfile = {
+      ...profile,
+      experience: [
+        { title: "Senior Engineer", company: "Older Co", startDate: "2021-01", endDate: "2023-12", current: false, bullets: [] },
+        { title: "Staff Engineer", company: "Orbit Labs", startDate: "2024-01", endDate: null, current: true, bullets: [] },
+      ],
+    };
+    const mappings = await Promise.all(
+      fields.map((field) => resolveField({ field, profile: profileWithExperience, platform: adapter.id, url: "", demographicsEnabled: false })),
+    );
+    const company = fields.find((field) => /current or last company/i.test(field.label));
+    const mapping = company ? mappings[fields.indexOf(company)] : null;
+
+    expect(adapter.id).toBe("ashby");
+    expect(company).toBeTruthy();
+    expect(mapping).toMatchObject({
+      canonicalKey: "experience.currentCompany",
+      value: "Orbit Labs",
+    });
   });
 
   it("extracts Ashby <button> Yes/No groups and a url LinkedIn field", async () => {
@@ -874,7 +956,7 @@ describe("field resolution", () => {
       field: {
         id: "company-connection",
         element: document.querySelector("input") as HTMLElement,
-        label: "Do you have any relatives currently employed by this organization?",
+        label: "Do you know anyone currently employed by this organization?",
         context: "",
         type: "radio",
         required: true,

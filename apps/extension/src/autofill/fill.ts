@@ -428,6 +428,12 @@ function looksLikePlaceholder(value: string, field: FieldDescriptor) {
 
 function valueEchoesPrompt(field: FieldDescriptor, value: ExtensionFieldMapping["value"]) {
   if (typeof value !== "string") return false;
+  if (
+    (field.type === "checkbox" || field.type === "radio") &&
+    optionScore(`${labelForChoice(field.element)} ${field.element.getAttribute("value") ?? ""}`, value) >= 0.82
+  ) {
+    return false;
+  }
   const text = normalizedText(value);
   if (!text) return false;
   const label = normalizedText(field.label);
@@ -1206,9 +1212,25 @@ function fillRadio(field: FieldDescriptor, mapping: ExtensionFieldMapping) {
   return choiceIsSelected(best.input);
 }
 
+function checkboxDesiredState(field: FieldDescriptor, value: ExtensionFieldMapping["value"]) {
+  if (typeof value === "boolean") return value;
+  const desired = desiredString(value);
+  if (!desired) return false;
+
+  const label = labelForChoice(field.element);
+  const rawValue = field.element instanceof HTMLInputElement ? field.element.value : "";
+  const choiceScore = Math.max(optionScore(label, desired), optionScore(rawValue, desired));
+  if (choiceScore >= 0.82) return true;
+
+  const text = normalizedText(desired);
+  if (/^(yes|true|y|1)$/.test(text)) return true;
+  if (/^(no|false|n|0)$/.test(text)) return false;
+  return false;
+}
+
 function fillCheckbox(field: FieldDescriptor, value: ExtensionFieldMapping["value"]) {
   if (!(field.element instanceof HTMLInputElement)) return false;
-  const desired = typeof value === "boolean" ? value : /^(yes|true|y|1)$/i.test(desiredString(value));
+  const desired = checkboxDesiredState(field, value);
   if (field.element.checked !== desired) {
     activateElement(field.element);
     if (field.element.checked !== desired) nativeCheckedSetter(field.element, desired);

@@ -25,6 +25,12 @@ const COMPANY_CONNECTION_ANSWER_KEYS = [
   "screening.company_relative_connection",
   "screening.current_employee_connection",
 ] as const;
+const COMPANY_EMPLOYEE_CONNECTION_ANSWER_KEYS = [
+  "screening.company_employee_connection",
+  "screening.company_contact_connection",
+  "screening.current_employee_connection",
+] as const;
+const COMPANY_RELATIVE_CONNECTION_ANSWER_KEYS = ["screening.company_relative_connection"] as const;
 
 const COMPANY_CONNECTION_PATTERNS = [
   /\b(?:know|knows)\s+(?:anyone|someone|any\s+current\s+employees?|a\s+current\s+employee|an?\s+employee|employees?)\b/,
@@ -87,6 +93,45 @@ export type ScreeningFieldLike = {
   type?: string;
 };
 
+const PRONOUN_OPTION_PATTERNS = [
+  /\bhe\s+him\b/,
+  /\bshe\s+her\b/,
+  /\bthey\s+them\b/,
+  /\bxe\s+xem\b/,
+  /\bze\s+hir\b/,
+  /\bey\s+em\b/,
+  /\bhir\s+hir\b/,
+  /\bfae\s+faer\b/,
+  /\bhu\s+hu\b/,
+  /\buse\s+name\s+only\b/,
+] as const;
+
+function pronounValueFromProfile(profile: MasterProfile) {
+  const gender = normalizeText(profile.demographics?.gender ?? "");
+  if (!gender) return null;
+  if (gender === "m" || /\b(?:male|man|boy)\b/.test(gender)) return "He/him";
+  if (gender === "f" || /\b(?:female|woman|girl)\b/.test(gender)) return "She/her";
+  return null;
+}
+
+function looksLikePronounField(field: ScreeningFieldLike) {
+  const questionText = normalizeText(`${field.label ?? ""} ${field.context ?? ""}`);
+  const optionText = normalizeText((field.options ?? []).join(" "));
+  return /\bpronouns?\b/.test(questionText) || includesAny(`${questionText} ${optionText}`, PRONOUN_OPTION_PATTERNS);
+}
+
+export function resolvePronounFieldValue(field: ScreeningFieldLike, profile: MasterProfile): ResolvedField | null {
+  if (!looksLikePronounField(field)) return null;
+  const pronouns = pronounValueFromProfile(profile);
+  if (!pronouns) return null;
+  return {
+    canonicalKey: "answers.profile_pronouns",
+    value: pronouns,
+    confidence: 0.86,
+    source: "heuristic",
+  };
+}
+
 function answerForKeys<T extends readonly string[]>(profile: MasterProfile, keys: T) {
   return profile.answers.find((answer) => keys.includes(answer.key as T[number]) && isUsableAnswerValue(answer)) ?? null;
 }
@@ -97,8 +142,12 @@ function profileCompanyMatchesQuestion(questionText: string, company: string | n
   const phrase = new RegExp(`\\b${companyText.replace(/\s+/g, "\\s+")}\\b`);
   if (phrase.test(questionText)) return true;
   const compactQuestion = questionText.replace(/\s+/g, "");
-  const compactCompany = companyText.replace(/\s+/g, "");
-  return compactCompany.length >= 5 && compactQuestion.includes(compactCompany);
+  const meaningfulTokens = companyText
+    .split(/\s+/)
+    .filter((token) => token && !/^(?:co|company|corp|corporation|inc|llc|ltd|limited|pvt|private)$/i.test(token));
+  if (meaningfulTokens.length < 2) return false;
+  const compactCompany = meaningfulTokens.join("");
+  return compactCompany.length >= 8 && compactQuestion.includes(compactCompany);
 }
 
 function inferredPreviousCompanyEmploymentAnswer(text: string, profile: MasterProfile) {
@@ -133,7 +182,19 @@ export function isUsableAnswerValue(answer: { prompt: string; value: string }, q
 export function matchCompanyConnectionAnswer(text: string, profile: MasterProfile) {
   const normalized = normalizeText(text);
   if (!includesAny(normalized, COMPANY_CONNECTION_PATTERNS)) return null;
-  return answerForKeys(profile, COMPANY_CONNECTION_ANSWER_KEYS);
+  if (/\b(?:related|relative|relatives|family|family member|family members|spouse|partner)\b/.test(normalized)) {
+    return answerForKeys(profile, COMPANY_RELATIVE_CONNECTION_ANSWER_KEYS);
+  }
+  if (/\b(?:referred|referral|refer|influence|influenced)\b/.test(normalized)) {
+    return (
+      profile.answers.find((answer) => {
+        if (!COMPANY_EMPLOYEE_CONNECTION_ANSWER_KEYS.includes(answer.key as (typeof COMPANY_EMPLOYEE_CONNECTION_ANSWER_KEYS)[number])) return false;
+        if (!isUsableAnswerValue(answer, normalized)) return false;
+        return /\b(?:referred|referral|refer|influence|influenced)\b/.test(normalizeText(answer.prompt));
+      }) ?? null
+    );
+  }
+  return answerForKeys(profile, COMPANY_EMPLOYEE_CONNECTION_ANSWER_KEYS) ?? answerForKeys(profile, COMPANY_RELATIVE_CONNECTION_ANSWER_KEYS);
 }
 
 export function matchPreviousCompanyEmploymentAnswer(text: string, profile: MasterProfile) {
@@ -530,7 +591,7 @@ export const FIELD_RULES: Rule[] = [
     ],
   },
   { key: "location.street", confidence: 0.9, patterns: [/\bstreet\b/, /\baddress line 1\b/, /\bhome address\b/] },
-  { key: "location.city", confidence: 0.88, patterns: [/\bcity\b/] },
+  { key: "location.city", confidence: 0.88, patterns: [/\bcity\b/, /\b(?:current|present|home|candidate)\s+location\b/] },
   { key: "location.state", confidence: 0.84, patterns: [/\bstate\b/, /\bprovince\b/, /\bregion\b/] },
   { key: "location.postalCode", confidence: 0.9, patterns: [/\bzip\b/, /\bpostal\b/] },
   { key: "location.country", confidence: 0.86, patterns: [/\bcountry\b/] },
@@ -542,6 +603,7 @@ export const FIELD_RULES: Rule[] = [
     confidence: 0.9,
     patterns: [
       /\bcurrent\s+(?:firm|company|employer|organization|organisation)\b/,
+      /\b(?:current|last|latest|most recent)\s+(?:or\s+(?:last|latest|most recent|previous)\s+)?(?:firm|company|employer|organization|organisation)\s+(?:you\s+)?(?:worked|work)\s+(?:for|at|with)\b/,
       /\b(?:firm|company|employer|organization|organisation)\s+(?:you\s+re|you\s+are|you)?\s*(?:currently\s+)?(?:part\s+of|work(?:ing)?\s+(?:for|at)|employed\s+(?:by|with))\b/,
       /\b(?:name\s+of\s+)?(?:your\s+)?current\s+employer\b/,
     ],
@@ -694,6 +756,8 @@ export function resolveFieldValue(
     const answer = matchReusableAnswer(field, profile);
     if (answer) return answer;
   }
+  const pronoun = resolvePronounFieldValue(field, profile);
+  if (pronoun) return pronoun;
   for (const rule of FIELD_RULES) {
     if (rule.needsDemographics && !opts.demographicsEnabled) continue;
     if (!includesAny(text, rule.patterns)) continue;

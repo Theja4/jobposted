@@ -189,7 +189,10 @@ function labelFor(element: HTMLElement): string {
 
   const wrapping = element.closest("label");
   if (wrapping?.textContent) {
-    return visibleText(wrapping.textContent.replace((element as HTMLInputElement).value ?? "", ""));
+    const wrappingText = visibleText(wrapping.textContent);
+    const withoutValue = visibleText(wrappingText.replace((element as HTMLInputElement).value ?? "", ""));
+    if (element instanceof HTMLInputElement && element.type === "checkbox") return withoutValue || wrappingText;
+    return withoutValue;
   }
 
   const container = element.closest("[data-automation-id], [data-testid], div");

@@ -291,6 +291,43 @@ describe("fillField file uploads", () => {
   });
 });
 
+describe("fillField checkbox choices", () => {
+  it("checks the pronoun option that matches the resolved setup value", async () => {
+    const { document, window } = parseHTML(`
+      <label><input id="he" type="checkbox" name="pronouns" value="He/him" /><span>He/him</span></label>
+      <label><input id="she" type="checkbox" name="pronouns" value="She/her" /><span>She/her</span></label>
+    `);
+    installDomGlobals(window);
+    const he = document.getElementById("he") as HTMLInputElement;
+    const she = document.getElementById("she") as HTMLInputElement;
+    const choiceMapping: ExtensionFieldMapping = {
+      canonicalKey: "answers.profile_pronouns",
+      value: "She/her",
+      confidence: 0.86,
+      source: "heuristic",
+    };
+
+    const field = (element: HTMLInputElement, label: string): FieldDescriptor => ({
+      id: element.id,
+      element,
+      label,
+      context: "Pronouns",
+      type: "checkbox",
+      required: false,
+      options: [],
+      signature: `pronouns:${label}`,
+    });
+
+    const heRecord = await fillField(field(he, "He/him"), choiceMapping, context);
+    const sheRecord = await fillField(field(she, "She/her"), choiceMapping, context);
+
+    expect(heRecord.status).toBe("filled");
+    expect(sheRecord.status).toBe("filled");
+    expect(he.checked).toBe(false);
+    expect(she.checked).toBe(true);
+  });
+});
+
 describe("fillField phone normalization", () => {
   it("fills phone inputs with the national number without country code or leading trunk zero", async () => {
     const { document, window } = parseHTML(`<input id="phone" />`);

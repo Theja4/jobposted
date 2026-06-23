@@ -3,6 +3,7 @@ import {
   isUsableAnswerValue,
   matchDefaultScreeningAnswer,
   matchScreeningReusableAnswer,
+  resolvePronounFieldValue,
   valueForKey,
   type ExtensionFieldContext,
   type ExtensionFieldMapping,
@@ -386,6 +387,13 @@ export async function resolveField(args: {
   if (matchDefaultScreeningAnswer(field)) {
     const answer = answerMapping(field, profile);
     if (answer) return answer;
+  }
+  const pronoun = resolvePronounFieldValue(field, profile);
+  if (pronoun) {
+    return {
+      ...pronoun,
+      reason: "Selected pronouns from setup gender.",
+    };
   }
 
   for (const rule of RULES) {

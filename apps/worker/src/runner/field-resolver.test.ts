@@ -45,9 +45,33 @@ describe("worker field-resolver (mirror of @jobposted/shared)", () => {
     expect(plan.fills.some((f) => f.canonicalKey === "workAuth.authorizedToWork")).toBe(true);
   });
 
+  it("maps pronoun questions from setup gender even when demographics are disabled", () => {
+    const male = resolveFieldValue(
+      field({ label: "Pronouns", type: "checkbox", options: ["He/him", "She/her", "They/them"] }),
+      profile({ demographics: { gender: "Male" } }),
+      { demographicsEnabled: false },
+    );
+    const female = resolveFieldValue(
+      field({ label: "She/her", context: "Pronouns", type: "checkbox" }),
+      profile({ demographics: { gender: "Female" } }),
+      { demographicsEnabled: false },
+    );
+
+    expect(male).toMatchObject({
+      canonicalKey: "answers.profile_pronouns",
+      value: "He/him",
+      source: "heuristic",
+    });
+    expect(female).toMatchObject({
+      canonicalKey: "answers.profile_pronouns",
+      value: "She/her",
+      source: "heuristic",
+    });
+  });
+
   it("maps company employee connection questions to the setup answer", () => {
     const r = resolveFieldValue(
-      field({ label: "Do you have any relatives currently employed by this organization?" }),
+      field({ label: "Do you know anyone currently employed by this organization?" }),
       profile({
         answers: [
           { key: "screening.company_employee_connection", prompt: "Do you know anyone at this company?", value: "No" },
@@ -155,7 +179,9 @@ describe("worker field-resolver (mirror of @jobposted/shared)", () => {
   });
 
   it("defaults Lever company-background radios to the safest negative option", () => {
-    const p = profile({ answers: [] });
+    const p = profile({
+      answers: [{ key: "screening.company_employee_connection", prompt: "Do you know anyone at this company?", value: "Yes" }],
+    });
     const previousEmployee = resolveFieldValue(
       field({
         label: "Are you a current or previous employee of Dun & Bradstreet?",
@@ -215,6 +241,34 @@ describe("worker field-resolver (mirror of @jobposted/shared)", () => {
     expect(referralName.canonicalKey).toBe("unknown");
   });
 
+  it("does not infer prior employment from generic current-company wording", () => {
+    const p = profile({
+      location: { city: "Austin", country: "United States" },
+      answers: [],
+      experience: [{ title: "Engineer", company: "Current Co", startDate: "2024-01", endDate: null, current: true, bullets: [] }],
+    });
+    const previousEmployee = resolveFieldValue(
+      field({
+        label: "Are you a current or previous employee of Dun & Bradstreet?",
+        context: "Current company",
+        type: "radio",
+        options: ["No previous work experience with the company", "Current employee or intern"],
+      }),
+      p,
+      { demographicsEnabled: false },
+    );
+    const currentLocation = resolveFieldValue(field({ label: "Current location", type: "text" }), p, { demographicsEnabled: false });
+
+    expect(previousEmployee).toMatchObject({
+      canonicalKey: "answers.screening.previous_company_employment",
+      value: "No",
+    });
+    expect(currentLocation).toMatchObject({
+      canonicalKey: "location.city",
+      value: "Austin",
+    });
+  });
+
   it("falls back to Yes/No for AI opt-out and future contact questions when those are the only choices", () => {
     const aiOptOut = resolveFieldValue(
       field({
@@ -261,6 +315,10 @@ describe("worker field-resolver (mirror of @jobposted/shared)", () => {
     const current = resolveFieldValue(field({ label: "Current firm you're part of?" }), p, { demographicsEnabled: false });
     expect(current.canonicalKey).toBe("experience.currentCompany");
     expect(current.value).toBe("Current Co");
+
+    const ashbyCurrentOrLast = resolveFieldValue(field({ label: "Current or last company you worked for" }), p, { demographicsEnabled: false });
+    expect(ashbyCurrentOrLast.canonicalKey).toBe("experience.currentCompany");
+    expect(ashbyCurrentOrLast.value).toBe("Current Co");
 
     const latest = resolveFieldValue(
       field({ label: "Name of your current employer" }),
