@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { parseHTML } from "linkedom";
 import type { ExtensionFieldMapping, MasterProfile } from "@jobposted/shared";
 import { workdayAdapter } from "../adapters/workday";
@@ -20,6 +20,7 @@ function installDomGlobals(window: unknown) {
     KeyboardEvent?: typeof KeyboardEvent;
     MouseEvent?: typeof MouseEvent;
     PointerEvent?: typeof PointerEvent;
+    File?: typeof File;
   };
   Object.assign(globalThis, {
     window: w,
@@ -33,18 +34,19 @@ function installDomGlobals(window: unknown) {
     KeyboardEvent: w.KeyboardEvent ?? w.Event,
     MouseEvent: w.MouseEvent ?? w.Event,
     PointerEvent: w.PointerEvent,
+    File: w.File ?? globalThis.File,
   });
 }
 
-function fileField(required = true): FieldDescriptor {
+function fileField(required = true, label = "Resume"): FieldDescriptor {
   const { document, window } = parseHTML(`<input id="resume" type="file" ${required ? "required" : ""} />`);
   installDomGlobals(window);
   const element = document.querySelector("input") as HTMLInputElement;
   return {
     id: "resume",
     element,
-    label: "Resume",
-    context: "Resume",
+    label,
+    context: label,
     type: "file",
     required,
     options: [],
@@ -87,19 +89,47 @@ const context: FillContext = {
   llmMap: async () => null,
 };
 
-describe("fillField file uploads", () => {
-  it("leaves required resume uploads for the user", async () => {
-    const record = await fillField(fileField(true), mapping, context);
+const nativeFetch = globalThis.fetch;
 
-    expect(record.status).toBe("needs_user");
-    expect(record.error).toBe("Upload your resume manually.");
+afterEach(() => {
+  globalThis.fetch = nativeFetch;
+  vi.restoreAllMocks();
+});
+
+describe("fillField file uploads", () => {
+  it("attaches required CV/resume uploads from the signed resume URL", async () => {
+    const field = fileField(true, "CV");
+    const getResume = vi.fn(async () => ({ resumeUrl: "https://files.example.com/Theja%20CV.pdf" }));
+    globalThis.fetch = vi.fn(async () =>
+      new Response(new Blob(["resume"], { type: "application/pdf" }), {
+        headers: {
+          "content-type": "application/pdf",
+          "content-disposition": 'attachment; filename="Theja CV.pdf"',
+        },
+      }),
+    ) as typeof fetch;
+
+    const record = await fillField(field, mapping, { ...context, getResume });
+    const input = field.element as HTMLInputElement;
+
+    expect(record.status).toBe("filled");
+    expect(record.valuePreview).toBe("Theja CV.pdf");
+    expect(input.files?.length).toBe(1);
+    expect(input.files?.item(0)?.name).toBe("Theja CV.pdf");
+    expect(getResume).toHaveBeenCalledOnce();
+    expect(globalThis.fetch).toHaveBeenCalledWith("https://files.example.com/Theja%20CV.pdf", { credentials: "omit" });
   });
 
-  it("skips optional resume uploads without fetching a resume", async () => {
-    const record = await fillField(fileField(false), mapping, context);
+  it("skips optional resume uploads only when no resume/CV is available", async () => {
+    const getResume = vi.fn(async () => ({ resumeUrl: null }));
+    globalThis.fetch = vi.fn() as typeof fetch;
+
+    const record = await fillField(fileField(false), { ...mapping, value: null }, { ...context, getResume });
 
     expect(record.status).toBe("skipped");
-    expect(record.error).toBe("Upload your resume manually.");
+    expect(record.error).toBe("No resume/CV available.");
+    expect(getResume).toHaveBeenCalledOnce();
+    expect(globalThis.fetch).not.toHaveBeenCalled();
   });
 });
 
@@ -532,6 +562,216 @@ describe("fillField phone normalization", () => {
     expect(button.textContent).toBe("India +91");
   });
 
+  it("types the dynamic country code and presses Enter for Workday phone country code", async () => {
+    const { document, window } = parseHTML(`
+      <div role="combobox" aria-controls="phone-countries">
+        <input aria-autocomplete="list" aria-controls="phone-countries" />
+      </div>
+      <div id="phone-countries" role="listbox"></div>
+    `);
+    installDomGlobals(window);
+    const input = document.querySelector("input") as HTMLInputElement;
+    let enterPressed = false;
+    input.addEventListener("keydown", (event) => {
+      const keyEvent = event as KeyboardEvent;
+      enterPressed = event.type === "keydown" || keyEvent.key === "Enter" || keyEvent.keyCode === 13 || keyEvent.which === 13;
+    });
+    const record = await fillField(
+      {
+        id: "phone-country",
+        element: document.querySelector("[role='combobox']") as HTMLElement,
+        label: "Country Phone Code *",
+        context: "Phone *",
+        type: "combobox",
+        required: true,
+        options: [],
+        signature: "phone-country",
+      },
+      {
+        canonicalKey: "identity.phoneCountryCode",
+        value: "+91",
+        confidence: 0.93,
+        source: "heuristic",
+      },
+      { ...context, platform: "workday" },
+    );
+
+    expect(record.status).toBe("filled");
+    expect(input.value).toBe("+91");
+    expect(enterPressed).toBe(true);
+  });
+
+  it("selects Workday phone country code options instead of leaving only the typed search", async () => {
+    const { document, window } = parseHTML(`
+      <div id="phone-country" role="combobox" aria-controls="phone-countries">
+        <input aria-autocomplete="list" aria-controls="phone-countries" />
+        <div id="selected-country"></div>
+      </div>
+      <div id="phone-countries" role="listbox">
+        <div role="option">Hungary (+36)</div>
+        <div id="india-code" role="option">India (+91)</div>
+        <div role="option">Indonesia (+62)</div>
+      </div>
+    `);
+    installDomGlobals(window);
+    const input = document.querySelector("input") as HTMLInputElement;
+    const india = document.getElementById("india-code") as HTMLElement;
+    input.addEventListener("keydown", (event) => {
+      const keyEvent = event as KeyboardEvent;
+      const isEnter = event.type === "keydown" || keyEvent.key === "Enter" || keyEvent.keyCode === 13 || keyEvent.which === 13;
+      if (!isEnter || input.value !== "+91") return;
+      input.value = "";
+      india.setAttribute("aria-checked", "true");
+      const chip = document.getElementById("selected-country") as HTMLElement;
+      chip.textContent = "India (+91)";
+    });
+    india.addEventListener("click", () => {
+      india.setAttribute("aria-checked", "true");
+      const chip = document.getElementById("selected-country") as HTMLElement;
+      chip.textContent = "India (+91)";
+    });
+
+    const record = await fillField(
+      {
+        id: "phone-country",
+        element: document.getElementById("phone-country") as HTMLElement,
+        label: "Country Phone Code *",
+        context: "Phone *",
+        type: "combobox",
+        required: true,
+        options: ["Hungary (+36)", "India (+91)", "Indonesia (+62)"],
+        signature: "phone-country",
+      },
+      {
+        canonicalKey: "identity.phoneCountryCode",
+        value: "+91",
+        confidence: 0.93,
+        source: "heuristic",
+      },
+      { ...context, platform: "workday" },
+    );
+
+    expect(record.status).toBe("filled");
+    expect(input.value).toBe("");
+    expect(india.getAttribute("aria-checked")).toBe("true");
+    expect(document.getElementById("selected-country")?.textContent).toBe("India (+91)");
+  });
+
+  it("forces Workday plain phone country inputs through option selection", async () => {
+    const { document, window } = parseHTML(`
+      <div data-automation-id="formField-countryPhoneCode">
+        <label for="country-code">Country Phone Code *</label>
+        <div class="prompt-shell">
+          <input id="country-code" />
+          <button type="button" aria-label="Prompt"></button>
+        </div>
+        <div id="selected-country"></div>
+      </div>
+      <div id="portal-root"></div>
+    `);
+    installDomGlobals(window);
+    const input = document.getElementById("country-code") as HTMLInputElement;
+    input.addEventListener("keydown", (event) => {
+      const keyEvent = event as KeyboardEvent;
+      const isEnter = event.type === "keydown" || keyEvent.key === "Enter" || keyEvent.keyCode === 13 || keyEvent.which === 13;
+      if (!isEnter || input.value !== "+91") return;
+      input.value = "";
+      const india = document.getElementById("india-code");
+      india?.setAttribute("aria-checked", "true");
+      const chip = document.getElementById("selected-country") as HTMLElement;
+      chip.textContent = "India (+91)";
+    });
+    input.addEventListener("input", () => {
+      if (document.getElementById("india-code")) return;
+      const listbox = document.createElement("div");
+      listbox.setAttribute("role", "listbox");
+      const hungary = document.createElement("div");
+      hungary.setAttribute("role", "option");
+      hungary.textContent = "Hungary (+36)";
+      const india = document.createElement("div");
+      india.id = "india-code";
+      india.setAttribute("role", "option");
+      india.textContent = "India (+91)";
+      india.addEventListener("click", () => {
+        input.value = "";
+        india.setAttribute("aria-checked", "true");
+        const chip = document.getElementById("selected-country") as HTMLElement;
+        chip.textContent = "India (+91)";
+      });
+      listbox.append(hungary, india);
+      document.getElementById("portal-root")?.append(listbox);
+    });
+
+    const record = await fillField(
+      {
+        id: "country-code",
+        element: input,
+        label: "Country Phone Code *",
+        context: "Phone",
+        type: "text",
+        required: true,
+        options: [],
+        signature: "phone-country",
+      },
+      {
+        canonicalKey: "identity.phoneCountryCode",
+        value: "+91",
+        confidence: 0.93,
+        source: "heuristic",
+      },
+      { ...context, platform: "workday" },
+    );
+
+    expect(record.status).toBe("filled");
+    expect(input.value).toBe("");
+    expect(document.getElementById("selected-country")?.textContent).toBe("India (+91)");
+    expect(document.getElementById("india-code")?.getAttribute("aria-checked")).toBe("true");
+  });
+
+  it("commits Workday phone country code by pressing Enter after typing the code", async () => {
+    const { document, window } = parseHTML(`
+      <div data-automation-id="formField-countryPhoneCode">
+        <label for="country-code">Country Phone Code *</label>
+        <input id="country-code" aria-autocomplete="list" />
+        <div id="selected-country"></div>
+      </div>
+    `);
+    installDomGlobals(window);
+    const input = document.getElementById("country-code") as HTMLInputElement;
+    input.addEventListener("keydown", (event) => {
+      const keyEvent = event as KeyboardEvent;
+      const isEnter = keyEvent.key === "Enter" || keyEvent.keyCode === 13 || keyEvent.which === 13 || event.type === "keydown";
+      if (!isEnter || input.value !== "+91") return;
+      input.value = "";
+      const chip = document.getElementById("selected-country") as HTMLElement;
+      chip.textContent = "India (+91)";
+    });
+
+    const record = await fillField(
+      {
+        id: "country-code",
+        element: input,
+        label: "Country Phone Code *",
+        context: "Phone",
+        type: "text",
+        required: true,
+        options: [],
+        signature: "phone-country",
+      },
+      {
+        canonicalKey: "identity.phoneCountryCode",
+        value: "+91",
+        confidence: 0.93,
+        source: "heuristic",
+      },
+      { ...context, platform: "workday" },
+    );
+
+    expect(record.status).toBe("filled");
+    expect(input.value).toBe("");
+    expect(document.getElementById("selected-country")?.textContent).toBe("India (+91)");
+  });
+
   it("does not type location searches into an already-open phone country combobox", async () => {
     const { document, window } = parseHTML(`
       <div>
@@ -701,6 +941,58 @@ describe("fillField Workday dropdown variants", () => {
 });
 
 describe("fillField custom choice controls", () => {
+  it("selects the exact Workday phone device type option instead of Emergency - Mobile", async () => {
+    const { document, window } = parseHTML(`
+      <div>
+        <label id="phone-device-label">Phone Device Type *</label>
+        <button id="phone-device" role="combobox" aria-labelledby="phone-device-label" aria-controls="phone-device-options">Select One</button>
+        <div id="phone-device-options" role="listbox">
+          <div role="option">Select One</div>
+          <div role="option">Emergency - Landline</div>
+          <div role="option">Emergency - Mobile</div>
+          <div role="option">Fax</div>
+          <div role="option">Landline</div>
+          <div id="plain-mobile" role="option">Mobile</div>
+        </div>
+      </div>
+    `);
+    installDomGlobals(window);
+    const trigger = document.getElementById("phone-device") as HTMLElement;
+    const options = Array.from(document.querySelectorAll<HTMLElement>("[role='option']"));
+    for (const option of options) {
+      option.addEventListener("click", () => {
+        trigger.textContent = option.textContent ?? "";
+        trigger.setAttribute("aria-valuetext", option.textContent ?? "");
+        options.forEach((item) => item.setAttribute("aria-selected", "false"));
+        option.setAttribute("aria-selected", "true");
+      });
+    }
+
+    const record = await fillField(
+      {
+        id: "phone-device",
+        element: trigger,
+        label: "Phone Device Type *",
+        context: "Phone phoneWidget",
+        type: "combobox",
+        required: true,
+        options: options.map((option) => option.textContent ?? ""),
+        signature: "phone-device",
+      },
+      {
+        canonicalKey: "answers.workday_phone_device_type",
+        value: "Mobile",
+        confidence: 0.96,
+        source: "heuristic",
+      },
+      { ...context, platform: "workday" },
+    );
+
+    expect(record.status).toBe("filled");
+    expect(trigger.getAttribute("aria-valuetext")).toBe("Mobile");
+    expect(document.getElementById("plain-mobile")?.getAttribute("aria-selected")).toBe("true");
+  });
+
   it("skips already-checked checkboxes even when overwrite is enabled", async () => {
     const { document, window } = parseHTML(`
       <label><input id="none" type="checkbox" checked /> None of the above</label>

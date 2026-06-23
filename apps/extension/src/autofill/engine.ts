@@ -10,20 +10,32 @@ import { fillField } from "./fill";
 import { extractFields } from "./extract";
 import { resolveField, toFieldContext } from "./resolve";
 import { fillWorkAuthFallbacks } from "./work-auth-fallback";
-import type { AutofillResult, PlatformAdapter } from "./types";
+import type { AutofillResult, FieldDescriptor, PlatformAdapter } from "./types";
 
 function runtimeMessage<T extends ExtensionMessageResponse>(message: unknown): Promise<T> {
   return chrome.runtime.sendMessage(message) as Promise<T>;
 }
 
-export function humanDelay(settings: ExtensionSettings) {
+export function humanDelay(settings: ExtensionSettings, shouldStop?: () => boolean) {
   const [min, max] =
     settings.humanPace === "fast"
       ? [80, 190]
       : settings.humanPace === "careful"
         ? [260, 680]
         : [150, 380];
-  return new Promise((resolve) => window.setTimeout(resolve, min + Math.random() * (max - min)));
+  const duration = min + Math.random() * (max - min);
+  if (!shouldStop) return new Promise((resolve) => window.setTimeout(resolve, duration));
+  return new Promise((resolve) => {
+    const startedAt = Date.now();
+    const tick = () => {
+      if (shouldStop() || Date.now() - startedAt >= duration) {
+        resolve(undefined);
+        return;
+      }
+      window.setTimeout(tick, 50);
+    };
+    tick();
+  });
 }
 
 export async function fillCurrentStep(args: {
@@ -31,82 +43,43 @@ export async function fillCurrentStep(args: {
   profile: MasterProfile;
   settings: ExtensionSettings;
   onField: (record: ExtensionFieldFillRecord) => void;
+  onFieldsDiscovered?: (fields: FieldDescriptor[]) => void;
+  onFieldStart?: (field: FieldDescriptor) => void;
+  shouldStop?: () => boolean;
 }): Promise<AutofillResult> {
-  const { adapter, profile, settings, onField } = args;
+  const { adapter, profile, settings, onField, shouldStop } = args;
   const step = adapter.detectStep(document);
   const hints = adapter.mapFields(document);
   const fields = extractFields(document, adapter.id, hints);
   const records: ExtensionFieldFillRecord[] = [];
+  args.onFieldsDiscovered?.(fields);
 
   for (const field of fields) {
-    const mapping = await resolveField({
+    if (shouldStop?.()) break;
+    args.onFieldStart?.(field);
+    const record = await fillSingleField({
+      adapter,
+      profile,
+      settings,
       field,
-      profile,
-      platform: adapter.id,
-      url: window.location.href,
-      demographicsEnabled: settings.demographicsEnabled,
-      llmMap: async (candidate) => {
-        if (!candidate.required) return null;
-        const response = await runtimeMessage<ExtensionMessageResponse>({
-          type: "FIELD_MAP",
-          field: toFieldContext(candidate, adapter.id, window.location.href),
-          profile,
-        });
-        return response.ok && response.type === "FIELD_MAP" ? response.mapping : null;
-      },
+      onField,
+      shouldStop,
     });
+    records.push(record);
+    await humanDelay(settings, shouldStop);
+  }
 
-    const fillContext = {
-      profile,
+  if (shouldStop?.()) {
+    return {
       platform: adapter.id,
-      url: window.location.href,
-      overwrite: settings.overwriteFilledFields,
-      demographicsEnabled: settings.demographicsEnabled,
-      onField,
-      llmMap: async () => null,
-      getResume: async () => {
-        const response = await runtimeMessage<ExtensionMessageResponse>({
-          type: "RESUME_GET",
-          jobId: null,
-        });
-        return response.ok && response.type === "RESUME_GET"
-          ? {
-              resumeUrl: response.resume.resumeUrl,
-              coverLetterUrl: response.resume.coverLetterUrl ?? null,
-            }
-          : { resumeUrl: profile.documents.resumeUrl ?? null, coverLetterUrl: profile.documents.coverLetterUrl };
-      },
+      stepName: step.name,
+      fields: records,
+      filled: records.filter((record) => record.status === "filled").length,
+      total: records.length,
     };
-    const record = await fillField(field, mapping, fillContext);
-    records.push(record);
-    onField(record);
-    await humanDelay(settings);
   }
 
-  const fallbackRecords = await fillWorkAuthFallbacks({
-    profile,
-    platform: adapter.id,
-    url: window.location.href,
-    demographicsEnabled: settings.demographicsEnabled,
-    context: {
-      profile,
-      platform: adapter.id,
-      url: window.location.href,
-      overwrite: settings.overwriteFilledFields,
-      demographicsEnabled: settings.demographicsEnabled,
-      onField,
-      llmMap: async () => null,
-      getResume: async () => ({ resumeUrl: profile.documents.resumeUrl ?? null, coverLetterUrl: profile.documents.coverLetterUrl ?? null }),
-    },
-    existingRecords: records,
-  });
-  for (const record of fallbackRecords) {
-    records.push(record);
-    onField(record);
-    await humanDelay(settings);
-  }
-
-  await adapter.fillExtras?.({
+  const fallbackContext = {
     profile,
     platform: adapter.id,
     url: window.location.href,
@@ -114,8 +87,50 @@ export async function fillCurrentStep(args: {
     demographicsEnabled: settings.demographicsEnabled,
     onField,
     llmMap: async () => null,
+    shouldStop,
+    getResume: async () => ({ resumeUrl: profile.documents.resumeUrl ?? null, coverLetterUrl: profile.documents.coverLetterUrl ?? null }),
+  };
+  const fallbackRecords = await fillWorkAuthFallbacks({
+    profile,
+    platform: adapter.id,
+    url: window.location.href,
+    demographicsEnabled: settings.demographicsEnabled,
+    context: fallbackContext,
+    existingRecords: records,
+  });
+  for (const record of fallbackRecords) {
+    if (shouldStop?.()) break;
+    records.push(record);
+    onField(record);
+    await humanDelay(settings, shouldStop);
+  }
+
+  if (shouldStop?.()) {
+    return {
+      platform: adapter.id,
+      stepName: step.name,
+      fields: records,
+      filled: records.filter((record) => record.status === "filled").length,
+      total: records.length,
+    };
+  }
+
+  const extraRecords: ExtensionFieldFillRecord[] = [];
+  await adapter.fillExtras?.({
+    profile,
+    platform: adapter.id,
+    url: window.location.href,
+    overwrite: settings.overwriteFilledFields,
+    demographicsEnabled: settings.demographicsEnabled,
+    onField: (record) => {
+      extraRecords.push(record);
+      onField(record);
+    },
+    llmMap: async () => null,
+    shouldStop,
     getResume: async () => ({ resumeUrl: profile.documents.resumeUrl ?? null }),
   });
+  records.push(...extraRecords);
 
   return {
     platform: adapter.id,
@@ -124,6 +139,59 @@ export async function fillCurrentStep(args: {
     filled: records.filter((record) => record.status === "filled").length,
     total: records.length,
   };
+}
+
+export async function fillSingleField(args: {
+  adapter: PlatformAdapter;
+  profile: MasterProfile;
+  settings: ExtensionSettings;
+  field: FieldDescriptor;
+  onField: (record: ExtensionFieldFillRecord) => void;
+  shouldStop?: () => boolean;
+}) {
+  const { adapter, profile, settings, field, onField, shouldStop } = args;
+  const mapping = await resolveField({
+    field,
+    profile,
+    platform: adapter.id,
+    url: window.location.href,
+    demographicsEnabled: settings.demographicsEnabled,
+    llmMap: async (candidate) => {
+      if (!candidate.required) return null;
+      const response = await runtimeMessage<ExtensionMessageResponse>({
+        type: "FIELD_MAP",
+        field: toFieldContext(candidate, adapter.id, window.location.href),
+        profile,
+      });
+      return response.ok && response.type === "FIELD_MAP" ? response.mapping : null;
+    },
+  });
+
+  const fillContext = {
+    profile,
+    platform: adapter.id,
+    url: window.location.href,
+    overwrite: settings.overwriteFilledFields,
+    demographicsEnabled: settings.demographicsEnabled,
+    onField,
+    llmMap: async () => null,
+    shouldStop,
+    getResume: async () => {
+      const response = await runtimeMessage<ExtensionMessageResponse>({
+        type: "RESUME_GET",
+        jobId: null,
+      });
+      return response.ok && response.type === "RESUME_GET"
+        ? {
+            resumeUrl: response.resume.resumeUrl,
+            coverLetterUrl: response.resume.coverLetterUrl ?? null,
+          }
+        : { resumeUrl: profile.documents.resumeUrl ?? null, coverLetterUrl: profile.documents.coverLetterUrl };
+    },
+  };
+  const record = await fillField(field, mapping, fillContext);
+  onField(record);
+  return record;
 }
 
 export function applicationMetadata(platform: ExtensionPlatform) {

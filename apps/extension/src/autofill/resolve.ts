@@ -19,6 +19,83 @@ function fieldText(field: FieldDescriptor) {
   return normalizeText(`${field.label} ${field.context} ${field.options.join(" ")}`);
 }
 
+function skipMapping(reason: string): ExtensionFieldMapping {
+  return {
+    canonicalKey: "unknown",
+    value: null,
+    confidence: 0,
+    source: "skip",
+    reason,
+  };
+}
+
+function directMapping(
+  key: ExtensionFieldMapping["canonicalKey"],
+  profile: MasterProfile,
+  confidence: number,
+  reason: string,
+): ExtensionFieldMapping {
+  return {
+    canonicalKey: key,
+    value: valueForKey(profile, key),
+    confidence,
+    source: "heuristic",
+    reason,
+  };
+}
+
+function workdayLabelMapping(field: FieldDescriptor, profile: MasterProfile): ExtensionFieldMapping | null {
+  const label = normalizeText(field.label);
+  const text = fieldText(field);
+
+  if (/\blocal\b.*\b(?:given|first|family|last|surname)\b|\b(?:given|first|family|last|surname)\b.*\blocal\b/.test(label)) {
+    return skipMapping("Skipped Workday local-name field.");
+  }
+  if (/\bphone\b.*\bextension\b|\bextension\b.*\bphone\b/.test(label) || (/\bextension\b/.test(label) && /\bphone\b/.test(text))) {
+    return skipMapping("Skipped phone extension field.");
+  }
+  if (/\bphone\b.*\bdevice\b.*\btype\b|\bdevice\b.*\btype\b.*\bphone\b/.test(label)) {
+    return {
+      canonicalKey: "answers.workday_phone_device_type",
+      value: "Mobile",
+      confidence: 0.96,
+      source: "heuristic",
+      reason: "Matched Workday phone device type label.",
+    };
+  }
+  if (/\bphone\b.*\b(?:country|code)\b|\bcountry\b.*\bphone\b/.test(label)) {
+    return directMapping("identity.phoneCountryCode", profile, 0.94, "Matched Workday phone country-code label.");
+  }
+  if (/\bphone number\b|\bmobile number\b|\bprimary phone\b/.test(label)) {
+    return directMapping("identity.phone", profile, 0.96, "Matched Workday phone-number label.");
+  }
+  if (/\bfamily name\b|\blast name\b|\bsurname\b/.test(label)) {
+    return directMapping("identity.lastName", profile, 0.98, "Matched Workday family-name label.");
+  }
+  if (/\bgiven name(?:s)?\b|\bfirst name\b/.test(label)) {
+    return directMapping("identity.firstName", profile, 0.98, "Matched Workday given-name label.");
+  }
+  if (/\baddress line 1\b|\bstreet address\b|\baddress 1\b/.test(label)) {
+    return directMapping("location.street", profile, 0.94, "Matched Workday address-line label.");
+  }
+  if (/\baddress line [23]\b|\baddress [23]\b/.test(label)) {
+    return skipMapping("No saved secondary address line.");
+  }
+  if (/^city\b|\bcity$/.test(label)) {
+    return directMapping("location.city", profile, 0.92, "Matched Workday city label.");
+  }
+  if (/\b(?:state|province|region)\b/.test(label)) {
+    return directMapping("location.state", profile, 0.9, "Matched Workday state/region label.");
+  }
+  if (/\b(?:postal|zip)\b/.test(label)) {
+    return directMapping("location.postalCode", profile, 0.94, "Matched Workday postal-code label.");
+  }
+  if (/^country\b|\bcountry$/.test(label)) {
+    return directMapping("location.country", profile, 0.92, "Matched Workday country label.");
+  }
+  return null;
+}
+
 function looksLikePhoneCountryCode(field: FieldDescriptor) {
   const label = normalizeText(field.label);
   const text = fieldText(field);
@@ -257,13 +334,12 @@ export async function resolveField(args: {
 }): Promise<ExtensionFieldMapping> {
   const { field, profile } = args;
   if (args.platform === "workday" && isWorkdayExperienceOwnedControl(field.element)) {
-    return {
-      canonicalKey: "unknown",
-      value: null,
-      confidence: 0,
-      source: "skip",
-      reason: "Handled by the Workday My Experience filler.",
-    };
+    return skipMapping("Handled by the Workday My Experience filler.");
+  }
+
+  if (args.platform === "workday") {
+    const workdayMapping = workdayLabelMapping(field, profile);
+    if (workdayMapping) return workdayMapping;
   }
 
   if (field.adapterKey) {

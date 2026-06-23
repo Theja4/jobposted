@@ -154,8 +154,143 @@ function wireTypeahead(document: Document, container: HTMLElement, options: stri
   });
 }
 
+function wireTypeaheadAfterEnter(document: Document, container: HTMLElement, options: string[]) {
+  const root = container.querySelector<HTMLElement>("[data-automation-id='multiSelectContainer']") as HTMLElement;
+  const inputContainer = container.querySelector<HTMLElement>("[data-automation-id='multiselectInputContainer']") as HTMLElement;
+  const input = container.querySelector("input") as HTMLInputElement;
+  let searches = 0;
+  input.addEventListener("keydown", (event) => {
+    const keyboardEvent = event as KeyboardEvent;
+    if (keyboardEvent.key && keyboardEvent.key !== "Enter") return;
+    if (keyboardEvent.keyCode && keyboardEvent.keyCode !== 13) return;
+    if (!input.value.trim()) return; // Workday doesn't search an empty box (e.g. an Escape/reset)
+    if (searches > 0) return;
+    searches += 1;
+    clearListboxes(document);
+    const listbox = document.createElement("div");
+    listbox.setAttribute("role", "listbox");
+    listbox.setAttribute("data-test-listbox", "typeahead-enter");
+    for (const label of options) {
+      const option = document.createElement("div");
+      option.setAttribute("role", "option");
+      option.textContent = label;
+      option.addEventListener("click", () => {
+        const chip = document.createElement("span");
+        chip.setAttribute("data-automation-id", "selectedItem");
+        chip.textContent = label;
+        root.insertBefore(chip, inputContainer);
+        input.value = "";
+        listbox.remove();
+      });
+      listbox.append(option);
+    }
+    document.body.append(listbox);
+  });
+  return () => searches;
+}
+
+function wireSelectiveSkillTypeahead(document: Document, container: HTMLElement, matches: Record<string, string>) {
+  const root = container.querySelector<HTMLElement>("[data-automation-id='multiSelectContainer']") as HTMLElement;
+  const inputContainer = container.querySelector<HTMLElement>("[data-automation-id='multiselectInputContainer']") as HTMLElement;
+  const input = container.querySelector("input") as HTMLInputElement;
+  const searches: string[] = [];
+  input.addEventListener("keydown", (event) => {
+    const keyboardEvent = event as KeyboardEvent;
+    if (keyboardEvent.key && keyboardEvent.key !== "Enter") return;
+    if (keyboardEvent.keyCode && keyboardEvent.keyCode !== 13) return;
+    const query = input.value.trim();
+    if (!query || searches.at(-1) === query) return;
+    searches.push(query);
+    clearListboxes(document);
+    const label = Object.entries(matches).find(([needle]) => query.toLowerCase().includes(needle.toLowerCase()))?.[1];
+    const listbox = document.createElement("div");
+    listbox.setAttribute("role", "listbox");
+    listbox.setAttribute("data-test-listbox", "skill-selective");
+    if (!label) {
+      listbox.textContent = "No Items.";
+      document.body.append(listbox);
+      return;
+    }
+    const option = document.createElement("div");
+    option.setAttribute("role", "option");
+    option.textContent = label;
+    option.addEventListener("click", () => {
+      const chip = document.createElement("span");
+      chip.setAttribute("data-automation-id", "selectedItem");
+      chip.textContent = label;
+      root.insertBefore(chip, inputContainer);
+      input.value = "";
+      listbox.remove();
+    });
+    listbox.append(option);
+    document.body.append(listbox);
+  });
+  return () => searches;
+}
+
+function wireCheckboxSkillTypeaheadAfterEnter(document: Document, container: HTMLElement, options: string[]) {
+  const root = container.querySelector<HTMLElement>("[data-automation-id='multiSelectContainer']") as HTMLElement;
+  const inputContainer = container.querySelector<HTMLElement>("[data-automation-id='multiselectInputContainer']") as HTMLElement;
+  const input = container.querySelector("input") as HTMLInputElement;
+  let searches = 0;
+  input.addEventListener("keydown", (event) => {
+    const keyboardEvent = event as KeyboardEvent;
+    if (keyboardEvent.key && keyboardEvent.key !== "Enter") return;
+    if (keyboardEvent.keyCode && keyboardEvent.keyCode !== 13) return;
+    if (!input.value.trim()) return;
+    searches += 1;
+    clearListboxes(document);
+    const listbox = document.createElement("div");
+    listbox.setAttribute("role", "listbox");
+    listbox.setAttribute("data-test-listbox", "checkbox-typeahead-enter");
+    const header = document.createElement("div");
+    header.textContent = `Search Results (${options.length})`;
+    listbox.append(header);
+
+    const selectLabel = (label: string) => {
+      if (Array.from(root.querySelectorAll("[data-automation-id='selectedItem']")).some((item) => item.textContent?.trim() === label)) {
+        return;
+      }
+      const chip = document.createElement("span");
+      chip.setAttribute("data-automation-id", "selectedItem");
+      chip.textContent = label;
+      root.insertBefore(chip, inputContainer);
+      input.value = "";
+      listbox.remove();
+    };
+
+    for (const label of options) {
+      const row = document.createElement("label");
+      row.setAttribute("data-automation-id", "promptOption");
+      const checkbox = document.createElement("input");
+      checkbox.type = "checkbox";
+      row.append(checkbox, document.createTextNode(` ${label}`));
+      row.addEventListener("click", () => selectLabel(label));
+      checkbox.addEventListener("click", () => selectLabel(label));
+      listbox.append(row);
+    }
+    document.body.append(listbox);
+  });
+  return () => searches;
+}
+
 function selectedItems(container: HTMLElement) {
   return Array.from(container.querySelectorAll("[data-automation-id='selectedItem']")).map((item) => item.textContent?.trim());
+}
+
+function stubRect(element: HTMLElement, top: number, left: number, width: number, height: number) {
+  element.getBoundingClientRect = () =>
+    ({
+      top,
+      left,
+      width,
+      height,
+      right: left + width,
+      bottom: top + height,
+      x: left,
+      y: top,
+      toJSON: () => ({}),
+    }) as DOMRect;
 }
 
 function setupExperienceDom(html = workdayExperienceHtml()) {
@@ -201,6 +336,1130 @@ describe("fillWorkdayExperience", () => {
     expect(selectedItems(stanford.querySelector("[data-automation-id='formField-fieldOfStudy']") as HTMLElement)).toEqual(["Computer Science"]);
     expect(selectedItems(document.querySelector("[data-automation-id='formField-skills']") as HTMLElement)).toEqual(["TypeScript", "React"]);
     expect(footerClicks).toEqual([]);
+  });
+
+  it("presses Enter to load Workday skill search results before selecting", async () => {
+    const { document } = setupExperienceDom(`<!doctype html>
+      <div data-automation-id="progressBarActiveStep">My Experience</div>
+      <main data-automation-id="applyFlowMyExpPage">
+        <div data-automation-id="formField-skills">
+          <div data-automation-id="multiSelectContainer">
+            <div data-automation-id="multiselectInputContainer"><input /></div>
+          </div>
+        </div>
+      </main>`);
+    const skills = document.querySelector("[data-automation-id='formField-skills']") as HTMLElement;
+    const searches = wireTypeaheadAfterEnter(document, skills, [
+      "Slack Software",
+      "Slack API",
+      "Slack GPT",
+    ]);
+
+    await fillWorkdayExperience(
+      context({
+        ...baseProfile,
+        education: [],
+        skills: ["Slack"],
+      }),
+    );
+
+    expect(searches()).toBe(1);
+    expect(selectedItems(skills)).toEqual(["Slack Software"]);
+  });
+
+  it("keeps noisy Workday skill lists bounded and prioritizes concrete matches", async () => {
+    const { document } = setupExperienceDom(`<!doctype html>
+      <div data-automation-id="progressBarActiveStep">My Experience</div>
+      <main data-automation-id="applyFlowMyExpPage">
+        <div data-automation-id="formField-skills">
+          <div data-automation-id="multiSelectContainer">
+            <div data-automation-id="multiselectInputContainer"><input /></div>
+          </div>
+        </div>
+      </main>`);
+    const skills = document.querySelector("[data-automation-id='formField-skills']") as HTMLElement;
+    const searches = wireSelectiveSkillTypeahead(document, skills, {
+      TypeScript: "TypeScript",
+      React: "React",
+    });
+
+    await fillWorkdayExperience(
+      context({
+        ...baseProfile,
+        education: [],
+        skills: [
+          "Acceptance Criteria",
+          "Success Matrix",
+          "TypeScript",
+          "Defined PRDs, acceptance criteria, and user stories for platform features",
+          "React",
+          "Random Internal Phrase",
+          "Another Missing Skill",
+          "Yet Another Missing Skill",
+          "Extra Missing Skill",
+          "Final Missing Skill",
+        ],
+      }),
+    );
+
+    expect(selectedItems(skills)).toEqual(["TypeScript", "React"]);
+    expect(searches().length).toBeLessThanOrEqual(5);
+    expect(searches()).not.toContain("Acceptance Criteria");
+    expect(searches()).not.toContain("Success Matrix");
+  }, 30000);
+
+  it("selects checkbox-style Workday skill prompt results after pressing Enter", async () => {
+    const { document } = setupExperienceDom(`<!doctype html>
+      <div data-automation-id="progressBarActiveStep">My Experience</div>
+      <main data-automation-id="applyFlowMyExpPage">
+        <div data-automation-id="formField-skills">
+          <div data-automation-id="multiSelectContainer">
+            <div data-automation-id="multiselectInputContainer"><input /></div>
+          </div>
+        </div>
+      </main>`);
+    const skills = document.querySelector("[data-automation-id='formField-skills']") as HTMLElement;
+    const searches = wireCheckboxSkillTypeaheadAfterEnter(document, skills, [
+      "JIRA",
+      "JIRA Bug Tracking",
+      "Zephyr for JIRA",
+    ]);
+
+    await fillWorkdayExperience(
+      context({
+        ...baseProfile,
+        education: [],
+        skills: ["JIRA"],
+      }),
+    );
+
+    expect(searches()).toBe(1);
+    expect(selectedItems(skills)).toEqual(["JIRA"]);
+  });
+
+  it("uses the checkbox inside a Workday skill row when the row click does not commit", async () => {
+    const { document } = setupExperienceDom(`<!doctype html>
+      <div data-automation-id="progressBarActiveStep">My Experience</div>
+      <main data-automation-id="applyFlowMyExpPage">
+        <div data-automation-id="formField-skills">
+          <div data-automation-id="multiSelectContainer">
+            <div data-automation-id="multiselectInputContainer"><input /></div>
+          </div>
+        </div>
+      </main>`);
+    const skills = document.querySelector("[data-automation-id='formField-skills']") as HTMLElement;
+    const root = skills.querySelector<HTMLElement>("[data-automation-id='multiSelectContainer']") as HTMLElement;
+    const inputContainer = skills.querySelector<HTMLElement>("[data-automation-id='multiselectInputContainer']") as HTMLElement;
+    const input = skills.querySelector("input") as HTMLInputElement;
+
+    input.addEventListener("keydown", (event) => {
+      const keyboardEvent = event as KeyboardEvent;
+      if (keyboardEvent.key && keyboardEvent.key !== "Enter") return;
+      if (keyboardEvent.keyCode && keyboardEvent.keyCode !== 13) return;
+      clearListboxes(document);
+      const listbox = document.createElement("div");
+      listbox.setAttribute("role", "listbox");
+      listbox.setAttribute("data-test-listbox", "workday-row-checkbox");
+      const row = document.createElement("div");
+      row.setAttribute("role", "option");
+      row.id = "menuItem-Python";
+      row.setAttribute("aria-label", "Python (Programming Language) not checked");
+      const checkbox = document.createElement("input");
+      checkbox.type = "checkbox";
+      const label = document.createElement("p");
+      label.setAttribute("data-automation-id", "promptOption");
+      label.textContent = "Python (Programming Language)";
+      checkbox.addEventListener("click", () => {
+        if (selectedItems(skills).includes("Python (Programming Language)")) return;
+        const chip = document.createElement("span");
+        chip.setAttribute("data-automation-id", "selectedItem");
+        chip.textContent = "Python (Programming Language)";
+        root.insertBefore(chip, inputContainer);
+      });
+      row.append(checkbox, label);
+      listbox.append(row);
+      document.body.append(listbox);
+    });
+
+    await fillWorkdayExperience(
+      context({
+        ...baseProfile,
+        education: [],
+        skills: ["Python"],
+      }),
+    );
+
+    expect(selectedItems(skills)).toEqual(["Python (Programming Language)"]);
+  });
+
+  it("commits Workday skill rows whose checkbox only updates on checked change", async () => {
+    const { document } = setupExperienceDom(`<!doctype html>
+      <div data-automation-id="progressBarActiveStep">My Experience</div>
+      <main data-automation-id="applyFlowMyExpPage">
+        <div data-automation-id="formField-skills">
+          <div data-automation-id="multiSelectContainer">
+            <div data-automation-id="multiselectInputContainer"><input /></div>
+          </div>
+        </div>
+      </main>`);
+    const skills = document.querySelector("[data-automation-id='formField-skills']") as HTMLElement;
+    const root = skills.querySelector<HTMLElement>("[data-automation-id='multiSelectContainer']") as HTMLElement;
+    const inputContainer = skills.querySelector<HTMLElement>("[data-automation-id='multiselectInputContainer']") as HTMLElement;
+    const input = skills.querySelector("input") as HTMLInputElement;
+
+    input.addEventListener("keydown", (event) => {
+      const keyboardEvent = event as KeyboardEvent;
+      if (keyboardEvent.key && keyboardEvent.key !== "Enter") return;
+      if (keyboardEvent.keyCode && keyboardEvent.keyCode !== 13) return;
+      clearListboxes(document);
+      const listbox = document.createElement("div");
+      listbox.setAttribute("role", "listbox");
+      listbox.setAttribute("data-test-listbox", "workday-checkbox-change");
+      const row = document.createElement("div");
+      row.setAttribute("role", "option");
+      row.id = "menuItem-SQL";
+      row.setAttribute("data-automation-id", "menuItem");
+      const checkbox = document.createElement("input");
+      checkbox.type = "checkbox";
+      const label = document.createElement("p");
+      label.setAttribute("data-automation-id", "promptOption");
+      label.textContent = "SQL";
+      checkbox.addEventListener("change", () => {
+        if (!checkbox.checked || selectedItems(skills).includes("SQL")) return;
+        const chip = document.createElement("span");
+        chip.setAttribute("data-automation-id", "selectedItem");
+        chip.textContent = "SQL";
+        root.insertBefore(chip, inputContainer);
+      });
+      row.append(checkbox, label);
+      listbox.append(row);
+      document.body.append(listbox);
+    });
+
+    await fillWorkdayExperience(
+      context({
+        ...baseProfile,
+        education: [],
+        skills: ["SQL"],
+      }),
+    );
+
+    expect(selectedItems(skills)).toEqual(["SQL"]);
+  });
+
+  it("matches Workday skill options whose acronym is only in parentheses", async () => {
+    const { document } = setupExperienceDom(`<!doctype html>
+      <div data-automation-id="progressBarActiveStep">My Experience</div>
+      <main data-automation-id="applyFlowMyExpPage">
+        <div data-automation-id="formField-skills">
+          <div data-automation-id="multiSelectContainer">
+            <div data-automation-id="multiselectInputContainer"><input /></div>
+          </div>
+        </div>
+      </main>`);
+    const skills = document.querySelector("[data-automation-id='formField-skills']") as HTMLElement;
+    wireCheckboxSkillTypeaheadAfterEnter(document, skills, [
+      "Structured Query Language (SQL)",
+      "U-SQL",
+      "MySQL",
+    ]);
+
+    await fillWorkdayExperience(
+      context({
+        ...baseProfile,
+        education: [],
+        skills: ["SQL"],
+      }),
+    );
+
+    expect(selectedItems(skills)).toEqual(["Structured Query Language (SQL)"]);
+  });
+
+  it("prefers a visible clickable skill synonym over a clipped exact virtual row", async () => {
+    const { document } = setupExperienceDom(`<!doctype html>
+      <div data-automation-id="progressBarActiveStep">My Experience</div>
+      <main data-automation-id="applyFlowMyExpPage">
+        <div data-automation-id="formField-skills">
+          <div data-automation-id="multiSelectContainer">
+            <div data-automation-id="multiselectInputContainer"><input /></div>
+          </div>
+        </div>
+      </main>`);
+    const skills = document.querySelector("[data-automation-id='formField-skills']") as HTMLElement;
+    const root = skills.querySelector<HTMLElement>("[data-automation-id='multiSelectContainer']") as HTMLElement;
+    const inputContainer = skills.querySelector<HTMLElement>("[data-automation-id='multiselectInputContainer']") as HTMLElement;
+    const input = skills.querySelector("input") as HTMLInputElement;
+
+    const appendOption = (listbox: HTMLElement, label: string, top: number, commits: boolean) => {
+      const row = document.createElement("label");
+      row.setAttribute("data-automation-id", "promptOption");
+      const checkbox = document.createElement("input");
+      checkbox.type = "checkbox";
+      row.append(checkbox, document.createTextNode(` ${label}`));
+      stubRect(row, top, 0, 220, 32);
+      row.addEventListener("click", () => {
+        if (!commits) return;
+        const chip = document.createElement("span");
+        chip.setAttribute("data-automation-id", "selectedItem");
+        chip.textContent = label;
+        root.insertBefore(chip, inputContainer);
+      });
+      listbox.append(row);
+    };
+
+    input.addEventListener("keydown", (event) => {
+      const keyboardEvent = event as KeyboardEvent;
+      if (keyboardEvent.key && keyboardEvent.key !== "Enter") return;
+      if (keyboardEvent.keyCode && keyboardEvent.keyCode !== 13) return;
+      clearListboxes(document);
+      const listbox = document.createElement("div");
+      listbox.setAttribute("role", "listbox");
+      listbox.setAttribute("data-test-listbox", "virtualized-skill-list");
+      stubRect(listbox, 0, 0, 260, 96);
+      appendOption(listbox, "Structured Query Language (SQL)", 0, true);
+      appendOption(listbox, "U-SQL", 32, false);
+      appendOption(listbox, "SQL", 420, false);
+      document.body.append(listbox);
+    });
+
+    await fillWorkdayExperience(
+      context({
+        ...baseProfile,
+        education: [],
+        skills: ["SQL"],
+      }),
+    );
+
+    expect(selectedItems(skills)).toEqual(["Structured Query Language (SQL)"]);
+  });
+
+  it("prefers a partially visible exact skill over a fully visible parenthetical synonym", async () => {
+    const { document } = setupExperienceDom(`<!doctype html>
+      <div data-automation-id="progressBarActiveStep">My Experience</div>
+      <main data-automation-id="applyFlowMyExpPage">
+        <div data-automation-id="formField-skills">
+          <div data-automation-id="multiSelectContainer">
+            <div data-automation-id="multiselectInputContainer"><input /></div>
+          </div>
+        </div>
+      </main>`);
+    const skills = document.querySelector("[data-automation-id='formField-skills']") as HTMLElement;
+    const root = skills.querySelector<HTMLElement>("[data-automation-id='multiSelectContainer']") as HTMLElement;
+    const inputContainer = skills.querySelector<HTMLElement>("[data-automation-id='multiselectInputContainer']") as HTMLElement;
+    const input = skills.querySelector("input") as HTMLInputElement;
+
+    const appendOption = (listbox: HTMLElement, label: string, top: number) => {
+      const row = document.createElement("label");
+      row.setAttribute("data-automation-id", "promptOption");
+      row.style.top = `${top}px`;
+      const checkbox = document.createElement("input");
+      checkbox.type = "checkbox";
+      row.append(checkbox, document.createTextNode(` ${label}`));
+      stubRect(row, top, 0, 260, 32);
+      row.addEventListener("click", () => {
+        const chip = document.createElement("span");
+        chip.setAttribute("data-automation-id", "selectedItem");
+        chip.textContent = label;
+        root.insertBefore(chip, inputContainer);
+      });
+      listbox.append(row);
+    };
+
+    input.addEventListener("keydown", (event) => {
+      const keyboardEvent = event as KeyboardEvent;
+      if (keyboardEvent.key && keyboardEvent.key !== "Enter") return;
+      if (keyboardEvent.keyCode && keyboardEvent.keyCode !== 13) return;
+      clearListboxes(document);
+      const listbox = document.createElement("div");
+      listbox.setAttribute("role", "listbox");
+      stubRect(listbox, 0, 0, 260, 96);
+      appendOption(listbox, "Structured Query Language (SQL)", 0);
+      appendOption(listbox, "SQL", 80);
+      document.body.append(listbox);
+    });
+
+    await fillWorkdayExperience(
+      context({
+        ...baseProfile,
+        education: [],
+        skills: ["SQL"],
+      }),
+    );
+
+    expect(selectedItems(skills)).toEqual(["SQL"]);
+  });
+
+  it("scrolls a virtualized exact skill row before clicking it", async () => {
+    const { document } = setupExperienceDom(`<!doctype html>
+      <div data-automation-id="progressBarActiveStep">My Experience</div>
+      <main data-automation-id="applyFlowMyExpPage">
+        <div data-automation-id="formField-skills">
+          <div data-automation-id="multiSelectContainer">
+            <div data-automation-id="multiselectInputContainer"><input /></div>
+          </div>
+        </div>
+      </main>`);
+    const skills = document.querySelector("[data-automation-id='formField-skills']") as HTMLElement;
+    const root = skills.querySelector<HTMLElement>("[data-automation-id='multiSelectContainer']") as HTMLElement;
+    const inputContainer = skills.querySelector<HTMLElement>("[data-automation-id='multiselectInputContainer']") as HTMLElement;
+    const input = skills.querySelector("input") as HTMLInputElement;
+
+    const appendOption = (listbox: HTMLElement, label: string, top: number) => {
+      const row = document.createElement("label");
+      row.setAttribute("data-automation-id", "promptOption");
+      row.style.top = `${top}px`;
+      const checkbox = document.createElement("input");
+      checkbox.type = "checkbox";
+      row.append(checkbox, document.createTextNode(` ${label}`));
+      stubRect(row, top, 0, 260, 32);
+      row.addEventListener("click", () => {
+        if (label !== "PRDs" || listbox.scrollTop < 180) return;
+        const chip = document.createElement("span");
+        chip.setAttribute("data-automation-id", "selectedItem");
+        chip.textContent = label;
+        root.insertBefore(chip, inputContainer);
+      });
+      listbox.append(row);
+    };
+
+    input.addEventListener("keydown", (event) => {
+      const keyboardEvent = event as KeyboardEvent;
+      if (keyboardEvent.key && keyboardEvent.key !== "Enter") return;
+      if (keyboardEvent.keyCode && keyboardEvent.keyCode !== 13) return;
+      clearListboxes(document);
+      const listbox = document.createElement("div");
+      listbox.setAttribute("role", "listbox");
+      stubRect(listbox, 0, 0, 260, 96);
+      appendOption(listbox, "Presto", 0);
+      appendOption(listbox, "PR Research", 32);
+      appendOption(listbox, "Professional Digital Services (PSDS)", 64);
+      appendOption(listbox, "PRDs", 240);
+      document.body.append(listbox);
+    });
+
+    await fillWorkdayExperience(
+      context({
+        ...baseProfile,
+        education: [],
+        skills: ["PRDs"],
+      }),
+    );
+
+    expect(selectedItems(skills)).toEqual(["PRDs"]);
+  });
+
+  it("uses the visible Workday checkbox control when a hidden checkbox is present first", async () => {
+    const { document } = setupExperienceDom(`<!doctype html>
+      <div data-automation-id="progressBarActiveStep">My Experience</div>
+      <main data-automation-id="applyFlowMyExpPage">
+        <div data-automation-id="formField-skills">
+          <div data-automation-id="multiSelectContainer">
+            <div data-automation-id="multiselectInputContainer"><input /></div>
+          </div>
+        </div>
+      </main>`);
+    const skills = document.querySelector("[data-automation-id='formField-skills']") as HTMLElement;
+    const root = skills.querySelector<HTMLElement>("[data-automation-id='multiSelectContainer']") as HTMLElement;
+    const inputContainer = skills.querySelector<HTMLElement>("[data-automation-id='multiselectInputContainer']") as HTMLElement;
+    const input = skills.querySelector("input") as HTMLInputElement;
+
+    input.addEventListener("keydown", (event) => {
+      const keyboardEvent = event as KeyboardEvent;
+      if (keyboardEvent.key && keyboardEvent.key !== "Enter") return;
+      if (keyboardEvent.keyCode && keyboardEvent.keyCode !== 13) return;
+      clearListboxes(document);
+      const listbox = document.createElement("div");
+      listbox.setAttribute("role", "listbox");
+      stubRect(listbox, 0, 0, 260, 96);
+      const row = document.createElement("div");
+      row.id = "menuItem-PRDs";
+      row.setAttribute("role", "option");
+      row.setAttribute("data-automation-id", "menuItem");
+      row.setAttribute("aria-label", "PRDs not checked");
+      stubRect(row, 0, 0, 260, 32);
+      const hiddenInput = document.createElement("input");
+      hiddenInput.type = "checkbox";
+      stubRect(hiddenInput, 0, 0, 0, 0);
+      const visibleCheckbox = document.createElement("div");
+      visibleCheckbox.setAttribute("role", "checkbox");
+      visibleCheckbox.setAttribute("data-automation-id", "checkboxPanel");
+      stubRect(visibleCheckbox, 8, 8, 16, 16);
+      const label = document.createElement("span");
+      label.setAttribute("data-automation-id", "promptOption");
+      label.textContent = "PRDs";
+      visibleCheckbox.addEventListener("click", () => {
+        const chip = document.createElement("span");
+        chip.setAttribute("data-automation-id", "selectedItem");
+        chip.textContent = "PRDs";
+        root.insertBefore(chip, inputContainer);
+      });
+      row.append(hiddenInput, visibleCheckbox, label);
+      listbox.append(row);
+      document.body.append(listbox);
+    });
+
+    await fillWorkdayExperience(
+      context({
+        ...baseProfile,
+        education: [],
+        skills: ["PRDs"],
+      }),
+    );
+
+    expect(selectedItems(skills)).toEqual(["PRDs"]);
+  });
+
+  it("does not abandon the skills section after three misses when a later exact option exists", async () => {
+    const { document } = setupExperienceDom(`<!doctype html>
+      <div data-automation-id="progressBarActiveStep">My Experience</div>
+      <main data-automation-id="applyFlowMyExpPage">
+        <div data-automation-id="formField-skills">
+          <div data-automation-id="multiSelectContainer">
+            <div data-automation-id="multiselectInputContainer"><input /></div>
+          </div>
+        </div>
+      </main>`);
+    const skills = document.querySelector("[data-automation-id='formField-skills']") as HTMLElement;
+    const searches = wireSelectiveSkillTypeahead(document, skills, {
+      Delta: "Delta",
+    });
+
+    await fillWorkdayExperience(
+      context({
+        ...baseProfile,
+        education: [],
+        skills: ["Alpha", "Beta", "Gamma", "Delta"],
+      }),
+    );
+
+    expect(searches()).toEqual(["Alpha", "Beta", "Gamma", "Delta"]);
+    expect(selectedItems(skills)).toEqual(["Delta"]);
+  }, 30000);
+
+  it("waits through stale non-matching skill rows until the exact Workday option arrives", async () => {
+    const { document } = setupExperienceDom(`<!doctype html>
+      <div data-automation-id="progressBarActiveStep">My Experience</div>
+      <main data-automation-id="applyFlowMyExpPage">
+        <div data-automation-id="formField-skills">
+          <div data-automation-id="multiSelectContainer">
+            <div data-automation-id="multiselectInputContainer"><input /></div>
+          </div>
+        </div>
+      </main>`);
+    const skills = document.querySelector("[data-automation-id='formField-skills']") as HTMLElement;
+    const root = skills.querySelector<HTMLElement>("[data-automation-id='multiSelectContainer']") as HTMLElement;
+    const inputContainer = skills.querySelector<HTMLElement>("[data-automation-id='multiselectInputContainer']") as HTMLElement;
+    const input = skills.querySelector("input") as HTMLInputElement;
+
+    const renderOptions = (labels: string[]) => {
+      clearListboxes(document);
+      const listbox = document.createElement("div");
+      listbox.setAttribute("role", "listbox");
+      listbox.setAttribute("data-test-listbox", "late-skill-results");
+      for (const label of labels) {
+        const row = document.createElement("div");
+        row.setAttribute("role", "option");
+        row.textContent = label;
+        row.addEventListener("click", () => {
+          const chip = document.createElement("span");
+          chip.setAttribute("data-automation-id", "selectedItem");
+          chip.textContent = label;
+          root.insertBefore(chip, inputContainer);
+          input.value = "";
+          listbox.remove();
+        });
+        listbox.append(row);
+      }
+      document.body.append(listbox);
+    };
+
+    input.addEventListener("keydown", (event) => {
+      const keyboardEvent = event as KeyboardEvent;
+      if (keyboardEvent.key && keyboardEvent.key !== "Enter") return;
+      if (keyboardEvent.keyCode && keyboardEvent.keyCode !== 13) return;
+      renderOptions(["Netezza SQL", "Spark SQL", "SQL Manager"]);
+      setTimeout(() => renderOptions(["Python", "Python (Programming Language)"]), 3300);
+    });
+
+    await fillWorkdayExperience(
+      context({
+        ...baseProfile,
+        education: [],
+        skills: ["Python"],
+      }),
+    );
+
+    expect(selectedItems(skills)).toEqual(["Python"]);
+  }, 15000);
+
+  it("selects many skills in sequence across separate per-query searches", async () => {
+    const { document } = setupExperienceDom(`<!doctype html>
+      <div data-automation-id="progressBarActiveStep">My Experience</div>
+      <main data-automation-id="applyFlowMyExpPage">
+        <div data-automation-id="formField-skills">
+          <div data-automation-id="multiSelectContainer">
+            <div data-automation-id="multiselectInputContainer"><input /></div>
+          </div>
+        </div>
+      </main>`);
+    const skills = document.querySelector("[data-automation-id='formField-skills']") as HTMLElement;
+    const root = skills.querySelector<HTMLElement>("[data-automation-id='multiSelectContainer']") as HTMLElement;
+    const inputContainer = skills.querySelector<HTMLElement>("[data-automation-id='multiselectInputContainer']") as HTMLElement;
+    const input = skills.querySelector("input") as HTMLInputElement;
+    const catalog: Record<string, string[]> = {
+      sql: ["Structured Query Language (SQL)", "U-SQL", "SQL"],
+      python: ["Python (Programming Language)", "Python IDLE"],
+      jira: ["Atlassian JIRA", "JIRA Tool"],
+      react: ["React", "React Native"],
+    };
+    // Search-on-type, but the selected row's listbox + input text are intentionally left behind
+    // (stale) — the filler must reset the input before the next skill or it would act on the leftover.
+    input.addEventListener("input", () => {
+      clearListboxes(document);
+      const query = input.value.trim().toLowerCase();
+      if (!query) return;
+      const labels = catalog[query] ?? [];
+      const listbox = document.createElement("div");
+      listbox.setAttribute("role", "listbox");
+      listbox.setAttribute("data-test-listbox", "sequential");
+      if (labels.length === 0) {
+        listbox.textContent = "No Items.";
+        document.body.append(listbox);
+        return;
+      }
+      for (const label of labels) {
+        const row = document.createElement("label");
+        row.setAttribute("data-automation-id", "promptOption");
+        const checkbox = document.createElement("input");
+        checkbox.type = "checkbox";
+        row.append(checkbox, document.createTextNode(` ${label}`));
+        const select = () => {
+          if (Array.from(root.querySelectorAll("[data-automation-id='selectedItem']")).some((item) => item.textContent?.trim() === label)) {
+            return;
+          }
+          const chip = document.createElement("span");
+          chip.setAttribute("data-automation-id", "selectedItem");
+          chip.textContent = label;
+          root.insertBefore(chip, inputContainer);
+        };
+        row.addEventListener("click", select);
+        checkbox.addEventListener("click", select);
+        listbox.append(row);
+      }
+      document.body.append(listbox);
+    });
+
+    await fillWorkdayExperience(
+      context({
+        ...baseProfile,
+        education: [],
+        skills: ["SQL", "Python", "JIRA", "React"],
+      }),
+    );
+
+    expect(selectedItems(skills)).toEqual([
+      "SQL",
+      "Python (Programming Language)",
+      "Atlassian JIRA",
+      "React",
+    ]);
+  });
+
+  it("treats reused Workday virtualized rows as fresh when their labels change", async () => {
+    const { document } = setupExperienceDom(`<!doctype html>
+      <div data-automation-id="progressBarActiveStep">My Experience</div>
+      <main data-automation-id="applyFlowMyExpPage">
+        <div data-automation-id="formField-skills">
+          <div data-automation-id="multiSelectContainer">
+            <div data-automation-id="multiselectInputContainer"><input /></div>
+          </div>
+        </div>
+      </main>`);
+    const skills = document.querySelector("[data-automation-id='formField-skills']") as HTMLElement;
+    const root = skills.querySelector<HTMLElement>("[data-automation-id='multiSelectContainer']") as HTMLElement;
+    const inputContainer = skills.querySelector<HTMLElement>("[data-automation-id='multiselectInputContainer']") as HTMLElement;
+    const input = skills.querySelector("input") as HTMLInputElement;
+    const listbox = document.createElement("div");
+    listbox.setAttribute("role", "listbox");
+    listbox.setAttribute("data-test-listbox", "reused-virtual-rows");
+    const row = document.createElement("div");
+    row.setAttribute("role", "option");
+    row.id = "menuItem-REMOTE_SKILL-1";
+    row.textContent = "Python (Programming Language)";
+    row.addEventListener("click", () => {
+      if (row.textContent?.trim() !== "SQL") return;
+      const chip = document.createElement("span");
+      chip.setAttribute("data-automation-id", "selectedItem");
+      chip.textContent = "SQL";
+      root.insertBefore(chip, inputContainer);
+    });
+    listbox.append(row);
+    document.body.append(listbox);
+
+    input.addEventListener("keydown", (event) => {
+      const keyboardEvent = event as KeyboardEvent;
+      if (keyboardEvent.key && keyboardEvent.key !== "Enter") return;
+      if (keyboardEvent.keyCode && keyboardEvent.keyCode !== 13) return;
+      setTimeout(() => {
+        row.textContent = "SQL";
+      }, 360);
+    });
+
+    await fillWorkdayExperience(
+      context({
+        ...baseProfile,
+        education: [],
+        skills: ["SQL"],
+      }),
+    );
+
+    expect(selectedItems(skills)).toEqual(["SQL"]);
+  });
+
+  it("prefers the exact Workday skill over a fuzzy acronym neighbor", async () => {
+    const { document } = setupExperienceDom(`<!doctype html>
+      <div data-automation-id="progressBarActiveStep">My Experience</div>
+      <main data-automation-id="applyFlowMyExpPage">
+        <div data-automation-id="formField-skills">
+          <div data-automation-id="multiSelectContainer">
+            <div data-automation-id="multiselectInputContainer"><input /></div>
+          </div>
+        </div>
+      </main>`);
+    const skills = document.querySelector("[data-automation-id='formField-skills']") as HTMLElement;
+    wireCheckboxSkillTypeaheadAfterEnter(document, skills, ["U-SQL", "SQL", "MySQL"]);
+
+    await fillWorkdayExperience(
+      context({
+        ...baseProfile,
+        education: [],
+        skills: ["SQL"],
+      }),
+    );
+
+    expect(selectedItems(skills)).toEqual(["SQL"]);
+  });
+
+  it("does not fill a different short-acronym Workday skill when the exact skill is missing", async () => {
+    const { document } = setupExperienceDom(`<!doctype html>
+      <div data-automation-id="progressBarActiveStep">My Experience</div>
+      <main data-automation-id="applyFlowMyExpPage">
+        <div data-automation-id="formField-skills">
+          <div data-automation-id="multiSelectContainer">
+            <div data-automation-id="multiselectInputContainer"><input /></div>
+          </div>
+        </div>
+      </main>`);
+    const skills = document.querySelector("[data-automation-id='formField-skills']") as HTMLElement;
+    wireCheckboxSkillTypeaheadAfterEnter(document, skills, ["U-SQL", "MySQL"]);
+
+    await fillWorkdayExperience(
+      context({
+        ...baseProfile,
+        education: [],
+        skills: ["SQL"],
+      }),
+    );
+
+    expect(selectedItems(skills)).toEqual([]);
+  }, 15000);
+
+  it("does not treat existing Workday selected pills as fresh skill search options", async () => {
+    const { document } = setupExperienceDom(`<!doctype html>
+      <div data-automation-id="progressBarActiveStep">My Experience</div>
+      <main data-automation-id="applyFlowMyExpPage">
+        <div data-automation-id="formField-fieldOfStudy">
+          <div data-automation-id="multiSelectContainer">
+            <div data-automation-id="multiselectInputContainer"><input /></div>
+            <ul role="listbox" data-automation-id="selectedItemList" aria-label="items selected">
+              <li role="presentation" data-automation-id="menuItem">
+                <div role="option" data-automation-id="selectedItem" aria-label="U-SQL, press delete to clear value." title="U-SQL">
+                  <p data-automation-id="promptOption" data-automation-label="U-SQL">U-SQL</p>
+                </div>
+              </li>
+            </ul>
+          </div>
+        </div>
+        <div data-automation-id="formField-skills">
+          <div data-automation-id="multiSelectContainer">
+            <div data-automation-id="multiselectInputContainer"><input /></div>
+          </div>
+        </div>
+      </main>`);
+    const skills = document.querySelector("[data-automation-id='formField-skills']") as HTMLElement;
+    // Real Workday answers a no-match search with a "No Items." notice (never silence), which is how
+    // the filler knows to give up. The U-SQL pill lives in the *field of study* field, not skills.
+    const skillsInput = skills.querySelector("input") as HTMLInputElement;
+    const showNoItems = () => {
+      clearListboxes(document);
+      const listbox = document.createElement("div");
+      listbox.setAttribute("role", "listbox");
+      listbox.setAttribute("data-test-listbox", "skills-empty");
+      listbox.textContent = "No Items.";
+      document.body.append(listbox);
+    };
+    skillsInput.addEventListener("input", showNoItems);
+    skillsInput.addEventListener("keydown", showNoItems);
+
+    await fillWorkdayExperience(
+      context({
+        ...baseProfile,
+        education: [],
+        skills: ["U-SQL"],
+      }),
+    );
+
+    expect(selectedItems(skills)).toEqual([]);
+  });
+
+  it("maps field-of-study aliases to Workday controlled options", async () => {
+    const { document } = setupExperienceDom(`<!doctype html>
+      <div data-automation-id="progressBarActiveStep">My Experience</div>
+      <main data-automation-id="applyFlowMyExpPage">
+        <section role="group" data-row="data">
+          <div data-automation-id="formField-schoolName"><input value="Data University" /></div>
+          <div data-automation-id="formField-fieldOfStudy">
+            <div data-automation-id="multiSelectContainer">
+              <div data-automation-id="multiselectInputContainer"><input /></div>
+            </div>
+          </div>
+        </section>
+        <section role="group" data-row="it">
+          <div data-automation-id="formField-schoolName"><input value="IT University" /></div>
+          <div data-automation-id="formField-fieldOfStudy">
+            <div data-automation-id="multiSelectContainer">
+              <div data-automation-id="multiselectInputContainer"><input /></div>
+            </div>
+          </div>
+        </section>
+        <section role="group" data-row="ece">
+          <div data-automation-id="formField-schoolName"><input value="ECE University" /></div>
+          <div data-automation-id="formField-fieldOfStudy">
+            <div data-automation-id="multiSelectContainer">
+              <div data-automation-id="multiselectInputContainer"><input /></div>
+            </div>
+          </div>
+        </section>
+      </main>`);
+    const data = document.querySelector("[data-row='data'] [data-automation-id='formField-fieldOfStudy']") as HTMLElement;
+    const it = document.querySelector("[data-row='it'] [data-automation-id='formField-fieldOfStudy']") as HTMLElement;
+    const ece = document.querySelector("[data-row='ece'] [data-automation-id='formField-fieldOfStudy']") as HTMLElement;
+    wireTypeaheadAfterEnter(document, data, [
+      "Computer and Information Science",
+      "Computer Engineering",
+      "Electrical Engineering",
+    ]);
+    wireTypeaheadAfterEnter(document, it, [
+      "Computer and Information Science",
+      "Computer Engineering",
+      "Electrical Engineering",
+    ]);
+    wireTypeaheadAfterEnter(document, ece, [
+      "Aerospace Engineering",
+      "Computer Engineering",
+      "Electrical Engineering",
+    ]);
+
+    await fillWorkdayExperience(
+      context({
+        ...baseProfile,
+        education: [
+          { school: "Data University", field: "Data Science" },
+          { school: "IT University", field: "Information Technology" },
+          { school: "ECE University", field: "ECE" },
+        ],
+        skills: [],
+      }),
+    );
+
+    expect(selectedItems(data)).toEqual(["Computer and Information Science"]);
+    expect(selectedItems(it)).toEqual(["Computer and Information Science"]);
+    expect(selectedItems(ece)).toEqual(["Electrical Engineering"]);
+  });
+
+  it("skips field of study when Workday already has a selected-item-list chip", async () => {
+    const { document } = setupExperienceDom(`<!doctype html>
+      <div data-automation-id="progressBarActiveStep">My Experience</div>
+      <main data-automation-id="applyFlowMyExpPage">
+        <section role="group" data-row="ece">
+          <div data-automation-id="formField-schoolName"><input value="ECE University" /></div>
+          <div data-automation-id="formField-fieldOfStudy">
+            <div data-automation-id="multiSelectContainer">
+              <ul role="listbox" data-automation-id="selectedItemList" aria-label="items selected">
+                <li role="presentation" data-automation-id="menuItem">
+                  <div role="option" data-automation-id="menuItem" aria-label="Electrical Engineering, press delete to clear value.">
+                    <button type="button" aria-label="Remove Electrical Engineering"></button>
+                    <p data-automation-id="promptOption" data-automation-label="Electrical Engineering">Electrical Engineering</p>
+                  </div>
+                </li>
+              </ul>
+              <div data-automation-id="multiselectInputContainer"><input /></div>
+            </div>
+          </div>
+        </section>
+      </main>`);
+    const field = document.querySelector("[data-row='ece'] [data-automation-id='formField-fieldOfStudy']") as HTMLElement;
+    const input = field.querySelector("input") as HTMLInputElement;
+    let searches = 0;
+    input.addEventListener("input", () => {
+      searches += 1;
+    });
+
+    await fillWorkdayExperience(
+      context({
+        ...baseProfile,
+        education: [{ school: "ECE University", field: "ECE" }],
+        skills: [],
+      }),
+    );
+
+    expect(searches).toBe(0);
+    expect(field.textContent).toContain("Electrical Engineering");
+  });
+
+  it("does not accept a highlighted unrelated field-of-study option while searching aliases", async () => {
+    const { document } = setupExperienceDom(`<!doctype html>
+      <div data-automation-id="progressBarActiveStep">My Experience</div>
+      <main data-automation-id="applyFlowMyExpPage">
+        <section role="group" data-row="ece">
+          <div data-automation-id="formField-schoolName"><input value="ECE University" /></div>
+          <div data-automation-id="formField-fieldOfStudy">
+            <div data-automation-id="multiSelectContainer">
+              <div data-automation-id="multiselectInputContainer"><input /></div>
+            </div>
+          </div>
+        </section>
+      </main>`);
+    const field = document.querySelector("[data-row='ece'] [data-automation-id='formField-fieldOfStudy']") as HTMLElement;
+    const root = field.querySelector<HTMLElement>("[data-automation-id='multiSelectContainer']") as HTMLElement;
+    const inputContainer = field.querySelector<HTMLElement>("[data-automation-id='multiselectInputContainer']") as HTMLElement;
+    const input = field.querySelector("input") as HTMLInputElement;
+    let committed = false;
+    const clickedLabels: string[] = [];
+
+    input.addEventListener("input", () => {
+      clearListboxes(document);
+      const listbox = document.createElement("div");
+      listbox.setAttribute("role", "listbox");
+      listbox.setAttribute("data-test-listbox", "unrelated-field-list");
+      for (const label of ["Accounting", "Actuarial Science", "Advertising", "Aerospace Engineering"]) {
+        const option = document.createElement("div");
+        option.setAttribute("role", "option");
+        option.textContent = label;
+        option.addEventListener("click", () => {
+          clickedLabels.push(label);
+          const chip = document.createElement("span");
+          chip.setAttribute("data-automation-id", "selectedItem");
+          chip.textContent = label;
+          root.insertBefore(chip, inputContainer);
+        });
+        listbox.append(option);
+      }
+      document.body.append(listbox);
+    });
+    input.addEventListener("keydown", (event) => {
+      // Simulate Workday's highlighted default commit only for Enter, not Escape cleanup.
+      const keyboardEvent = event as KeyboardEvent;
+      if (keyboardEvent.key && keyboardEvent.key !== "Enter") return;
+      if (keyboardEvent.keyCode && keyboardEvent.keyCode !== 13) return;
+      if (committed) return;
+      committed = true;
+      const chip = document.createElement("span");
+      chip.setAttribute("data-automation-id", "selectedItem");
+      chip.textContent = "Aerospace Engineering";
+      root.insertBefore(chip, inputContainer);
+    });
+
+    await fillWorkdayExperience(
+      context({
+        ...baseProfile,
+        education: [{ school: "ECE University", field: "ECE" }],
+        skills: [],
+      }),
+    );
+
+    expect(selectedItems(field)).toEqual([]);
+    expect(clickedLabels).toEqual([]);
+  }, 10000);
+
+  it("removes a wrong field-of-study chip if Enter commits the highlighted option", async () => {
+    const { document } = setupExperienceDom(`<!doctype html>
+      <div data-automation-id="progressBarActiveStep">My Experience</div>
+      <main data-automation-id="applyFlowMyExpPage">
+        <section role="group" data-row="ece">
+          <div data-automation-id="formField-schoolName"><input value="ECE University" /></div>
+          <div data-automation-id="formField-fieldOfStudy">
+            <div data-automation-id="multiSelectContainer">
+              <div data-automation-id="multiselectInputContainer"><input /></div>
+            </div>
+          </div>
+        </section>
+      </main>`);
+    const field = document.querySelector("[data-row='ece'] [data-automation-id='formField-fieldOfStudy']") as HTMLElement;
+    const root = field.querySelector<HTMLElement>("[data-automation-id='multiSelectContainer']") as HTMLElement;
+    const inputContainer = field.querySelector<HTMLElement>("[data-automation-id='multiselectInputContainer']") as HTMLElement;
+    const input = field.querySelector("input") as HTMLInputElement;
+    let committed = false;
+
+    input.addEventListener("keydown", (event) => {
+      const keyboardEvent = event as KeyboardEvent;
+      if (keyboardEvent.key && keyboardEvent.key !== "Enter") return;
+      if (keyboardEvent.keyCode && keyboardEvent.keyCode !== 13) return;
+      // Workday answers the no-match search with "No Items." (so the filler stops waiting)...
+      clearListboxes(document);
+      const listbox = document.createElement("div");
+      listbox.setAttribute("role", "listbox");
+      listbox.setAttribute("data-test-listbox", "ece-empty");
+      listbox.textContent = "No Items.";
+      document.body.append(listbox);
+      // ...but also commits the highlighted default the first time, which the filler must clean up.
+      if (committed) return;
+      committed = true;
+      const chip = document.createElement("span");
+      chip.setAttribute("data-automation-id", "selectedItem");
+      chip.textContent = "Aerospace Engineering";
+      root.insertBefore(chip, inputContainer);
+    });
+
+    await fillWorkdayExperience(
+      context({
+        ...baseProfile,
+        education: [{ school: "ECE University", field: "ECE" }],
+        skills: [],
+      }),
+    );
+
+    expect(selectedItems(field)).toEqual([]);
+  }, 10000);
+
+  it("maps technology degree aliases to the right Workday degree level", async () => {
+    const { document } = setupExperienceDom(`<!doctype html>
+      <div data-automation-id="progressBarActiveStep">My Experience</div>
+      <main data-automation-id="applyFlowMyExpPage">
+        <section role="group" data-row="btech">
+          <div data-automation-id="formField-schoolName"><input value="BTech University" /></div>
+          <div data-automation-id="formField-degree"><button type="button" aria-haspopup="listbox">Select One</button></div>
+        </section>
+        <section role="group" data-row="mtech">
+          <div data-automation-id="formField-schoolName"><input value="MTech University" /></div>
+          <div data-automation-id="formField-degree"><button type="button" aria-haspopup="listbox">Select One</button></div>
+        </section>
+        <section role="group" data-row="ms">
+          <div data-automation-id="formField-schoolName"><input value="MS University" /></div>
+          <div data-automation-id="formField-degree"><button type="button" aria-haspopup="listbox">Select One</button></div>
+        </section>
+      </main>`);
+    const options = [
+      "Doctorate degree (e.g. PhD, PsyD, EdD, JD)",
+      "Masters degree (e.g. MBA, MA, MS, Meng)",
+      "Three to Four year University Bachelors degree (e.g. BA, BS)",
+      "Joint: Three to Four year University Bachelors degree (e.g. BA, BS)",
+      "Major: Three to Four year University Bachelors degree (e.g. BA, BS)",
+    ];
+    const btech = document.querySelector("[data-row='btech'] [data-automation-id='formField-degree'] button") as HTMLElement;
+    const mtech = document.querySelector("[data-row='mtech'] [data-automation-id='formField-degree'] button") as HTMLElement;
+    const ms = document.querySelector("[data-row='ms'] [data-automation-id='formField-degree'] button") as HTMLElement;
+    wireDegree(document, btech, options);
+    wireDegree(document, mtech, options);
+    wireDegree(document, ms, options);
+
+    await fillWorkdayExperience(
+      context({
+        ...baseProfile,
+        education: [
+          { school: "BTech University", degree: "B.Tech" },
+          { school: "MTech University", degree: "MTech" },
+          { school: "MS University", degree: "Master of Science" },
+        ],
+        skills: [],
+      }),
+    );
+
+    expect(btech.textContent).toBe("Three to Four year University Bachelors degree (e.g. BA, BS)");
+    expect(mtech.textContent).toBe("Masters degree (e.g. MBA, MA, MS, Meng)");
+    expect(ms.textContent).toBe("Masters degree (e.g. MBA, MA, MS, Meng)");
+  });
+
+  it("selects a degree whose listbox renders late and only commits the option on Enter", async () => {
+    const { document } = setupExperienceDom(`<!doctype html>
+      <div data-automation-id="progressBarActiveStep">My Experience</div>
+      <main data-automation-id="applyFlowMyExpPage">
+        <section role="group" data-row="btech">
+          <div data-automation-id="formField-schoolName"><input value="BTech University" /></div>
+          <div data-automation-id="formField-degree"><button type="button" aria-haspopup="listbox">Select One</button></div>
+        </section>
+      </main>`);
+    const button = document.querySelector("[data-automation-id='formField-degree'] button") as HTMLElement;
+    // Workday-style: the portal listbox renders a beat after the click, and clicking an option does
+    // NOT commit — only Enter on the focused option updates the button.
+    button.addEventListener("click", () => {
+      clearListboxes(document);
+      setTimeout(() => {
+        const listbox = document.createElement("div");
+        listbox.setAttribute("role", "listbox");
+        listbox.setAttribute("data-test-listbox", "degree-async");
+        for (const label of [
+          "Doctorate degree (e.g. PhD, PsyD, EdD, JD)",
+          "Masters degree (e.g. MBA, MA, MS, Meng)",
+          "Three to Four year University Bachelors degree (e.g. BA, BS)",
+        ]) {
+          const option = document.createElement("div");
+          option.setAttribute("role", "option");
+          option.textContent = label;
+          option.addEventListener("keydown", (event) => {
+            const keyboardEvent = event as KeyboardEvent;
+            if (keyboardEvent.key && keyboardEvent.key !== "Enter") return;
+            if (keyboardEvent.keyCode && keyboardEvent.keyCode !== 13) return;
+            button.textContent = label;
+            button.setAttribute("aria-valuetext", label);
+            listbox.remove();
+          });
+          listbox.append(option);
+        }
+        document.body.append(listbox);
+      }, 220);
+    });
+
+    await fillWorkdayExperience(
+      context({
+        ...baseProfile,
+        education: [{ school: "BTech University", degree: "B.Tech" }],
+        skills: [],
+      }),
+    );
+
+    expect(button.textContent).toBe("Three to Four year University Bachelors degree (e.g. BA, BS)");
+  });
+
+  it("maps a plain Computer Science field of study to Computer and Information Science", async () => {
+    const { document } = setupExperienceDom(`<!doctype html>
+      <div data-automation-id="progressBarActiveStep">My Experience</div>
+      <main data-automation-id="applyFlowMyExpPage">
+        <section role="group" data-row="cs">
+          <div data-automation-id="formField-schoolName"><input value="CS University" /></div>
+          <div data-automation-id="formField-fieldOfStudy">
+            <div data-automation-id="multiSelectContainer">
+              <div data-automation-id="multiselectInputContainer"><input /></div>
+            </div>
+          </div>
+        </section>
+      </main>`);
+    const cs = document.querySelector("[data-row='cs'] [data-automation-id='formField-fieldOfStudy']") as HTMLElement;
+    wireTypeaheadAfterEnter(document, cs, [
+      "Computer and Information Science",
+      "Computer Engineering",
+      "Information Science",
+    ]);
+
+    await fillWorkdayExperience(
+      context({
+        ...baseProfile,
+        education: [{ school: "CS University", field: "Computer Science" }],
+        skills: [],
+      }),
+    );
+
+    expect(selectedItems(cs)).toEqual(["Computer and Information Science"]);
   });
 
   it("leaves already-filled controls alone and does not click Save, Back, or Add Another", async () => {
@@ -331,6 +1590,35 @@ describe("fillWorkdayExperience — blank repeater pages", () => {
     });
   }
 
+  function wireRerenderingAddButton(
+    document: Document,
+    button: HTMLElement,
+    template: string,
+    onRow?: (row: HTMLElement) => void,
+  ) {
+    let clicks = 0;
+    const attach = (current: HTMLElement) => {
+      current.addEventListener("click", () => {
+        const parent = current.parentElement;
+        if (!parent) return;
+        clicks += 1;
+        const holder = document.createElement("div");
+        holder.innerHTML = template;
+        const row = holder.firstElementChild as HTMLElement;
+        parent.insertBefore(row, current);
+        onRow?.(row);
+
+        const next = current.cloneNode(true) as HTMLElement;
+        next.setAttribute("data-automation-id", "addAnother");
+        next.textContent = "Add Another";
+        current.replaceWith(next);
+        attach(next);
+      });
+    };
+    attach(button);
+    return () => clicks;
+  }
+
   function input(scope: Element | null, selector: string) {
     return scope?.querySelector(selector) as HTMLInputElement | null;
   }
@@ -370,6 +1658,19 @@ describe("fillWorkdayExperience — blank repeater pages", () => {
       "React",
     ]);
     return { document, clicks };
+  }
+
+  function setupBlankWithRerenderedAddButtons() {
+    const { document } = setupExperienceDom(blankHtml());
+    const addButtons = Array.from(document.querySelectorAll<HTMLElement>("[data-automation-id='add-button']"));
+    const bySection = (section: string) =>
+      addButtons.find((button) => button.getAttribute("data-section") === section) as HTMLElement;
+    const workClicks = wireRerenderingAddButton(document, bySection("work"), WORK_ROW_TEMPLATE);
+    const educationClicks = wireRerenderingAddButton(document, bySection("education"), EDUCATION_ROW_TEMPLATE);
+    return {
+      document,
+      clicks: () => ({ work: workClicks(), education: educationClicks() }),
+    };
   }
 
   const filledProfile: MasterProfile = {
@@ -432,6 +1733,59 @@ describe("fillWorkdayExperience — blank repeater pages", () => {
       "TypeScript",
     ]);
     expect(clicks).toEqual({ work: 1, education: 1, languages: 0 });
+  });
+
+  it("re-finds replaced Add Another buttons and fills multiple Work Experience and Education rows", async () => {
+    const { document, clicks } = setupBlankWithRerenderedAddButtons();
+
+    await fillWorkdayExperience(
+      context({
+        ...baseProfile,
+        experience: [
+          {
+            title: "Senior Engineer",
+            company: "Acme Corp",
+            location: "Remote",
+            startDate: "2021-03",
+            endDate: "2023-06",
+            current: false,
+            bullets: [],
+          },
+          {
+            title: "Engineering Manager",
+            company: "Beta Labs",
+            location: "New York",
+            startDate: "2023-07",
+            endDate: null,
+            current: true,
+            bullets: [],
+          },
+        ],
+        education: [
+          { school: "Stanford University" },
+          { school: "Massachusetts Institute of Technology" },
+        ],
+        skills: [],
+      }),
+    );
+
+    const workRows = Array.from(document.querySelectorAll<HTMLElement>("[data-row='work']"));
+    const educationRows = Array.from(document.querySelectorAll<HTMLElement>("[data-row='education']"));
+    expect(workRows).toHaveLength(2);
+    expect(educationRows).toHaveLength(2);
+    expect(workRows.map((row) => input(row, "[data-automation-id='formField-jobTitle'] input")?.value)).toEqual([
+      "Senior Engineer",
+      "Engineering Manager",
+    ]);
+    expect(workRows.map((row) => input(row, "[data-automation-id='formField-companyName'] input")?.value)).toEqual([
+      "Acme Corp",
+      "Beta Labs",
+    ]);
+    expect(educationRows.map((row) => input(row, "[data-automation-id='formField-schoolName'] input")?.value)).toEqual([
+      "Stanford University",
+      "Massachusetts Institute of Technology",
+    ]);
+    expect(clicks()).toEqual({ work: 2, education: 2 });
   });
 
   it("checks 'currently work here' and leaves the end date empty for a current role", async () => {

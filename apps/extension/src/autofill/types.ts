@@ -35,6 +35,7 @@ export interface FillContext {
   getResume: (jobId?: string | null) => Promise<{ resumeUrl: string | null; coverLetterUrl?: string | null }>;
   onField: (record: ExtensionFieldFillRecord) => void;
   llmMap: (field: FieldDescriptor) => Promise<ExtensionFieldMapping | null>;
+  shouldStop?: () => boolean;
 }
 
 export interface PlatformAdapter {

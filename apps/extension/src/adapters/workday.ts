@@ -50,23 +50,27 @@ export const workdayAdapter: PlatformAdapter = {
       },
       {
         selector:
-          "[data-automation-id='phone-number'] input, [data-automation-id='phoneNumber'] input, [data-automation-id='phoneWidget'] input, input[data-automation-id='phone-number'], input[data-automation-id='phoneNumber'], input[type='tel'], input[autocomplete='tel']",
+          "[data-automation-id='phone-number'] input, [data-automation-id='phoneNumber'] input, [data-automation-id='formField-phoneNumber'] input, input[data-automation-id='phone-number'], input[data-automation-id='phoneNumber'], input[type='tel'], input[autocomplete='tel']",
         key: "identity.phone",
       },
       {
         selector:
-          "[data-automation-id='addressLine1'] input, [data-automation-id='addressLine_1'] input, [data-automation-id='addressSection_addressLine1'] input, input[data-automation-id='addressLine1'], input[autocomplete='address-line1']",
+          "[data-automation-id='addressLine1'] input, [data-automation-id='addressLine_1'] input, [data-automation-id='addressSection_addressLine1'] input, [data-automation-id='formField-addressLine1'] input, [data-automation-id='formField-addressLine_1'] input, input[data-automation-id='addressLine1'], input[autocomplete='address-line1']",
         key: "location.street",
       },
-      { selector: "[data-automation-id='city'] input, input[data-automation-id='city'], input[autocomplete='address-level2']", key: "location.city" },
       {
         selector:
-          "[data-automation-id='state'] input, [data-automation-id='region'] input, input[data-automation-id='state'], input[data-automation-id='region'], input[autocomplete='address-level1']",
+          "[data-automation-id='city'] input, [data-automation-id='formField-city'] input, input[data-automation-id='city'], input[autocomplete='address-level2']",
+        key: "location.city",
+      },
+      {
+        selector:
+          "[data-automation-id='state'] input, [data-automation-id='region'] input, [data-automation-id='formField-state'] input, [data-automation-id='formField-region'] input, input[data-automation-id='state'], input[data-automation-id='region'], input[autocomplete='address-level1']",
         key: "location.state",
       },
       {
         selector:
-          "[data-automation-id='postalCode'] input, [data-automation-id='zipCode'] input, input[data-automation-id='postalCode'], input[data-automation-id='zipCode'], input[autocomplete='postal-code']",
+          "[data-automation-id='postalCode'] input, [data-automation-id='zipCode'] input, [data-automation-id='formField-postalCode'] input, [data-automation-id='formField-zipCode'] input, input[data-automation-id='postalCode'], input[data-automation-id='zipCode'], input[autocomplete='postal-code']",
         key: "location.postalCode",
       },
       {

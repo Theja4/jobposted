@@ -536,6 +536,82 @@ describe("field resolution", () => {
     );
   });
 
+  it("maps Workday legal-name labels from the field label and skips local-name fields", async () => {
+    const { adapter, fields } = await loadHtml(
+      `<!doctype html>
+      <form data-automation-id="workdayApplication">
+        <section>
+          <h3>Name</h3>
+          <div data-automation-id="formField-givenName"><label for="given">Given Name(s)<span>*</span></label><input id="given" /></div>
+          <div data-automation-id="formField-familyName"><label for="family">Family Name</label><input id="family" /></div>
+          <div data-automation-id="formField-localGivenName"><label for="local-given">Local Given Name(s)</label><input id="local-given" /></div>
+          <div data-automation-id="formField-localFamilyName"><label for="local-family">Local Family Name</label><input id="local-family" /></div>
+        </section>
+      </form>`,
+      "https://factset.wd108.myworkdayjobs.com/jobs/apply",
+    );
+    expect(adapter.id).toBe("workday");
+    const mappings = await Promise.all(fields.map((field) => resolveField({ field, profile, platform: adapter.id, url: "", demographicsEnabled: false })));
+    const byLabel = new Map(fields.map((field, index) => [field.label, mappings[index]]));
+
+    expect(byLabel.get("Given Name(s)*")).toMatchObject({ canonicalKey: "identity.firstName", value: "Asha" });
+    expect(byLabel.get("Family Name")).toMatchObject({ canonicalKey: "identity.lastName", value: "Raman" });
+    expect(byLabel.get("Local Given Name(s)")?.canonicalKey).toBe("unknown");
+    expect(byLabel.get("Local Family Name")?.canonicalKey).toBe("unknown");
+  });
+
+  it("skips Workday phone extension and keeps phone number on the phone-number field", async () => {
+    const { adapter, fields } = await loadHtml(
+      `<!doctype html>
+      <form data-automation-id="workdayApplication">
+        <section data-automation-id="phoneWidget">
+          <div data-automation-id="formField-phoneDeviceType">
+            <label id="device-label">Phone Device Type<span>*</span></label>
+            <button role="combobox" aria-labelledby="device-label" aria-controls="device-options">Emergency - Mobile</button>
+            <div id="device-options" role="listbox">
+              <div role="option">Select One</div>
+              <div role="option">Emergency - Landline</div>
+              <div role="option">Emergency - Mobile</div>
+              <div role="option">Fax</div>
+              <div role="option">Landline</div>
+              <div role="option">Mobile</div>
+            </div>
+          </div>
+          <div data-automation-id="formField-phoneNumber"><label for="phone">Phone Number<span>*</span></label><input id="phone" /></div>
+          <div data-automation-id="formField-phoneExtension"><label for="extension">Phone Extension</label><input id="extension" /></div>
+        </section>
+      </form>`,
+      "https://factset.wd108.myworkdayjobs.com/jobs/apply",
+    );
+    expect(adapter.id).toBe("workday");
+    const mappings = await Promise.all(fields.map((field) => resolveField({ field, profile, platform: adapter.id, url: "", demographicsEnabled: false })));
+    const byLabel = new Map(fields.map((field, index) => [field.label, mappings[index]]));
+
+    expect(byLabel.get("Phone Device Type*")).toMatchObject({ canonicalKey: "answers.workday_phone_device_type", value: "Mobile" });
+    expect(byLabel.get("Phone Number*")).toMatchObject({ canonicalKey: "identity.phone", value: profile.identity.phone });
+    expect(byLabel.get("Phone Extension")?.canonicalKey).toBe("unknown");
+  });
+
+  it("maps Workday address fields from formField wrappers", async () => {
+    const { adapter, fields } = await loadHtml(
+      `<!doctype html>
+      <form data-automation-id="workdayApplication">
+        <section>
+          <div data-automation-id="formField-addressLine1"><label for="street">Address Line 1</label><input id="street" /></div>
+          <div data-automation-id="formField-city"><label for="city">City</label><input id="city" /></div>
+          <div data-automation-id="formField-region"><label for="region">Region</label><input id="region" /></div>
+          <div data-automation-id="formField-postalCode"><label for="postal">Postal Code</label><input id="postal" /></div>
+        </section>
+      </form>`,
+      "https://factset.wd108.myworkdayjobs.com/jobs/apply",
+    );
+    expect(adapter.id).toBe("workday");
+    const mappings = await Promise.all(fields.map((field) => resolveField({ field, profile, platform: adapter.id, url: "", demographicsEnabled: false })));
+    expect(mappings.map((mapping) => mapping.canonicalKey)).toEqual(
+      expect.arrayContaining(["location.street", "location.city", "location.state", "location.postalCode"]),
+    );
+  });
+
   it("uses generic heuristics and reusable answers", async () => {
     const { adapter, fields } = await loadFixture("generic", "https://careers.example.com/apply");
     expect(adapter.id).toBe("generic");

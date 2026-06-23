@@ -37,6 +37,11 @@ function dispatchFieldEvents(element: HTMLElement) {
   element.dispatchEvent(new FocusEvent("blur", { bubbles: true }));
 }
 
+function dispatchInputChange(element: HTMLElement) {
+  element.dispatchEvent(new Event("input", { bubbles: true }));
+  element.dispatchEvent(new Event("change", { bubbles: true }));
+}
+
 export function sleep(ms: number) {
   return new Promise((resolve) => window.setTimeout(resolve, ms));
 }
@@ -46,6 +51,106 @@ function valuePreview(value: unknown) {
   if (typeof value === "boolean") return value ? "Yes" : "No";
   if (typeof value === "string") return value.slice(0, 120);
   return undefined;
+}
+
+function documentLabel(key: ExtensionFieldMapping["canonicalKey"]) {
+  return key === "documents.coverLetter" ? "cover letter" : "resume/CV";
+}
+
+function isDocumentKey(key: ExtensionFieldMapping["canonicalKey"]) {
+  return key === "documents.resume" || key === "documents.coverLetter";
+}
+
+function documentUrlForKey(
+  key: ExtensionFieldMapping["canonicalKey"],
+  docs: Awaited<ReturnType<FillContext["getResume"]>>,
+  fallbackValue: ExtensionFieldMapping["value"],
+) {
+  const signedUrl = key === "documents.coverLetter" ? docs.coverLetterUrl : docs.resumeUrl;
+  return signedUrl || (typeof fallbackValue === "string" ? fallbackValue : null);
+}
+
+function filenameFromContentDisposition(header: string | null) {
+  if (!header) return null;
+  const encoded = /filename\*\s*=\s*(?:UTF-8'')?([^;]+)/i.exec(header)?.[1];
+  if (encoded) {
+    try {
+      return decodeURIComponent(encoded.trim().replace(/^"|"$/g, ""));
+    } catch {
+      return encoded.trim().replace(/^"|"$/g, "");
+    }
+  }
+  return /filename\s*=\s*"([^"]+)"/i.exec(header)?.[1] ?? /filename\s*=\s*([^;]+)/i.exec(header)?.[1]?.trim() ?? null;
+}
+
+function extensionForMime(mime: string) {
+  const normalized = mime.toLowerCase().split(";")[0]?.trim();
+  if (normalized === "application/pdf") return "pdf";
+  if (normalized === "application/msword") return "doc";
+  if (normalized === "application/vnd.openxmlformats-officedocument.wordprocessingml.document") return "docx";
+  if (normalized === "text/plain") return "txt";
+  return "pdf";
+}
+
+function filenameFromUrl(url: string) {
+  try {
+    const pathname = new URL(url).pathname;
+    const last = pathname.split("/").filter(Boolean).pop();
+    return last ? decodeURIComponent(last) : null;
+  } catch {
+    return null;
+  }
+}
+
+function safeDocumentFilename(url: string, contentDisposition: string | null, mime: string, label: string) {
+  const raw = filenameFromContentDisposition(contentDisposition) ?? filenameFromUrl(url) ?? label;
+  const clean = raw.replace(/[\\/:*?"<>|]+/g, " ").replace(/\s+/g, " ").trim() || label;
+  if (/\.[a-z0-9]{2,5}$/i.test(clean)) return clean;
+  return `${clean}.${extensionForMime(mime)}`;
+}
+
+function fileListFromFile(element: HTMLElement, file: File) {
+  type DataTransferConstructor = new () => DataTransfer;
+  const view = element.ownerDocument.defaultView as (Window & { DataTransfer?: DataTransferConstructor }) | null;
+  const DataTransferCtor = view?.DataTransfer ?? (typeof DataTransfer !== "undefined" ? DataTransfer : undefined);
+  if (DataTransferCtor) {
+    try {
+      const transfer = new DataTransferCtor();
+      transfer.items.add(file);
+      return transfer.files;
+    } catch {
+      // Some DOM shims expose DataTransfer without a constructible implementation.
+    }
+  }
+  const files = [file] as unknown as FileList;
+  Object.defineProperty(files, "item", {
+    configurable: true,
+    value: (index: number) => (index === 0 ? file : null),
+  });
+  return files;
+}
+
+function assignFileInput(input: HTMLInputElement, file: File) {
+  const files = fileListFromFile(input, file);
+  try {
+    input.files = files;
+  } catch {
+    Object.defineProperty(input, "files", {
+      configurable: true,
+      value: files,
+    });
+  }
+  dispatchFieldEvents(input);
+  return Boolean(input.files?.length);
+}
+
+async function fetchDocumentFile(url: string, label: string) {
+  const response = await fetch(url, { credentials: "omit" });
+  if (!response.ok) throw new Error(`Could not download ${label}.`);
+  const blob = await response.blob();
+  const mime = response.headers.get("content-type") || blob.type || "application/pdf";
+  const filename = safeDocumentFilename(url, response.headers.get("content-disposition"), mime, label);
+  return new File([blob], filename, { type: mime });
 }
 
 function normalizedText(value: string | null | undefined) {
@@ -91,6 +196,96 @@ function looksLikePhoneCountryField(field: FieldDescriptor) {
   return /\bcountry\b/.test(ownText) && /\b(phone|mobile|telephone|tel|calling|dial)\b/.test(text);
 }
 
+function phoneCountryChoiceContainer(field: FieldDescriptor) {
+  const element = field.element;
+  if (element instanceof HTMLSelectElement) return element;
+  if (element.getAttribute("role") === "combobox" || element.hasAttribute("aria-haspopup")) return element;
+  const label = normalizedText(field.label);
+  const context = normalizedText(field.context);
+  if (!/\bcountry\b/.test(`${label} ${context}`) || !/\b(phone|mobile|telephone|tel|code|calling|dial)\b/.test(`${label} ${context}`)) {
+    return element;
+  }
+
+  for (let node = element.parentElement; node && node !== element.ownerDocument.body; node = node.parentElement) {
+    const automationId = normalizedText(node.getAttribute("data-automation-id"));
+    const text = normalizedText(`${node.textContent ?? ""} ${automationId}`);
+    const controlCount = node.querySelectorAll("input:not([type='hidden']), textarea, select, [role='combobox'], [aria-haspopup='listbox']").length;
+    if (controlCount > 3) return element;
+    if (
+      /\bcountry\b/.test(text) &&
+      /\b(phone|mobile|telephone|tel|code|calling|dial)\b/.test(text) &&
+      (automationId.startsWith("formfield") ||
+        automationId.includes("phone") ||
+        automationId.includes("country") ||
+        node.querySelector("[role='combobox'], [aria-haspopup='listbox'], input"))
+    ) {
+      return node;
+    }
+  }
+  return element;
+}
+
+function phoneCountryFillField(field: FieldDescriptor, platform: FillContext["platform"]): FieldDescriptor {
+  if (platform !== "workday") return field;
+  const container = phoneCountryChoiceContainer(field);
+  if (container === field.element && (field.type === "combobox" || field.type === "typeahead")) return field;
+  return {
+    ...field,
+    element: container,
+    type: container instanceof HTMLSelectElement ? "select" : "combobox",
+    context: [field.context, field.label].filter(Boolean).join(" "),
+  };
+}
+
+function setPromptSearchText(element: HTMLElement, value: string) {
+  if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) {
+    nativeSetter(element, value);
+  } else if (element.isContentEditable || element.getAttribute("role") === "textbox") {
+    element.textContent = value;
+    element.setAttribute("aria-valuetext", value);
+  } else {
+    element.setAttribute("value", value);
+  }
+  dispatchInputChange(element);
+}
+
+function pressEnter(element: HTMLElement) {
+  const init = {
+    key: "Enter",
+    code: "Enter",
+    keyCode: 13,
+    which: 13,
+    bubbles: true,
+    cancelable: true,
+  } as KeyboardEventInit;
+  element.dispatchEvent(new KeyboardEvent("keydown", init));
+  element.dispatchEvent(new KeyboardEvent("keypress", init));
+  element.dispatchEvent(new KeyboardEvent("keyup", init));
+}
+
+function workdayPhoneCountryInput(field: FieldDescriptor) {
+  const direct = editableTarget(field.element);
+  if (direct) return direct;
+  const container = phoneCountryChoiceContainer(field);
+  if (container !== field.element) return editableTarget(container) ?? container;
+  return field.element;
+}
+
+async function fillWorkdayPhoneCountryCode(field: FieldDescriptor, value: ExtensionFieldMapping["value"], countryHint: string | null | undefined) {
+  const code = callingCodeDigits(value, countryHint);
+  if (!code) return false;
+  const target = workdayPhoneCountryInput(field);
+  target.focus?.();
+  activateElement(target);
+  await sleep(80);
+  setPromptSearchText(target, `+${code}`);
+  await sleep(120);
+  pressEnter(target);
+  dispatchInputChange(target);
+  await sleep(450);
+  return true;
+}
+
 function isPhoneNumberKey(key: ExtensionFieldMapping["canonicalKey"]) {
   return key === "identity.phone" || key === "identity.phoneNational";
 }
@@ -98,6 +293,10 @@ function isPhoneNumberKey(key: ExtensionFieldMapping["canonicalKey"]) {
 function isReferralSourceKey(key: ExtensionFieldMapping["canonicalKey"]) {
   const text = normalizedText(key);
   return key.startsWith("answers.") && /\b(?:referral source|job source|application source|candidate source|source)\b/.test(text);
+}
+
+function isExactChoiceKey(key: ExtensionFieldMapping["canonicalKey"]) {
+  return key === "answers.workday_phone_device_type";
 }
 
 function looksLikeChoicePlaceholder(value: string) {
@@ -120,6 +319,13 @@ function referralSourceOptionScore(label: string, value: string) {
     return 2;
   }
   return 0.1;
+}
+
+function exactChoiceScore(option: string, desired: string) {
+  const optionText = normalizedText(option);
+  const desiredText = normalizedText(desired);
+  if (!optionText || !desiredText) return 0;
+  return optionText === desiredText ? 1.2 : 0;
 }
 
 function looksLikePlaceholder(value: string, field: FieldDescriptor) {
@@ -221,6 +427,50 @@ function structuredChoiceDisplayText(element: HTMLElement) {
   return visibleText(display?.textContent || display?.getAttribute("aria-label"));
 }
 
+function textWithoutTransientChoiceContent(element: HTMLElement) {
+  const clone = element.cloneNode(true) as HTMLElement;
+  clone
+    .querySelectorAll(
+      [
+        "input",
+        "textarea",
+        "[role='textbox']",
+        "[role='listbox']",
+        "[role='menu']",
+        "[role='option']",
+        "[role='menuitem']",
+        "[class*='option' i]",
+      ].join(","),
+    )
+    .forEach((node) => node.remove());
+  return visibleText(clone.textContent || clone.getAttribute("aria-label") || clone.getAttribute("value"));
+}
+
+function committedChoiceText(field: FieldDescriptor) {
+  const element = field.element;
+  if (element instanceof HTMLSelectElement) return fieldCurrentText(field);
+  if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) return "";
+
+  const structuredDisplay = structuredChoiceDisplayText(element);
+  if (structuredDisplay) return structuredDisplay;
+
+  const ariaValue = visibleText(element.getAttribute("aria-valuetext"));
+  if (ariaValue && !looksLikePlaceholder(ariaValue, field)) return ariaValue;
+
+  const selected = uniqueElements([element, ...comboboxCandidateRoots(field)]).flatMap((root) =>
+    Array.from(
+      root.querySelectorAll<HTMLElement>(
+        "[aria-selected='true'], [aria-checked='true'], [aria-pressed='true'], input[type='radio']:checked, input[type='checkbox']:checked",
+      ),
+    ),
+  );
+  const selectedText = selected.map(labelForChoice).filter(Boolean).join(" ");
+  if (selectedText) return visibleText(selectedText);
+
+  const stableText = textWithoutTransientChoiceContent(element);
+  return looksLikePlaceholder(stableText, field) ? "" : stableText;
+}
+
 function fieldCurrentText(field: FieldDescriptor) {
   const element = field.element;
   if (element instanceof HTMLSelectElement) {
@@ -250,6 +500,11 @@ function fieldChoiceValueMatches(
   if (isReferralSourceKey(mapping.canonicalKey)) return referralSourceOptionScore(current, "") > 0;
   const desired = desiredString(mapping.value);
   if (!desired) return false;
+  if (isExactChoiceKey(mapping.canonicalKey)) {
+    const currentText = normalizedText(current);
+    const desiredText = normalizedText(desired);
+    return currentText === desiredText || currentText === `${desiredText} ${desiredText}`;
+  }
   if (typeof mapping.value === "boolean") {
     const expected = mapping.value ? "yes" : "no";
     return new RegExp(`\\b${expected}\\b`).test(normalizedText(current)) || optionScore(current, desired) >= 0.45;
@@ -474,12 +729,20 @@ function phoneCountryMatches(
   countryHint: string | null | undefined,
 ) {
   const desiredCode = callingCodeDigits(value, countryHint);
-  const current = fieldCurrentText(field);
+  const current = phoneCountryNeedsCommittedChoice(field) ? committedChoiceText(field) : fieldCurrentText(field);
+  if (!current) return false;
   const country = normalizedCountry(countryHint);
   return Boolean(
     (desiredCode && optionCallingCodes(current).has(desiredCode)) ||
       (country && normalizeChoiceText(current).includes(country)),
   );
+}
+
+function phoneCountryHasCommittedChoice(field: FieldDescriptor) {
+  const current = committedChoiceText(field);
+  if (!current) return false;
+  if (optionCallingCodes(current).size > 0) return true;
+  return phoneDigits(current).length >= 6;
 }
 
 function pickOption(
@@ -509,10 +772,12 @@ function pickOption(
   const desired = desiredString(value);
   let best: { option: HTMLOptionElement; score: number } | null = null;
   for (const option of options) {
-    const score = Math.max(optionScore(option.textContent ?? "", desired), optionScore(option.value, desired));
+    const score = isExactChoiceKey(canonicalKey)
+      ? Math.max(exactChoiceScore(option.textContent ?? "", desired), exactChoiceScore(option.value, desired))
+      : Math.max(optionScore(option.textContent ?? "", desired), optionScore(option.value, desired));
     if (!best || score > best.score) best = { option, score };
   }
-  return best && best.score >= 0.45 ? best.option : null;
+  return best && best.score >= (isExactChoiceKey(canonicalKey) ? 1 : 0.45) ? best.option : null;
 }
 
 export function isVisible(element: HTMLElement) {
@@ -929,6 +1194,8 @@ function scoreComboboxOption(
     ? phoneCountryOptionScore(label, `${dataValue} ${rawValue}`, mapping.value, countryHint)
     : isReferralSourceKey(mapping.canonicalKey)
       ? referralSourceOptionScore(label, `${dataValue} ${rawValue}`)
+    : isExactChoiceKey(mapping.canonicalKey)
+      ? Math.max(exactChoiceScore(label, desired), exactChoiceScore(dataValue, desired), exactChoiceScore(rawValue, desired))
     : Math.max(optionScore(label, desired), optionScore(dataValue, desired), optionScore(rawValue, desired));
 }
 
@@ -937,7 +1204,7 @@ function rankedComboboxOptions(
   mapping: ExtensionFieldMapping,
   countryHint: string | null | undefined,
 ) {
-  const threshold = mapping.canonicalKey === "identity.phoneCountryCode" ? 1 : isReferralSourceKey(mapping.canonicalKey) ? 0.1 : 0.45;
+  const threshold = mapping.canonicalKey === "identity.phoneCountryCode" ? 1 : isReferralSourceKey(mapping.canonicalKey) ? 0.1 : isExactChoiceKey(mapping.canonicalKey) ? 1 : 0.45;
   return options
     .map((option) => ({ option, score: scoreComboboxOption(option, mapping, countryHint) }))
     .filter((candidate) => candidate.score >= threshold)
@@ -1024,6 +1291,10 @@ function requiresOptionSelection(field: FieldDescriptor) {
   );
 }
 
+function phoneCountryNeedsCommittedChoice(field: FieldDescriptor) {
+  return field.type === "combobox" || field.type === "typeahead" || field.type === "multiselect" || requiresOptionSelection(field);
+}
+
 async function fillCombobox(
   field: FieldDescriptor,
   mapping: ExtensionFieldMapping,
@@ -1045,6 +1316,12 @@ async function fillCombobox(
       editable.focus();
       setText(editable, searchValue);
       await sleep(120);
+      if (mapping.canonicalKey === "identity.phoneCountryCode" && /^\+?\d{1,4}$/.test(searchValue.trim())) {
+        dispatchKey(editable, "Enter");
+        dispatchFieldEvents(editable);
+        await sleep(180);
+        if (phoneCountryMatches(field, mapping.value, countryHint)) return true;
+      }
       if (await waitForComboboxOption(field, mapping, countryHint, ignoredGlobalOptions)) return true;
       if (isFreeTextCombobox(field) && editableValueMatches(editable, mapping.value)) return true;
       if (shouldSubmitComboboxSearch(field, editable) && comboboxOptionCandidates(field, mapping, ignoredGlobalOptions).length === 0) {
@@ -1080,7 +1357,7 @@ async function fillCombobox(
   if (mapping.canonicalKey === "identity.phoneCountryCode") {
     const direct = directOwnedEditableTarget(field);
     const code = callingCodeDigits(mapping.value, countryHint);
-    if (direct && code) {
+    if (direct && code && !requiresOptionSelection(field)) {
       setText(direct, `+${code}`);
       await sleep(80);
       if (phoneCountryMatches(field, mapping.value, countryHint)) return true;
@@ -1109,6 +1386,12 @@ export async function fillField(
     ...mappingToFill,
     value: effectiveValue(field, mappingToFill, context),
   };
+  const isWorkdayPhoneCountryCode =
+    context.platform === "workday" && effectiveMapping.canonicalKey === "identity.phoneCountryCode";
+  const targetField =
+    effectiveMapping.canonicalKey === "identity.phoneCountryCode" && !isWorkdayPhoneCountryCode
+      ? phoneCountryFillField(field, context.platform)
+      : field;
   const base = {
     signature: field.signature,
     label: field.label,
@@ -1117,8 +1400,9 @@ export async function fillField(
     source: effectiveMapping.source,
     valuePreview: valuePreview(effectiveMapping.value),
   };
+  const canResolveDocumentUpload = field.type === "file" && isDocumentKey(effectiveMapping.canonicalKey);
 
-  if (effectiveMapping.canonicalKey === "unknown" || effectiveMapping.value == null) {
+  if (effectiveMapping.canonicalKey === "unknown" || (effectiveMapping.value == null && !canResolveDocumentUpload)) {
     return { ...base, status: field.required ? "needs_user" : "skipped" };
   }
   if (effectiveMapping.canonicalKey.startsWith("demographics.") && !context.demographicsEnabled) {
@@ -1149,36 +1433,67 @@ export async function fillField(
     field.element.classList.add("jp-field-highlight");
     return { ...base, status: field.required ? "needs_user" : "skipped", error: "Saved answer matches the question." };
   }
-  if (hasValue(field)) {
+  const alreadyFilled =
+    effectiveMapping.canonicalKey === "identity.phoneCountryCode" && phoneCountryNeedsCommittedChoice(targetField)
+      ? phoneCountryHasCommittedChoice(targetField)
+      : hasValue(targetField);
+  if (alreadyFilled) {
     return { ...base, status: "skipped", error: "Already filled." };
   }
+  if (isWorkdayPhoneCountryCode) {
+    const filled = await fillWorkdayPhoneCountryCode(field, effectiveMapping.value, context.profile.location.country);
+    if (!filled) {
+      field.element.classList.add("jp-field-highlight");
+      return { ...base, status: field.required ? "needs_user" : "skipped", error: "No country code available." };
+    }
+    return { ...base, status: "filled" };
+  }
   if (field.type === "file") {
-    field.element.classList.add("jp-field-highlight");
-    const label = effectiveMapping.canonicalKey === "documents.coverLetter" ? "cover letter" : "resume";
-    return {
-      ...base,
-      status: field.required ? "needs_user" : "skipped",
-      error: `Upload your ${label} manually.`,
-    };
+    const label = documentLabel(effectiveMapping.canonicalKey);
+    try {
+      if (!(field.element instanceof HTMLInputElement)) {
+        field.element.classList.add("jp-field-highlight");
+        return { ...base, status: field.required ? "needs_user" : "skipped", error: `Could not attach ${label} automatically.` };
+      }
+      const docs = await context.getResume(null);
+      const documentUrl = documentUrlForKey(effectiveMapping.canonicalKey, docs, effectiveMapping.value);
+      if (!documentUrl) {
+        if (field.required) field.element.classList.add("jp-field-highlight");
+        return { ...base, status: field.required ? "needs_user" : "skipped", error: `No ${label} available.` };
+      }
+      const file = await fetchDocumentFile(documentUrl, label);
+      if (!assignFileInput(field.element, file)) {
+        field.element.classList.add("jp-field-highlight");
+        return { ...base, status: field.required ? "needs_user" : "skipped", error: `Could not attach ${label} automatically.` };
+      }
+      return { ...base, status: "filled", valuePreview: file.name };
+    } catch (error) {
+      field.element.classList.add("jp-field-highlight");
+      return {
+        ...base,
+        status: "failed",
+        error: error instanceof Error ? error.message : `Could not attach ${label}.`,
+      };
+    }
   }
 
   try {
     let filled = false;
-    if (field.element instanceof HTMLSelectElement) {
-      filled = fillSelect(field.element, effectiveMapping, context.profile.location.country);
-    } else if (field.type === "radio") {
-      filled = fillRadio(field, effectiveMapping);
-    } else if (field.type === "checkbox") {
-      filled = fillCheckbox(field, effectiveMapping.value);
-    } else if (field.type === "combobox" || field.type === "typeahead") {
-      filled = await fillCombobox(field, effectiveMapping, context.profile.location.country);
+    if (targetField.element instanceof HTMLSelectElement) {
+      filled = fillSelect(targetField.element, effectiveMapping, context.profile.location.country);
+    } else if (targetField.type === "radio") {
+      filled = fillRadio(targetField, effectiveMapping);
+    } else if (targetField.type === "checkbox") {
+      filled = fillCheckbox(targetField, effectiveMapping.value);
+    } else if (targetField.type === "combobox" || targetField.type === "typeahead") {
+      filled = await fillCombobox(targetField, effectiveMapping, context.profile.location.country);
     } else {
-      setText(field.element, desiredString(effectiveMapping.value));
+      setText(targetField.element, desiredString(effectiveMapping.value));
       filled = true;
     }
 
     if (!filled) {
-      field.element.classList.add("jp-field-highlight");
+      targetField.element.classList.add("jp-field-highlight");
       return { ...base, status: field.required ? "needs_user" : "skipped", error: "No matching option." };
     }
     return { ...base, status: "filled" };

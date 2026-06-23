@@ -1,4 +1,4 @@
-import React, { useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import ReactDOM from "react-dom/client";
 import type {
   ExtensionAutofillRunResult,
@@ -12,8 +12,9 @@ import type {
 import shadowCss from "../src/styles.css?inline";
 import { JOBPOSTED_WEB_ORIGIN } from "../src/config/env";
 import { detectAdapter } from "../src/adapters";
-import { applicationMetadata, fillCurrentStep, humanDelay } from "../src/autofill/engine";
-import { Overlay, type OverlayRunState } from "../src/content/Overlay";
+import { applicationMetadata, fillCurrentStep, fillSingleField, humanDelay } from "../src/autofill/engine";
+import type { FieldDescriptor } from "../src/autofill/types";
+import { Overlay, type OverlayProgressItem, type OverlayRunState } from "../src/content/Overlay";
 
 const includeLocalhost =
   import.meta.env.MODE !== "production" ||
@@ -63,6 +64,17 @@ const CONTENT_MATCHES = [
 const CONTENT_AUTOFILL_MESSAGE = "JOBPOSTED_AUTOFILL_CURRENT_PAGE";
 const CONTENT_TRACK_MESSAGE = "JOBPOSTED_TRACK_CURRENT_PAGE";
 const CONTENT_JOB_CONTEXT_MESSAGE = "JOBPOSTED_JOB_CONTEXT";
+
+interface OverlayCommandArgs {
+  continueSteps: boolean;
+  forceGenericFallback: boolean;
+  suppressAutoTrack?: boolean;
+}
+
+type OverlayCommandRunner = (args: OverlayCommandArgs) => Promise<ExtensionAutofillRunResult>;
+
+let visibleOverlayMount: (() => Promise<void>) | null = null;
+let visibleOverlayRunner: OverlayCommandRunner | null = null;
 
 function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
@@ -204,19 +216,82 @@ function injectPageHighlightStyle() {
   document.documentElement.appendChild(style);
 }
 
-function waitForStepChange() {
-  return new Promise<void>((resolve) => {
+function pageSnapshot(adapter: ReturnType<typeof detectAdapter>) {
+  const step = adapter.detectStep(document);
+  return {
+    href: window.location.href,
+    stepName: step.name,
+    stepIndex: step.index ?? null,
+    stepTotal: step.total ?? null,
+    submitVisible: Boolean(adapter.findSubmit(document)),
+  };
+}
+
+function snapshotChanged(before: ReturnType<typeof pageSnapshot>, after: ReturnType<typeof pageSnapshot>) {
+  return (
+    before.href !== after.href ||
+    before.stepName !== after.stepName ||
+    before.stepIndex !== after.stepIndex ||
+    before.stepTotal !== after.stepTotal ||
+    (!before.submitVisible && after.submitVisible)
+  );
+}
+
+function waitForAdvanceOutcome(
+  adapter: ReturnType<typeof detectAdapter>,
+  before: ReturnType<typeof pageSnapshot>,
+  shouldStop?: () => boolean,
+) {
+  return new Promise<boolean>((resolve) => {
+    const startedAt = Date.now();
     let done = false;
-    const finish = () => {
+    let observer: MutationObserver | null = null;
+    let intervalId: number | null = null;
+    let timeoutId: number | null = null;
+
+    const finish = (advanced: boolean) => {
       if (done) return;
       done = true;
-      observer.disconnect();
-      window.setTimeout(resolve, 500);
+      observer?.disconnect();
+      if (intervalId != null) window.clearInterval(intervalId);
+      if (timeoutId != null) window.clearTimeout(timeoutId);
+      window.setTimeout(() => resolve(advanced), advanced ? 350 : 0);
     };
-    const observer = new MutationObserver(finish);
-    observer.observe(document.body, { childList: true, subtree: true });
-    window.setTimeout(finish, 1600);
+
+    const check = () => {
+      if (shouldStop?.()) {
+        finish(false);
+        return;
+      }
+      if (snapshotChanged(before, pageSnapshot(adapter))) {
+        finish(true);
+        return;
+      }
+      if (Date.now() - startedAt >= 4500) finish(false);
+    };
+
+    observer = new MutationObserver(check);
+    observer.observe(document.body, { childList: true, subtree: true, attributes: true });
+    intervalId = window.setInterval(check, 150);
+    timeoutId = window.setTimeout(() => finish(false), 4700);
+    check();
   });
+}
+
+function needsUserReview(records: ExtensionFieldFillRecord[]) {
+  return records.some((record) => record.status === "needs_user" || record.status === "failed");
+}
+
+function advanceBlockedRecord(stepName: string): ExtensionFieldFillRecord {
+  return {
+    signature: `jobposted-advance-blocked:${window.location.href}:${stepName}`,
+    label: "Required fields need review",
+    canonicalKey: "unknown",
+    status: "needs_user",
+    confidence: 0,
+    source: "skip",
+    error: "Could not continue because this step stayed open. Fill the missing required fields, then click Fill & Continue again.",
+  };
 }
 
 async function loadAutofillPrereqs(adapter: ReturnType<typeof detectAdapter>, forceGenericFallback: boolean) {
@@ -305,6 +380,8 @@ function summarizeRunResult(args: {
 async function runAutofillPage(args: {
   continueSteps: boolean;
   forceGenericFallback: boolean;
+  onFieldsDiscovered?: (fields: FieldDescriptor[]) => void;
+  onFieldStart?: (field: FieldDescriptor) => void;
   onField?: (record: ExtensionFieldFillRecord, fields: ExtensionFieldFillRecord[]) => void;
   onStep?: (stepName: string) => void;
   onSyncQueued?: () => void;
@@ -324,6 +401,9 @@ async function runAutofillPage(args: {
       adapter,
       profile: profile as MasterProfile,
       settings: settings as ExtensionSettings,
+      shouldStop: args.shouldStop,
+      onFieldsDiscovered: args.onFieldsDiscovered,
+      onFieldStart: args.onFieldStart,
       onField: (record) => {
         allRecords.push(record);
         args.onField?.(record, [...allRecords]);
@@ -333,13 +413,23 @@ async function runAutofillPage(args: {
     const submit = adapter.findSubmit(document);
     const canAdvance = args.continueSteps && settings.autoAdvance;
     if (!canAdvance || args.shouldStop?.()) break;
+    if (needsUserReview(result.fields)) break;
     if (submit) break;
 
     const next = adapter.findAdvance(document);
     if (!next) break;
-    await humanDelay(settings);
+    const beforeAdvance = pageSnapshot(adapter);
+    await humanDelay(settings, args.shouldStop);
+    if (args.shouldStop?.()) break;
     next.click();
-    await waitForStepChange();
+    const advanced = await waitForAdvanceOutcome(adapter, beforeAdvance, args.shouldStop);
+    if (args.shouldStop?.()) break;
+    if (!advanced) {
+      const record = advanceBlockedRecord(stepName);
+      allRecords.push(record);
+      args.onField?.(record, [...allRecords]);
+      break;
+    }
     if (result.total === 0) break;
   }
 
@@ -396,7 +486,7 @@ function installAutofillCommandListener() {
 
     if (request.type !== CONTENT_AUTOFILL_MESSAGE) return false;
 
-    void runAutofillPage({
+    void runAutofillWithVisibleOverlay({
       continueSteps: request.continueSteps === true,
       forceGenericFallback: request.forceGenericFallback === true,
       suppressAutoTrack: request.suppressAutoTrack === true,
@@ -414,34 +504,223 @@ function installAutofillCommandListener() {
   });
 }
 
-function JobPostedOverlayApp() {
+function progressItemFromField(field: FieldDescriptor): OverlayProgressItem {
+  return {
+    signature: field.signature,
+    label: field.label || field.context || field.id,
+    required: field.required,
+    status: "pending",
+  };
+}
+
+function progressItemFromRecord(record: ExtensionFieldFillRecord): OverlayProgressItem {
+  return {
+    signature: record.signature,
+    label: record.label,
+    canonicalKey: record.canonicalKey,
+    error: record.error,
+    valuePreview: record.valuePreview,
+    status: record.status,
+  };
+}
+
+function upsertProgressItem(items: OverlayProgressItem[], next: OverlayProgressItem) {
+  const index = items.findIndex((item) => item.signature === next.signature);
+  if (index === -1) return [...items, next];
+  return items.map((item, itemIndex) => (itemIndex === index ? { ...item, ...next } : item));
+}
+
+function markProgressActive(items: OverlayProgressItem[], field: FieldDescriptor) {
+  const next = { ...progressItemFromField(field), status: "active" as const };
+  const resetActive = items.map((item) => (item.status === "active" ? { ...item, status: "pending" as const } : item));
+  return upsertProgressItem(resetActive, next);
+}
+
+function applyProgressRecord(items: OverlayProgressItem[], record: ExtensionFieldFillRecord) {
+  return upsertProgressItem(items, progressItemFromRecord(record));
+}
+
+function applyProgressRecords(items: OverlayProgressItem[], records: ExtensionFieldFillRecord[]) {
+  return records.reduce(applyProgressRecord, items);
+}
+
+function markActiveProgressStopped(items: OverlayProgressItem[]) {
+  return items.map((item) => (item.status === "active" ? { ...item, status: "skipped" as const, error: "Stopped." } : item));
+}
+
+function waitForVisibleOverlayRunner(timeoutMs = 1200) {
+  return new Promise<OverlayCommandRunner | null>((resolve) => {
+    const startedAt = Date.now();
+    const check = () => {
+      if (visibleOverlayRunner) {
+        resolve(visibleOverlayRunner);
+        return;
+      }
+      if (Date.now() - startedAt >= timeoutMs) {
+        resolve(null);
+        return;
+      }
+      window.setTimeout(check, 25);
+    };
+    check();
+  });
+}
+
+async function runAutofillWithVisibleOverlay(args: OverlayCommandArgs) {
+  if (isTopFrame() && visibleOverlayMount) {
+    await visibleOverlayMount();
+    const runner = await waitForVisibleOverlayRunner();
+    if (runner) return runner(args);
+  }
+  return runAutofillPage({
+    continueSteps: args.continueSteps,
+    forceGenericFallback: args.forceGenericFallback,
+    suppressAutoTrack: args.suppressAutoTrack,
+  });
+}
+
+function JobPostedOverlayApp({ onRequestClose }: { onRequestClose: () => void }) {
   const adapter = useMemo(() => detectAdapter(), []);
   const [state, setState] = useState<OverlayRunState>("idle");
-  const [fields, setFields] = useState<ExtensionFieldFillRecord[]>([]);
+  const [progressItems, setProgressItems] = useState<OverlayProgressItem[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [stepName, setStepName] = useState(adapter.detectStep(document).name);
+  const [stopQueued, setStopQueued] = useState(false);
   const stopRequested = useRef(false);
+  const fieldsBySignature = useRef(new Map<string, FieldDescriptor>());
 
-  async function run(continueSteps: boolean) {
+  function requestStop() {
+    stopRequested.current = true;
+    setStopQueued(true);
+  }
+
+  function closeOverlay() {
+    requestStop();
+    onRequestClose();
+  }
+
+  const run = useCallback(async (continueSteps: boolean, options: { forceGenericFallback?: boolean; suppressAutoTrack?: boolean; rethrow?: boolean } = {}) => {
     stopRequested.current = false;
+    setStopQueued(false);
     setError(null);
-    setFields([]);
+    setProgressItems([]);
+    fieldsBySignature.current.clear();
     try {
       setState("loading");
       setState("filling");
       const result = await runAutofillPage({
         continueSteps,
-        forceGenericFallback: false,
+        forceGenericFallback: options.forceGenericFallback ?? false,
+        suppressAutoTrack: options.suppressAutoTrack,
         shouldStop: () => stopRequested.current,
         onStep: setStepName,
-        onField: (_record, currentFields) => setFields(currentFields),
+        onFieldsDiscovered: (detectedFields) => {
+          fieldsBySignature.current = new Map(detectedFields.map((field) => [field.signature, field]));
+          setProgressItems(detectedFields.map(progressItemFromField));
+        },
+        onFieldStart: (field) => {
+          fieldsBySignature.current.set(field.signature, field);
+          setProgressItems((items) => markProgressActive(items, field));
+        },
+        onField: (record) => setProgressItems((items) => applyProgressRecord(items, record)),
         onSyncQueued: () => setError("Saved locally. JobPosted will retry syncing this application automatically."),
       });
-      setFields(result.fields);
+      setProgressItems((items) => {
+        const updated = applyProgressRecords(items, result.fields);
+        return stopRequested.current ? markActiveProgressStopped(updated) : updated;
+      });
+      if (stopRequested.current) {
+        setError("Autofill stopped. Review any filled fields before submitting.");
+      }
       setState("done");
+      return result;
     } catch (err) {
       setError(err instanceof Error ? err.message : "Autofill failed.");
       setState("error");
+      if (options.rethrow) throw err;
+      return null;
+    }
+  }, []);
+
+  useEffect(() => {
+    const runner: OverlayCommandRunner = async (commandArgs) => {
+      const result = await run(commandArgs.continueSteps, {
+        forceGenericFallback: commandArgs.forceGenericFallback,
+        suppressAutoTrack: commandArgs.suppressAutoTrack,
+        rethrow: true,
+      });
+      if (!result) throw new Error("Autofill failed.");
+      return result;
+    };
+    visibleOverlayRunner = runner;
+    return () => {
+      if (visibleOverlayRunner === runner) visibleOverlayRunner = null;
+    };
+  }, [run]);
+
+  async function refillQuestion(item: OverlayProgressItem) {
+    const field = fieldsBySignature.current.get(item.signature);
+    if (!field) {
+      setError("Retrying this section...");
+      await run(false);
+      return;
+    }
+    stopRequested.current = false;
+    setStopQueued(false);
+    setError(null);
+    setState("filling");
+    setProgressItems((items) => markProgressActive(items, field));
+    try {
+      const { settings, profile } = await loadAutofillPrereqs(adapter, false);
+      const record = await fillSingleField({
+        adapter,
+        profile: profile as MasterProfile,
+        settings: settings as ExtensionSettings,
+        field,
+        shouldStop: () => stopRequested.current,
+        onField: (nextRecord) => setProgressItems((items) => applyProgressRecord(items, nextRecord)),
+      });
+      setProgressItems((items) => applyProgressRecord(items, record));
+      setState("done");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not refill this question.");
+      setState("error");
+    }
+  }
+
+  async function copyAnswer(item: OverlayProgressItem) {
+    const answer = item.valuePreview?.trim();
+    if (!answer) {
+      setError("No copied answer is available for this question yet.");
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(answer);
+      setError("Answer copied.");
+    } catch {
+      setError("Could not copy this answer from the page.");
+    }
+  }
+
+  async function reportBug(item: OverlayProgressItem) {
+    const report = JSON.stringify(
+      {
+        url: window.location.href,
+        platform: adapter.id,
+        stepName,
+        field: item.label,
+        status: item.status,
+        canonicalKey: item.canonicalKey ?? null,
+        error: item.error ?? null,
+      },
+      null,
+      2,
+    );
+    try {
+      await navigator.clipboard.writeText(report);
+      setError("Bug details copied. Paste them into your report.");
+    } catch {
+      setError("Could not copy bug details.");
     }
   }
 
@@ -450,16 +729,16 @@ function JobPostedOverlayApp() {
       platform={adapter.id}
       stepName={stepName}
       state={state}
-      fields={fields}
+      items={progressItems}
       error={error}
+      stopRequested={stopQueued}
       onFill={() => void run(false)}
       onContinue={() => void run(true)}
-      onStop={() => {
-        stopRequested.current = true;
-      }}
-      onClose={() => {
-        document.querySelector("[data-jobposted-shadow-host]")?.remove();
-      }}
+      onStop={requestStop}
+      onClose={closeOverlay}
+      onRefillQuestion={(item) => void refillQuestion(item)}
+      onCopyAnswer={(item) => void copyAnswer(item)}
+      onReportBug={(item) => void reportBug(item)}
     />
   );
 }
@@ -480,37 +759,54 @@ export default defineContentScript({
     injectPageHighlightStyle();
     if (!isTopFrame()) return;
 
+    const contentState = globalThis as typeof globalThis & { __jobpostedOverlayMounted?: boolean };
+    let removeOverlay: () => void = () => undefined;
+    let mountPromise: Promise<void> | null = null;
+    visibleOverlayMount = async () => {
+      if (contentState.__jobpostedOverlayMounted) return;
+      if (mountPromise) return mountPromise;
+      mountPromise = (async () => {
+        try {
+          contentState.__jobpostedOverlayMounted = true;
+          const ui = await createShadowRootUi(ctx, {
+            name: "jobposted-autofill-overlay",
+            position: "inline",
+            anchor: "body",
+            isolateEvents: true,
+            onMount(container, shadow) {
+              const style = document.createElement("style");
+              style.textContent = shadowCss;
+              shadow.appendChild(style);
+              const app = document.createElement("div");
+              app.setAttribute("data-jobposted-shadow-host", "true");
+              container.append(app);
+              const root = ReactDOM.createRoot(app);
+              root.render(<JobPostedOverlayApp onRequestClose={() => removeOverlay()} />);
+              return root;
+            },
+            onRemove(root) {
+              root?.unmount();
+              contentState.__jobpostedOverlayMounted = false;
+            },
+          });
+          removeOverlay = () => ui.remove();
+          ui.mount();
+        } catch (error) {
+          contentState.__jobpostedOverlayMounted = false;
+          throw error;
+        }
+      })().finally(() => {
+        mountPromise = null;
+      });
+      return mountPromise;
+    };
+
     const adapter = detectAdapter();
     if (adapter.id === "generic") {
       const settings = await message<ExtensionMessageResponse>({ type: "SETTINGS_GET" });
       if (!settings.ok || settings.type !== "SETTINGS_GET" || !settings.settings.enableGenericFallback) return;
     }
 
-    const contentState = globalThis as typeof globalThis & { __jobpostedOverlayMounted?: boolean };
-    if (contentState.__jobpostedOverlayMounted) return;
-    contentState.__jobpostedOverlayMounted = true;
-
-    const ui = await createShadowRootUi(ctx, {
-      name: "jobposted-autofill-overlay",
-      position: "inline",
-      anchor: "body",
-      isolateEvents: true,
-      onMount(container, shadow) {
-        const style = document.createElement("style");
-        style.textContent = shadowCss;
-        shadow.appendChild(style);
-        const app = document.createElement("div");
-        app.setAttribute("data-jobposted-shadow-host", "true");
-        container.append(app);
-        const root = ReactDOM.createRoot(app);
-        root.render(<JobPostedOverlayApp />);
-        return root;
-      },
-      onRemove(root) {
-        root?.unmount();
-        contentState.__jobpostedOverlayMounted = false;
-      },
-    });
-    ui.mount();
+    await visibleOverlayMount();
   },
 });
