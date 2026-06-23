@@ -33,15 +33,16 @@ const HEADING_SELECTOR = "h1, h2, h3, h4, h5, [role='heading']";
 const OPTION_MATCH_THRESHOLD = 0.55;
 const SCHOOL_MATCH_THRESHOLD = 0.55;
 const MAX_REPEATER_ROWS = 8;
-const SKILLS_MAX_SELECTED = 14;
-const SKILLS_MAX_SEARCHES = 14;
-const SKILLS_MAX_MISSES_AFTER_SELECTION = 3;
+const PROFILE_SKILLS_LIMIT = 60;
+const SKILLS_MAX_SELECTED = PROFILE_SKILLS_LIMIT;
+const SKILLS_MAX_SEARCHES = PROFILE_SKILLS_LIMIT;
+const SKILLS_MAX_MISSES_AFTER_SELECTION = PROFILE_SKILLS_LIMIT;
 const SKILL_OPTION_CLICKABLE_RATIO = 0.55;
 const SKILL_OPTION_CLIPPED_RATIO = 0.05;
 const WORKDAY_PROMPT_ROW_SELECTOR = "[role='option'], [id^='menuItem'], [data-automation-id*='menuItem' i]";
 const WORKDAY_CHOICE_CONTROL_SELECTOR =
   "[role='checkbox'], [data-automation-id*='checkbox' i], input[type='checkbox'], [role='radio'], input[type='radio']";
-const WORKDAY_EXPERIENCE_BUILD_TAG = "wd-skills-visible-control-blur-2026-06-23";
+const WORKDAY_EXPERIENCE_BUILD_TAG = "wd-skills-expanded-cap-2026-06-23";
 
 const EXPERIENCE_FIELDS = {
   jobTitle: "[data-automation-id='formField-jobTitle']",
@@ -504,20 +505,25 @@ function skillOptionConfidence(target: string, option: HTMLElement) {
   return fuzzyScore(desired, baseLabel) >= 0.92 ? 0.7 : 0;
 }
 
-function skillOptionIsExact(target: string, option: HTMLElement) {
+function skillOptionIsLiteralExact(target: string, option: HTMLElement) {
   const desired = normalizeText(target);
-  const rawLabel = optionLabel(option);
-  const label = normalizeText(rawLabel);
-  const baseLabel = normalizeText(stripParentheticals(rawLabel));
-  return Boolean(desired && (label === desired || baseLabel === desired));
+  return Boolean(desired && normalizeText(optionLabel(option)) === desired);
+}
+
+function bestLiteralExactSkillOption(options: HTMLElement[], target: string) {
+  const exactOptions = options.filter((option) => skillOptionIsLiteralExact(target, option));
+  if (exactOptions.length === 0) return null;
+  return exactOptions.sort((left, right) => optionVisibleClipRatio(right) - optionVisibleClipRatio(left))[0] ?? null;
 }
 
 function bestMatchingSkillOption(options: HTMLElement[], targets: string[]) {
   let best: { option: HTMLElement; score: number; rawScore: number } | null = null;
   for (const target of targets) {
+    const exactOption = bestLiteralExactSkillOption(options, target);
+    if (exactOption) return exactOption;
     for (const option of options) {
       const score = skillOptionConfidence(target, option);
-      const exactBonus = skillOptionIsExact(target, option) ? 0.45 : 0;
+      const exactBonus = skillOptionIsLiteralExact(target, option) ? 0.45 : 0;
       const adjustedScore = score > 0 ? score + exactBonus + optionClickabilityBonus(option) : 0;
       if (!best || adjustedScore > best.score) best = { option, score: adjustedScore, rawScore: score };
     }
@@ -885,34 +891,8 @@ function likelySkillText(skill: string) {
   return true;
 }
 
-function skillPriorityScore(skill: string) {
-  const text = normalizeText(skill);
-  const words = text.split(/\s+/).filter(Boolean);
-  let score = 0;
-  if (
-    /\b(?:typescript|javascript|react|node|python|java|go|golang|sql|postgres|mysql|mongodb|aws|azure|gcp|docker|kubernetes|terraform|graphql|rest|api|prd|prds|slack|figma|jira|git|github|machine learning|data science|analytics?)\b/.test(
-      text,
-    )
-  ) {
-    score += 8;
-  }
-  if (words.length === 1) score += 4;
-  else if (words.length === 2) score += 3;
-  else if (words.length === 3) score += 1;
-  if (/\b(?:acceptance criteria|success metrics?|success matrix|user stor(?:y|ies)|stakeholder management|roadmap|backlog)\b/.test(text)) {
-    score -= 4;
-  }
-  if (skill.length > 36) score -= 2;
-  return score;
-}
-
 function skillCandidates(skills: string[]) {
-  return uniqueVisibleTargets(skills)
-    .filter(likelySkillText)
-    .map((skill, index) => ({ skill, index, score: skillPriorityScore(skill) }))
-    .sort((left, right) => right.score - left.score || left.index - right.index)
-    .map((item) => item.skill)
-    .slice(0, SKILLS_MAX_SEARCHES);
+  return uniqueVisibleTargets(skills).filter(likelySkillText).slice(0, SKILLS_MAX_SEARCHES);
 }
 
 function skillSearchTargets(target: string) {

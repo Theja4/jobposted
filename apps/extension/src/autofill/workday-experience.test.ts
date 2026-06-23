@@ -367,7 +367,7 @@ describe("fillWorkdayExperience", () => {
     expect(selectedItems(skills)).toEqual(["Slack Software"]);
   });
 
-  it("keeps noisy Workday skill lists bounded and prioritizes concrete matches", async () => {
+  it("preserves configured skill order and only filters sentence-like entries", async () => {
     const { document } = setupExperienceDom(`<!doctype html>
       <div data-automation-id="progressBarActiveStep">My Experience</div>
       <main data-automation-id="applyFlowMyExpPage">
@@ -379,6 +379,7 @@ describe("fillWorkdayExperience", () => {
       </main>`);
     const skills = document.querySelector("[data-automation-id='formField-skills']") as HTMLElement;
     const searches = wireSelectiveSkillTypeahead(document, skills, {
+      "Acceptance Criteria": "Acceptance Criteria",
       TypeScript: "TypeScript",
       React: "React",
     });
@@ -394,18 +395,13 @@ describe("fillWorkdayExperience", () => {
           "Defined PRDs, acceptance criteria, and user stories for platform features",
           "React",
           "Random Internal Phrase",
-          "Another Missing Skill",
-          "Yet Another Missing Skill",
-          "Extra Missing Skill",
-          "Final Missing Skill",
         ],
       }),
     );
 
-    expect(selectedItems(skills)).toEqual(["TypeScript", "React"]);
-    expect(searches().length).toBeLessThanOrEqual(5);
-    expect(searches()).not.toContain("Acceptance Criteria");
-    expect(searches()).not.toContain("Success Matrix");
+    expect(selectedItems(skills)).toEqual(["Acceptance Criteria", "TypeScript", "React"]);
+    expect(searches()).toEqual(["Acceptance Criteria", "Success Matrix", "TypeScript", "React", "Random Internal Phrase"]);
+    expect(searches()).not.toContain("Defined PRDs, acceptance criteria, and user stories for platform features");
   }, 30000);
 
   it("selects checkbox-style Workday skill prompt results after pressing Enter", async () => {
@@ -573,6 +569,34 @@ describe("fillWorkdayExperience", () => {
     );
 
     expect(selectedItems(skills)).toEqual(["Structured Query Language (SQL)"]);
+  });
+
+  it("prefers the literal exact skill over a parenthetical programming-language variant", async () => {
+    const { document } = setupExperienceDom(`<!doctype html>
+      <div data-automation-id="progressBarActiveStep">My Experience</div>
+      <main data-automation-id="applyFlowMyExpPage">
+        <div data-automation-id="formField-skills">
+          <div data-automation-id="multiSelectContainer">
+            <div data-automation-id="multiselectInputContainer"><input /></div>
+          </div>
+        </div>
+      </main>`);
+    const skills = document.querySelector("[data-automation-id='formField-skills']") as HTMLElement;
+    wireCheckboxSkillTypeaheadAfterEnter(document, skills, [
+      "Python (Programming Language)",
+      "Python",
+      "Python IDLE",
+    ]);
+
+    await fillWorkdayExperience(
+      context({
+        ...baseProfile,
+        education: [],
+        skills: ["Python"],
+      }),
+    );
+
+    expect(selectedItems(skills)).toEqual(["Python"]);
   });
 
   it("prefers a visible clickable skill synonym over a clipped exact virtual row", async () => {
@@ -964,6 +988,50 @@ describe("fillWorkdayExperience", () => {
       "React",
     ]);
   });
+
+  it("fills configured skills past the old fourteen-skill cap", async () => {
+    const { document } = setupExperienceDom(`<!doctype html>
+      <div data-automation-id="progressBarActiveStep">My Experience</div>
+      <main data-automation-id="applyFlowMyExpPage">
+        <div data-automation-id="formField-skills">
+          <div data-automation-id="multiSelectContainer">
+            <div data-automation-id="multiselectInputContainer"><input /></div>
+          </div>
+        </div>
+      </main>`);
+    const skills = document.querySelector("[data-automation-id='formField-skills']") as HTMLElement;
+    const configuredSkills = [
+      "AlphaTool",
+      "BravoTool",
+      "CharlieTool",
+      "DeltaTool",
+      "EchoTool",
+      "FoxtrotTool",
+      "GolfTool",
+      "HotelTool",
+      "IndiaTool",
+      "JulietTool",
+      "KiloTool",
+      "LimaTool",
+      "MikeTool",
+      "NovemberTool",
+      "OscarTool",
+      "PapaTool",
+      "QuebecTool",
+      "RomeoTool",
+    ];
+    wireTypeahead(document, skills, configuredSkills);
+
+    await fillWorkdayExperience(
+      context({
+        ...baseProfile,
+        education: [],
+        skills: configuredSkills,
+      }),
+    );
+
+    expect(selectedItems(skills)).toEqual(configuredSkills);
+  }, 30000);
 
   it("treats reused Workday virtualized rows as fresh when their labels change", async () => {
     const { document } = setupExperienceDom(`<!doctype html>
