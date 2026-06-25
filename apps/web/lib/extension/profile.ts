@@ -168,6 +168,8 @@ export function buildMasterProfile(args: {
   const onboardingWorkAuth = onboardingProfile?.workAuth;
   const name = splitName(onboardingBasics?.fullName || asString(row.full_name), email);
   const location = splitLocation(onboardingBasics?.location || asString(row.location));
+  const addressLine1 = asString(onboardingBasics?.addressLine1);
+  const postalCode = asString(onboardingBasics?.postalCode);
   const workAuthorization = asString(row.work_authorization);
   const storedNeedsSponsorship =
     typeof row.needs_sponsorship === "boolean" ? row.needs_sponsorship : null;
@@ -196,10 +198,10 @@ export function buildMasterProfile(args: {
       phone: onboardingBasics?.phone || asString(row.phone),
     },
     location: {
-      street: asString(content.street ?? content.address) || null,
+      street: addressLine1 || asString(content.addressLine1 ?? content.street ?? content.address) || null,
       city: asString(content.city) || location.city,
       state: asString(content.state) || location.state,
-      postalCode: asString(content.postalCode ?? content.zip) || null,
+      postalCode: postalCode || asString(content.postalCode ?? content.postal_code ?? content.zip) || null,
       country: asString(content.country) || location.country,
     },
     links: {

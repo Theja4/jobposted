@@ -291,6 +291,42 @@ describe("fillField phone normalization", () => {
     expect(record.valuePreview).toBe("+91");
   });
 
+  it("recovers country mappings on calling-code dropdowns and selects the phone code option", async () => {
+    const { document, window } = parseHTML(`
+      <select id="country">
+        <option value="">Select...</option>
+        <option value="+1">United States +1</option>
+        <option value="+91">India +91</option>
+      </select>
+    `);
+    installDomGlobals(window);
+    const element = document.querySelector("select") as HTMLSelectElement;
+    const record = await fillField(
+      {
+        id: "country",
+        element,
+        label: "Country *",
+        context: "",
+        type: "select",
+        required: true,
+        options: ["Select...", "United States +1", "India +91"],
+        signature: "phone-country",
+      },
+      {
+        canonicalKey: "location.country",
+        value: "India",
+        confidence: 0.84,
+        source: "heuristic",
+      },
+      context,
+    );
+
+    expect(record.status).toBe("filled");
+    expect(record.canonicalKey).toBe("identity.phoneCountryCode");
+    expect(Array.from(element.options).find((option) => option.selected)?.value).toBe("+91");
+    expect(record.valuePreview).toBe("+91");
+  });
+
   it("infers the calling code from international phone digits even without a plus sign", async () => {
     const { document, window } = parseHTML(`
       <select id="country">
@@ -1264,7 +1300,7 @@ describe("fillField custom choice controls", () => {
   it("does not treat question text plus Select placeholder as an already-filled dropdown", async () => {
     const { document, window } = parseHTML(`
       <button id="previous" role="combobox" aria-controls="empty-previous-options">
-        Do you currently or have you previously worked for Databricks in the past? Select...
+        Do you currently or have you previously worked for this company in the past? Select...
       </button>
       <div id="empty-previous-options" role="listbox"></div>
       <div id="portal-root"></div>
@@ -1283,7 +1319,7 @@ describe("fillField custom choice controls", () => {
       no.setAttribute("role", "option");
       no.textContent = "No";
       no.addEventListener("click", () => {
-        button.textContent = "Do you currently or have you previously worked for Databricks in the past? No";
+        button.textContent = "Do you currently or have you previously worked for this company in the past? No";
       });
       listbox.append(yes, no);
       document.getElementById("portal-root")?.append(listbox);
@@ -1293,7 +1329,7 @@ describe("fillField custom choice controls", () => {
       {
         id: "previous",
         element: button,
-        label: "Do you currently or have you previously worked for Databricks in the past? *",
+        label: "Do you currently or have you previously worked for this company in the past? *",
         context: "",
         type: "combobox",
         required: true,
@@ -1689,6 +1725,37 @@ describe("fillField custom choice controls", () => {
     expect(document.getElementById("auth")?.textContent).toBe("Select...");
   });
 
+  it("does not leave typed text in searchable dropdowns when no option is selected", async () => {
+    const { document, window } = parseHTML(`
+      <input id="auth" role="combobox" aria-autocomplete="list" />
+    `);
+    installDomGlobals(window);
+    const input = document.getElementById("auth") as HTMLInputElement;
+    const record = await fillField(
+      {
+        id: "auth",
+        element: input,
+        label: "Are you legally authorized to work in the country in which you are applying? *",
+        context: "",
+        type: "combobox",
+        required: true,
+        options: [],
+        signature: "auth",
+      },
+      {
+        canonicalKey: "workAuth.authorizedToWork",
+        value: true,
+        confidence: 0.9,
+        source: "heuristic",
+      },
+      context,
+    );
+
+    expect(record.status).toBe("needs_user");
+    expect(record.error).toBe("No matching option.");
+    expect(input.value).toBe("");
+  });
+
   it("keeps phone-country dropdowns from using unrelated portal options", async () => {
     const { document, window } = parseHTML(`
       <button id="phone-country" role="combobox" aria-controls="empty-country-options">Select...</button>
@@ -1951,6 +2018,52 @@ describe("fillField custom choice controls", () => {
     expect(record.status).toBe("filled");
     expect(select.textContent).toContain("Yes");
     expect((document.querySelector(".select__input") as HTMLInputElement).value).toBe("");
+  });
+
+  it("does not treat Greenhouse React select aria-live search text as a committed value", async () => {
+    const { document, window } = parseHTML(`
+      <div id="auth-select" class="select">
+        <label>Are you legally authorized to work in the country in which you are applying? *</label>
+        <div class="select-shell">
+          <span aria-live="polite" role="log">Yes, 1 of 2. 2 results available.</span>
+          <div>
+            <div id="auth-control" class="select__control">
+              <div class="select__placeholder">Select...</div>
+              <input class="select__input" />
+            </div>
+            <button type="button" aria-label="Toggle flyout"></button>
+          </div>
+          <input required tabindex="-1" aria-hidden="true" value="" />
+        </div>
+      </div>
+      <div id="portal-root">
+        <div class="select__menu">
+          <div id="auth-option-yes" class="select__option">Yes</div>
+          <div class="select__option">No</div>
+        </div>
+      </div>
+    `);
+    installDomGlobals(window);
+    const input = document.querySelector(".select__input") as HTMLInputElement;
+    document.getElementById("auth-option-yes")?.addEventListener("mousedown", () => {
+      input.value = "Yes";
+    });
+
+    const field = extractFields(document, "greenhouse")[0]!;
+    const record = await fillField(
+      field,
+      {
+        canonicalKey: "workAuth.authorizedToWork",
+        value: true,
+        confidence: 0.9,
+        source: "heuristic",
+      },
+      context,
+    );
+
+    expect(record.status).toBe("needs_user");
+    expect(record.error).toBe("No matching option.");
+    expect(document.querySelector(".select__single-value")).toBeNull();
   });
 
   it("fills Greenhouse Select2 dropdown shells by opening the visible trigger", async () => {

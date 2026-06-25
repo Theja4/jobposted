@@ -124,6 +124,8 @@ describe("buildMasterProfile", () => {
             email: "theja@example.com",
             phone: "+91 73300 07006",
             location: "Hyderabad, India",
+            addressLine1: "Flat 301, Jubilee Hills",
+            postalCode: "500033",
           },
           links: {
             linkedin: "https://linkedin.com/in/theja",
@@ -149,7 +151,12 @@ describe("buildMasterProfile", () => {
       email: "theja@example.com",
       phone: "+91 73300 07006",
     });
-    expect(profile.location).toMatchObject({ city: "Hyderabad", country: "India" });
+    expect(profile.location).toMatchObject({
+      street: "Flat 301, Jubilee Hills",
+      city: "Hyderabad",
+      postalCode: "500033",
+      country: "India",
+    });
     expect(profile.links.linkedin).toBe("https://linkedin.com/in/theja");
     expect(profile.workAuth).toMatchObject({ authorizedToWork: true, requiresSponsorship: false });
     expect(profile.skills).toEqual(["Product strategy", "Analytics"]);

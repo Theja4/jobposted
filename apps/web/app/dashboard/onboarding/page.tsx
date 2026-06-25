@@ -75,6 +75,16 @@ function applyExistingProfile(
         email: config.profile.basics.email || str(row.email) || str(content.email),
         phone: config.profile.basics.phone || str(row.phone) || str(content.phone),
         location: config.profile.basics.location || str(row.location) || str(content.location),
+        addressLine1:
+          config.profile.basics.addressLine1 ||
+          str(content.addressLine1) ||
+          str(content.street) ||
+          str(content.address),
+        postalCode:
+          config.profile.basics.postalCode ||
+          str(content.postalCode) ||
+          str(content.postal_code) ||
+          str(content.zip),
       },
       links: {
         ...config.profile.links,

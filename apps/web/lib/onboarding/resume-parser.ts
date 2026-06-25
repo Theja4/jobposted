@@ -547,6 +547,8 @@ export function mergeParsedIntoOnboarding(
         email: parsed.basics?.email || next.profile.basics.email,
         phone: parsed.basics?.phone || next.profile.basics.phone,
         location: parsed.basics?.location || next.profile.basics.location,
+        addressLine1: parsed.basics?.addressLine1 || next.profile.basics.addressLine1,
+        postalCode: parsed.basics?.postalCode || next.profile.basics.postalCode,
       },
       links: {
         linkedin: parsed.links?.linkedin || next.profile.links.linkedin,

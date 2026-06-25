@@ -1,0 +1,17 @@
+.git
+.next
+.turbo
+node_modules
+.pnpm-store
+coverage
+dist
+out
+*.tsbuildinfo
+*.log
+
+apps/*/.next
+apps/*/.turbo
+apps/*/node_modules
+apps/extension/.output
+apps/extension/.wxt
+packages/*/node_modules

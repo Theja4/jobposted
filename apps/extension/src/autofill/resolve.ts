@@ -100,10 +100,12 @@ function looksLikePhoneCountryCode(field: FieldDescriptor) {
   const label = normalizeText(field.label);
   const text = fieldText(field);
   const optionText = normalizeText(field.options.join(" "));
+  const rawOptions = field.options.join(" ");
+  const optionsLookLikeCallingCodes = /(?:^|[^\d])\+?\s*\d{1,4}(?!\d)/.test(rawOptions);
   return (
     /\bcountry\b/.test(label) &&
     (/\b(phone|mobile|telephone|dial|calling)\b/.test(text) ||
-      /(^|\s)\+\d{1,3}\b/.test(optionText) ||
+      /\b\d{1,4}\b/.test(optionText) && optionsLookLikeCallingCodes ||
       hasNearbyPhoneControl(field))
   );
 }

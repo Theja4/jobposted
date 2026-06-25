@@ -1,0 +1,142 @@
+:root {
+  color-scheme: light;
+  --jp-blue-50: #eff6ff;
+  --jp-blue-100: #dbeafe;
+  --jp-blue-600: #1f64e0;
+  --jp-blue-700: #174fb8;
+  --jp-ink: #0b1220;
+  --jp-muted: #526173;
+  --jp-border: #d9e7fb;
+  --jp-warn-bg: #fffbeb;
+  --jp-warn: #b45309;
+  font-family: "Plus Jakarta Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  color: var(--jp-ink);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  width: 300px;
+  margin: 0;
+  background: #ffffff;
+}
+
+button {
+  font: inherit;
+}
+
+.jp-popup {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+}
+
+header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+header img {
+  width: 34px;
+  height: 34px;
+  object-fit: contain;
+}
+
+header strong,
+.jp-state strong {
+  display: block;
+  font-size: 13px;
+  font-weight: 900;
+}
+
+header span,
+.jp-state span {
+  display: block;
+  margin-top: 1px;
+  color: var(--jp-muted);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.45;
+}
+
+.jp-state {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr);
+  align-items: start;
+  gap: 10px;
+  border: 1px solid var(--jp-border);
+  border-radius: 12px;
+  background: var(--jp-blue-50);
+  padding: 11px;
+}
+
+.jp-state svg {
+  width: 18px;
+  height: 18px;
+  margin-top: 1px;
+  color: var(--jp-blue-700);
+}
+
+.jp-ok {
+  background: #ecfdf5;
+  border-color: #bbf7d0;
+}
+
+.jp-ok svg {
+  color: #047857;
+}
+
+.jp-warn {
+  background: var(--jp-warn-bg);
+  border-color: #fde68a;
+}
+
+.jp-warn svg,
+.jp-warn strong {
+  color: var(--jp-warn);
+}
+
+.jp-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.jp-actions button {
+  display: inline-flex;
+  min-height: 36px;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  border: 1px solid var(--jp-border);
+  border-radius: 10px;
+  background: #ffffff;
+  color: var(--jp-ink);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.jp-actions .jp-primary {
+  border-color: var(--jp-blue-600);
+  background: var(--jp-blue-600);
+  color: #ffffff;
+}
+
+.jp-actions svg {
+  width: 15px;
+  height: 15px;
+}
+
+.jp-spin {
+  animation: jp-spin 900ms linear infinite;
+}
+
+@keyframes jp-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}

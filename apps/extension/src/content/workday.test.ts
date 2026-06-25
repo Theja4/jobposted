@@ -1,0 +1,110 @@
+import { parseHTML } from "linkedom";
+import { describe, expect, it } from "vitest";
+import {
+  hasWorkdayDom,
+  isWorkdayHost,
+  isWorkdayPage,
+  workdayCompany,
+  ensureWorkdayRepeaterRows,
+  fillWorkdaySkills,
+  workdayJobHeading,
+  workdayRepeaterHint,
+  workdayStepName,
+} from "./workday";
+
+function documentFrom(html: string) {
+  const { document, window } = parseHTML(html);
+  Object.assign(globalThis, {
+    window,
+    document,
+    Event: window.Event,
+    KeyboardEvent: window.KeyboardEvent ?? window.Event,
+    HTMLElement: window.HTMLElement,
+    HTMLInputElement: window.HTMLInputElement,
+  });
+  return document;
+}
+
+describe("Workday content helpers", () => {
+  it("recognizes Workday tenant hosts and DOM markers", () => {
+    const doc = documentFrom(`<form data-automation-id="workdayApplication"></form>`);
+
+    expect(isWorkdayHost("acme.wd1.myworkdayjobs.com")).toBe(true);
+    expect(isWorkdayHost("jobs.example.com")).toBe(false);
+    expect(hasWorkdayDom(doc)).toBe(true);
+    expect(isWorkdayPage("https://jobs.example.com/apply", doc)).toBe(true);
+  });
+
+  it("reads Workday step and job metadata from named selectors", () => {
+    const doc = documentFrom(`<!doctype html>
+      <main>
+        <h1 data-automation-id="jobPostingHeader">Senior Engineer</h1>
+        <span data-automation-id="company">Acme</span>
+        <h2 data-automation-id="stepName">My Information</h2>
+      </main>`);
+
+    expect(workdayStepName(doc)).toBe("My Information");
+    expect(workdayJobHeading(doc)).toBe("Senior Engineer");
+    expect(workdayCompany(doc)).toBe("Acme");
+  });
+
+  it("keeps Workday repeater detection close to automation ids", () => {
+    const doc = documentFrom(`<!doctype html>
+      <div data-automation-id="education-1-school">
+        <label for="school">School</label>
+        <input id="school" />
+      </div>
+      <div data-automation-id="employment-1-jobTitle">
+        <label for="title">Job Title</label>
+        <input id="title" />
+      </div>`);
+
+    expect(workdayRepeaterHint(doc.querySelector("#school") as HTMLElement)).toBe("education");
+    expect(workdayRepeaterHint(doc.querySelector("#title") as HTMLElement)).toBe("experience");
+  });
+
+  it("adds Workday education repeater rows through section-local Add buttons", async () => {
+    const doc = documentFrom(`<!doctype html>
+      <section data-automation-id="educationSection">
+        <h2>Education</h2>
+        <div data-automation-id="formField-schoolName"><input id="school-1" /></div>
+        <button type="button" data-automation-id="add-button">Add Another Education</button>
+      </section>`);
+    doc.querySelector("button")?.addEventListener("click", () => {
+      const row = doc.createElement("div");
+      row.setAttribute("data-automation-id", "formField-schoolName");
+      row.innerHTML = `<input id="school-2" />`;
+      doc.querySelector("section")?.append(row);
+    });
+
+    await ensureWorkdayRepeaterRows({ doc, intent: "education", desiredRows: 2 });
+
+    expect(doc.querySelector("#school-2")).toBeTruthy();
+  });
+
+  it("commits Workday skill chips through the typeahead input", async () => {
+    const doc = documentFrom(`<!doctype html>
+      <div data-automation-id="formField-skills">
+        <div data-automation-id="multiSelectContainer">
+          <div data-automation-id="multiselectInputContainer"><input id="skills" /></div>
+        </div>
+      </div>`);
+    const root = doc.querySelector("[data-automation-id='multiSelectContainer']") as HTMLElement;
+    const input = doc.querySelector("#skills") as HTMLInputElement;
+    input.addEventListener("keydown", () => {
+      if (!input.value.trim()) return;
+      const chip = doc.createElement("span");
+      chip.textContent = input.value;
+      root.append(chip);
+    });
+
+    const result = await fillWorkdaySkills({
+      field: { element: input, label: "Skills" },
+      value: ["TypeScript", "React"],
+    });
+
+    expect(result).toEqual({ filled: 2, attempted: 2 });
+    expect(root.textContent).toContain("TypeScript");
+    expect(root.textContent).toContain("React");
+  });
+});

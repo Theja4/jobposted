@@ -10,5 +10,20 @@
   <input id="ashby-phone" name="phone" type="tel" />
   <label for="ashby-resume">Resume</label>
   <input id="ashby-resume" type="file" name="resume" />
+  <div class="field">
+    <label id="ashby-source-label">How did you hear about us?</label>
+    <div
+      role="combobox"
+      aria-haspopup="listbox"
+      aria-labelledby="ashby-source-label"
+      aria-controls="ashby-source-list"
+      tabindex="0"
+    >Select...</div>
+    <ul id="ashby-source-list" role="listbox">
+      <li role="option">LinkedIn</li>
+      <li role="option">Referral</li>
+      <li role="option">Job board</li>
+    </ul>
+  </div>
   <button>Submit Application</button>
 </form>

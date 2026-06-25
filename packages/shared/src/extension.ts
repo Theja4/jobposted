@@ -169,12 +169,69 @@ export interface ExtensionFieldMapping {
 export interface ExtensionFieldFillRecord {
   signature: string;
   label: string;
+  required?: boolean;
   canonicalKey: CanonicalFieldKey;
   status: "filled" | "skipped" | "needs_user" | "failed";
   confidence: number;
   valuePreview?: string;
   source: ExtensionFieldMapping["source"];
   error?: string;
+}
+
+export interface ExtensionAutofillPageField {
+  fieldId: string;
+  label: string;
+  type: ExtensionFieldControl;
+  options: string[];
+  optionMode?: "full" | "local_dictionary" | "ranked_subset" | null;
+  optionDictionary?:
+    | "phone_country_code"
+    | "country"
+    | "region"
+    | "school"
+    | "language"
+    | "skill"
+    | "currency"
+    | "timezone"
+    | "large_unknown"
+    | null;
+  optionCount?: number | null;
+  required: boolean;
+  currentValue?: string | null;
+  section?: string | null;
+  repeater?: "education" | "experience" | null;
+  repeaterIndex?: number | null;
+}
+
+export type ExtensionAutofillPlanAction =
+  | "fill"
+  | "select"
+  | "check"
+  | "uncheck"
+  | "attach"
+  | "skip";
+
+export interface ExtensionAutofillPlanItem {
+  fieldId: string;
+  action: ExtensionAutofillPlanAction;
+  value?: string | string[] | boolean | null;
+  optionLabel?: string | null;
+  confidence: number;
+  note?: string | null;
+}
+
+export interface ExtensionAutofillPlan {
+  stepName: string;
+  fields: ExtensionAutofillPlanItem[];
+  summary?: string | null;
+}
+
+export interface ExtensionAutofillPlanRequest {
+  platform: ExtensionPlatform;
+  url: string;
+  title?: string | null;
+  stepName?: string | null;
+  fields: ExtensionAutofillPageField[];
 }
 
 export interface ExtensionResumeResponse {
@@ -266,6 +323,16 @@ export interface ExtensionAutofillRunResult {
   trackerError?: string | null;
 }
 
+export interface ExtensionAutofillDiscoveryResult {
+  platform: ExtensionPlatform;
+  stepName: string;
+  jobUrl: string;
+  company: string;
+  role: string;
+  total: number;
+  fields: ExtensionAutofillPageField[];
+}
+
 export interface ExtensionSettings {
   submissionPolicy: "review" | "auto";
   autoAdvance: boolean;
@@ -306,6 +373,9 @@ export type ExtensionMessage =
   | { type: "PROFILE_GET"; forceRefresh?: boolean; cachedOnly?: boolean }
   | { type: "RESUME_GET"; jobId?: string | null }
   | { type: "FIELD_MAP"; field: ExtensionFieldContext; profile: MasterProfile }
+  | { type: "AUTOFILL_PLAN"; payload: ExtensionAutofillPlanRequest }
+  | { type: "PANEL_OPEN_ACTIVE_TAB" }
+  | { type: "AUTOFILL_DISCOVER_ACTIVE_TAB" }
   | { type: "AUTOFILL_ACTIVE_TAB"; continueSteps?: boolean }
   | { type: "TRACKER_ADD_ACTIVE_TAB" }
   | { type: "TAILOR_ACTIVE_TAB" }
@@ -325,6 +395,9 @@ export type ExtensionMessageResponse =
   | { ok: true; type: "PROFILE_GET"; profile: MasterProfile | null }
   | { ok: true; type: "RESUME_GET"; resume: ExtensionResumeResponse }
   | { ok: true; type: "FIELD_MAP"; mapping: ExtensionFieldMapping }
+  | { ok: true; type: "AUTOFILL_PLAN"; plan: ExtensionAutofillPlan }
+  | { ok: true; type: "PANEL_OPEN_ACTIVE_TAB" }
+  | { ok: true; type: "AUTOFILL_DISCOVER_ACTIVE_TAB"; result: ExtensionAutofillDiscoveryResult }
   | { ok: true; type: "AUTOFILL_ACTIVE_TAB"; result: ExtensionAutofillRunResult }
   | { ok: true; type: "TRACKER_ADD_ACTIVE_TAB"; result: ExtensionApplicationResponse }
   | { ok: true; type: "TAILOR_ACTIVE_TAB"; result: ExtensionTailorResponse }

@@ -213,10 +213,23 @@ function looksLikeCountryField(field: FieldDescriptor) {
   return /\bcountry\b/.test(fieldOwnIntentText(field));
 }
 
+function fieldOptionsLookLikeCallingCodes(field: FieldDescriptor) {
+  const rawOptions = [
+    ...field.options,
+    ...(field.element instanceof HTMLSelectElement
+      ? Array.from(field.element.options).map((option) => `${option.textContent ?? ""} ${option.value}`)
+      : []),
+  ].join(" ");
+  return /(?:^|[^\d])\+?\s*\d{1,4}(?!\d)/.test(rawOptions);
+}
+
 function looksLikePhoneCountryField(field: FieldDescriptor) {
   const ownText = fieldOwnIntentText(field);
   const text = fieldIntentText(field);
-  return /\bcountry\b/.test(ownText) && /\b(phone|mobile|telephone|tel|calling|dial)\b/.test(text);
+  return (
+    /\bcountry\b/.test(ownText) &&
+    (/\b(phone|mobile|telephone|tel|calling|dial)\b/.test(text) || fieldOptionsLookLikeCallingCodes(field))
+  );
 }
 
 function phoneCountryChoiceContainer(field: FieldDescriptor) {
@@ -431,7 +444,7 @@ function hasValue(field: FieldDescriptor) {
     const text = visibleText(element.getAttribute("aria-valuetext") || element.textContent);
     return !looksLikePlaceholder(text, field);
   }
-  if (looksLikeStructuredChoiceRoot(element)) return !looksLikePlaceholder(fieldCurrentText(field), field);
+  if (looksLikeStructuredChoiceRoot(element)) return !looksLikePlaceholder(committedChoiceText(field), field);
   if (element.getAttribute("role") === "textbox") return !looksLikePlaceholder(visibleText(element.textContent || element.getAttribute("aria-valuetext")), field);
   if (element.isContentEditable) return !looksLikePlaceholder(element.textContent ?? "", field);
   return false;
@@ -444,10 +457,17 @@ function structuredChoiceDisplayText(element: HTMLElement) {
       "[class*='select2-chosen' i]",
       "[class*='single-value' i]",
       "[data-testid*='selected' i]",
-      "[aria-live='polite']",
     ].join(","),
   );
   return visibleText(display?.textContent || display?.getAttribute("aria-label"));
+}
+
+function emptyRequiredChoiceMirrors(element: HTMLElement) {
+  return Array.from(
+    element.querySelectorAll<HTMLInputElement>(
+      "input[required][aria-hidden='true'], input[required][class*='requiredInput' i]",
+    ),
+  ).filter((input) => visibleText(input.value).length === 0);
 }
 
 function textWithoutTransientChoiceContent(element: HTMLElement) {
@@ -455,6 +475,8 @@ function textWithoutTransientChoiceContent(element: HTMLElement) {
   clone
     .querySelectorAll(
       [
+        "[aria-live]",
+        "[role='log']",
         "input",
         "textarea",
         "[role='textbox']",
@@ -462,6 +484,9 @@ function textWithoutTransientChoiceContent(element: HTMLElement) {
         "[role='menu']",
         "[role='option']",
         "[role='menuitem']",
+        "[class*='a11yText' i]",
+        "[class*='placeholder' i]",
+        "[class*='input-container' i]",
         "[class*='option' i]",
       ].join(","),
     )
@@ -469,7 +494,7 @@ function textWithoutTransientChoiceContent(element: HTMLElement) {
   return visibleText(clone.textContent || clone.getAttribute("aria-label") || clone.getAttribute("value"));
 }
 
-function committedChoiceText(field: FieldDescriptor) {
+function committedChoiceText(field: FieldDescriptor): string {
   const element = field.element;
   if (element instanceof HTMLSelectElement) return fieldCurrentText(field);
   if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) return "";
@@ -479,6 +504,7 @@ function committedChoiceText(field: FieldDescriptor) {
 
   const ariaValue = visibleText(element.getAttribute("aria-valuetext"));
   if (ariaValue && !looksLikePlaceholder(ariaValue, field)) return ariaValue;
+  if (looksLikeStructuredChoiceRoot(element)) return "";
 
   const selected = uniqueElements([element, ...comboboxCandidateRoots(field)]).flatMap((root) =>
     Array.from(
@@ -494,7 +520,7 @@ function committedChoiceText(field: FieldDescriptor) {
   return looksLikePlaceholder(stableText, field) ? "" : stableText;
 }
 
-function fieldCurrentText(field: FieldDescriptor) {
+function fieldCurrentText(field: FieldDescriptor): string {
   const element = field.element;
   if (element instanceof HTMLSelectElement) {
     const selected = Array.from(element.options).find((option) => option.selected || option.hasAttribute("selected"));
@@ -504,6 +530,7 @@ function fieldCurrentText(field: FieldDescriptor) {
   if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) return visibleText(element.value);
   const structuredDisplay = structuredChoiceDisplayText(element);
   if (structuredDisplay) return structuredDisplay;
+  if (looksLikeStructuredChoiceRoot(element)) return committedChoiceText(field);
   return visibleText(element.getAttribute("aria-valuetext") || element.textContent || element.getAttribute("value"));
 }
 
@@ -518,7 +545,8 @@ function fieldChoiceValueMatches(
   countryHint: string | null | undefined,
 ) {
   if (mapping.canonicalKey === "identity.phoneCountryCode") return phoneCountryMatches(field, mapping.value, countryHint);
-  const current = fieldCurrentText(field);
+  if (emptyRequiredChoiceMirrors(field.element).length > 0) return false;
+  const current = looksLikeStructuredChoiceRoot(field.element) ? committedChoiceText(field) : fieldCurrentText(field);
   if (looksLikePlaceholder(current, field)) return false;
   if (isReferralSourceKey(mapping.canonicalKey)) return referralSourceOptionScore(current, "") > 0;
   const desired = desiredString(mapping.value);
@@ -1318,6 +1346,32 @@ function phoneCountryNeedsCommittedChoice(field: FieldDescriptor) {
   return field.type === "combobox" || field.type === "typeahead" || field.type === "multiselect" || requiresOptionSelection(field);
 }
 
+function looksLikeClosedChoiceQuestion(field: FieldDescriptor, mapping: ExtensionFieldMapping) {
+  if (isReferralSourceKey(mapping.canonicalKey) && field.options.length === 0) return false;
+  const text = normalizedText(`${field.label} ${field.context}`);
+  return (
+    typeof mapping.value === "boolean" ||
+    mapping.canonicalKey === "workAuth.authorizedToWork" ||
+    mapping.canonicalKey === "workAuth.requiresSponsorship" ||
+    /\?\s*$/.test(field.label.trim()) ||
+    /^(are|were|was|do|does|did|have|has|had|will|would|is|can|could|should|may)\b/.test(text)
+  );
+}
+
+function mustCommitComboboxOption(field: FieldDescriptor, mapping: ExtensionFieldMapping) {
+  return !isFreeTextCombobox(field) || looksLikeClosedChoiceQuestion(field, mapping);
+}
+
+function clearUncommittedSearchText(editables: Iterable<HTMLElement>) {
+  for (const editable of editables) {
+    if (editable instanceof HTMLInputElement || editable instanceof HTMLTextAreaElement) {
+      if (editable.value) setText(editable, "");
+    } else if (editable.getAttribute("role") === "textbox" || editable.isContentEditable) {
+      if (visibleText(editable.textContent || editable.getAttribute("aria-valuetext"))) setText(editable, "");
+    }
+  }
+}
+
 async function fillCombobox(
   field: FieldDescriptor,
   mapping: ExtensionFieldMapping,
@@ -1329,7 +1383,9 @@ async function fillCombobox(
   // (e.g. Austria +43 instead of India +91 and then leaves it there), so for calling-code fields
   // we only ever commit an option we've actually scored as a match — otherwise we leave the
   // control untouched for the user instead of writing a confidently-wrong value.
-  const allowBlindKeyCommit = mapping.canonicalKey !== "identity.phoneCountryCode";
+  const mustSelectOption = mustCommitComboboxOption(field, mapping);
+  const allowBlindKeyCommit = !mustSelectOption && mapping.canonicalKey !== "identity.phoneCountryCode";
+  const editedSearchTargets = new Set<HTMLElement>();
   const ignoredGlobalOptions = new Set(comboboxOptionCandidates(field, mapping));
   await openCombobox(field, mapping, ignoredGlobalOptions);
   if (await waitForComboboxOption(field, mapping, countryHint, ignoredGlobalOptions)) return true;
@@ -1338,6 +1394,7 @@ async function fillCombobox(
     for (const editable of comboboxEditableTargets(field)) {
       editable.focus();
       setText(editable, searchValue);
+      editedSearchTargets.add(editable);
       await sleep(120);
       if (mapping.canonicalKey === "identity.phoneCountryCode" && /^\+?\d{1,4}$/.test(searchValue.trim())) {
         dispatchKey(editable, "Enter");
@@ -1346,22 +1403,22 @@ async function fillCombobox(
         if (phoneCountryMatches(field, mapping.value, countryHint)) return true;
       }
       if (await waitForComboboxOption(field, mapping, countryHint, ignoredGlobalOptions)) return true;
-      if (isFreeTextCombobox(field) && editableValueMatches(editable, mapping.value)) return true;
+      if (!mustSelectOption && isFreeTextCombobox(field) && editableValueMatches(editable, mapping.value)) return true;
       if (shouldSubmitComboboxSearch(field, editable) && comboboxOptionCandidates(field, mapping, ignoredGlobalOptions).length === 0) {
         dispatchKey(editable, "Enter");
         dispatchFieldEvents(editable);
         await sleep(180);
         if (await waitForComboboxOption(field, mapping, countryHint, ignoredGlobalOptions, 700)) return true;
-        if (!requiresOptionSelection(field) && fieldChoiceValueMatches(field, mapping, countryHint)) return true;
-        if (isFreeTextCombobox(field) && editableValueMatches(editable, mapping.value)) return true;
+        if (!mustSelectOption && fieldChoiceValueMatches(field, mapping, countryHint)) return true;
+        if (!mustSelectOption && isFreeTextCombobox(field) && editableValueMatches(editable, mapping.value)) return true;
       }
       if (allowBlindKeyCommit) {
         dispatchKey(editable, "ArrowDown");
         dispatchKey(editable, "Enter");
         dispatchFieldEvents(editable);
         await sleep(120);
-        if (!requiresOptionSelection(field) && fieldChoiceValueMatches(field, mapping, countryHint)) return true;
-        if (isFreeTextCombobox(field) && editableValueMatches(editable, mapping.value)) return true;
+        if (!mustSelectOption && fieldChoiceValueMatches(field, mapping, countryHint)) return true;
+        if (!mustSelectOption && isFreeTextCombobox(field) && editableValueMatches(editable, mapping.value)) return true;
       }
     }
 
@@ -1376,6 +1433,8 @@ async function fillCombobox(
       if (fieldChoiceValueMatches(field, mapping, countryHint)) return true;
     }
   }
+
+  if (mustSelectOption) clearUncommittedSearchText(editedSearchTargets);
 
   if (mapping.canonicalKey === "identity.phoneCountryCode") {
     const direct = directOwnedEditableTarget(field);
@@ -1395,8 +1454,11 @@ export async function fillField(
   mapping: ExtensionFieldMapping,
   context: FillContext,
 ): Promise<ExtensionFieldFillRecord> {
+  const recoverPhoneCountryCode =
+    looksLikePhoneCountryField(field) &&
+    (isPhoneNumberKey(mapping.canonicalKey) || mapping.canonicalKey === "location.country" || mapping.canonicalKey === "workAuth.country");
   const mappingToFill =
-    isPhoneNumberKey(mapping.canonicalKey) && looksLikePhoneCountryField(field)
+    recoverPhoneCountryCode
       ? {
           ...mapping,
           canonicalKey: "identity.phoneCountryCode" as const,
@@ -1418,6 +1480,7 @@ export async function fillField(
   const base = {
     signature: field.signature,
     label: field.label,
+    required: field.required,
     canonicalKey: effectiveMapping.canonicalKey,
     confidence: effectiveMapping.confidence,
     source: effectiveMapping.source,

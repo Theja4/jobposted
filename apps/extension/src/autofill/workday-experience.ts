@@ -229,6 +229,7 @@ function workdayProgressRecord(args: {
   label: string;
   canonicalKey: CanonicalFieldKey;
   status: ExtensionFieldFillRecord["status"];
+  required?: boolean;
   error?: string;
   valuePreview?: string;
   signatureHint?: string;
@@ -236,6 +237,7 @@ function workdayProgressRecord(args: {
   return {
     signature: normalizeText(["workday-extra", args.label, args.canonicalKey, args.signatureHint].join(" ")).slice(0, 240),
     label: args.label,
+    required: args.required ?? args.status === "needs_user",
     canonicalKey: args.canonicalKey,
     confidence: 0.9,
     source: "adapter",

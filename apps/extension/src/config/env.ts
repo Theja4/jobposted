@@ -12,5 +12,6 @@ export const API_RESUME_PATH = "/api/extension/resume";
 export const API_APPLICATIONS_PATH = "/api/extension/applications";
 export const API_ANSWERS_PATH = "/api/extension/answers";
 export const API_FIELD_MAP_PATH = "/api/extension/field-map";
+export const API_AUTOFILL_PLAN_PATH = "/api/extension/autofill-plan";
 export const API_TAILOR_PATH = "/api/extension/tailor";
 export const API_COVER_LETTER_PATH = "/api/extension/cover-letter";

@@ -64,24 +64,6 @@ describe("field resolution", () => {
     expect(mappings.map((mapping) => mapping.canonicalKey)).toContain("documents.resume");
   });
 
-  it("maps Greenhouse core fields", async () => {
-    const { adapter, fields } = await loadFixture("greenhouse", "https://boards.greenhouse.io/acme/jobs/1");
-    expect(adapter.id).toBe("greenhouse");
-    const labels = await Promise.all(fields.map((field) => resolveField({ field, profile, platform: adapter.id, url: "", demographicsEnabled: false })));
-    expect(labels.map((mapping) => mapping.canonicalKey)).toEqual(
-      expect.arrayContaining(["identity.firstName", "identity.lastName", "identity.email", "identity.phone", "documents.resume"]),
-    );
-  });
-
-  it("detects embedded Greenhouse applications on Databricks gh_jid pages", async () => {
-    const { adapter } = await loadHtml(
-      `<!doctype html><form><input data-source="first_name" /></form>`,
-      "https://www.databricks.com/company/careers/engineering/sr-engineering-manager---notebook-dataplane-8190108002?gh_jid=8190108002",
-    );
-
-    expect(adapter.id).toBe("greenhouse");
-  });
-
   it("maps Lever full name and links", async () => {
     const { adapter, fields } = await loadFixture("lever", "https://jobs.lever.co/acme/1");
     const mappings = await Promise.all(fields.map((field) => resolveField({ field, profile, platform: adapter.id, url: "", demographicsEnabled: false })));
@@ -92,59 +74,6 @@ describe("field resolution", () => {
 
   it("maps Ashby named inputs", async () => {
     const { adapter, fields } = await loadFixture("ashby", "https://jobs.ashbyhq.com/acme/1");
-    const mappings = await Promise.all(fields.map((field) => resolveField({ field, profile, platform: adapter.id, url: "", demographicsEnabled: false })));
-    expect(mappings.map((mapping) => mapping.canonicalKey)).toEqual(
-      expect.arrayContaining(["identity.firstName", "identity.lastName", "identity.email", "identity.phone", "documents.resume"]),
-    );
-  });
-
-  it("extracts Ashby <button> Yes/No groups and a url LinkedIn field", async () => {
-    const { adapter, fields } = await loadHtml(
-      `<!doctype html>
-      <form>
-        <div class="_fieldEntry">
-          <label class="_label">LinkedIn<span aria-hidden="true">*</span></label>
-          <div class="_inputWrap"><input type="url" name="4a5a4b65-b85e-4a0c-8edc-91a4ed39c2d2" placeholder="https://example.com..." /></div>
-        </div>
-        <div class="_fieldEntry">
-          <div class="_label">Will you now or in the future require sponsorship to work in the US?<span aria-hidden="true">*</span></div>
-          <div class="_options">
-            <button type="button">Yes</button>
-            <button type="button">No</button>
-          </div>
-        </div>
-      </form>`,
-      "https://jobs.ashbyhq.com/acme/abc/application",
-    );
-    expect(adapter.id).toBe("ashby");
-    const mappings = await Promise.all(
-      fields.map((field) => resolveField({ field, profile, platform: adapter.id, url: "", demographicsEnabled: false })),
-    );
-    const byLabel = new Map(fields.map((field, index) => [field.label, mappings[index]]));
-
-    const linkedinField = fields.find((field) => /linkedin/i.test(field.label));
-    expect(linkedinField).toBeTruthy();
-    expect(byLabel.get(linkedinField!.label)?.canonicalKey).toBe("links.linkedin");
-
-    const sponsorField = fields.find((field) => /sponsorship/i.test(field.label));
-    expect(sponsorField?.type).toBe("radio");
-    expect(sponsorField?.options).toEqual(["Yes", "No"]);
-    expect(byLabel.get(sponsorField!.label)?.canonicalKey).toBe("workAuth.requiresSponsorship");
-  });
-
-  it("maps newer Greenhouse board field variants", async () => {
-    const { adapter, fields } = await loadHtml(
-      `<!doctype html>
-      <form>
-        <div><span data-testid="field-label">First name</span><input autocomplete="given-name" /></div>
-        <div><span data-testid="field-label">Last name</span><input autocomplete="family-name" /></div>
-        <div><span data-testid="field-label">Email</span><input name="email" type="email" /></div>
-        <div><span data-testid="field-label">Phone</span><input autocomplete="tel" /></div>
-        <div><span data-testid="field-label">Resume/CV</span><input id="resume-attachment" type="file" /></div>
-      </form>`,
-      "https://job-boards.greenhouse.io/acme/jobs/1",
-    );
-    expect(adapter.id).toBe("greenhouse");
     const mappings = await Promise.all(fields.map((field) => resolveField({ field, profile, platform: adapter.id, url: "", demographicsEnabled: false })));
     expect(mappings.map((mapping) => mapping.canonicalKey)).toEqual(
       expect.arrayContaining(["identity.firstName", "identity.lastName", "identity.email", "identity.phone", "documents.resume"]),
@@ -415,6 +344,44 @@ describe("field resolution", () => {
     expect(mapping.value).toBe("+1");
   });
 
+  it("treats country dropdowns with calling-code options as phone country-code fields", async () => {
+    const { document } = parseHTML(`
+      <div class="field">
+        <div class="field-heading">Country<span aria-hidden="true">*</span></div>
+        <button aria-haspopup="listbox" aria-controls="country-options">Select...</button>
+        <ul id="country-options" role="listbox">
+          <li role="option">United States +1</li>
+          <li role="option">India +91</li>
+        </ul>
+      </div>
+    `);
+    const country = document.querySelector("button") as HTMLElement;
+    const mapping = await resolveField({
+      field: {
+        id: "phone-country",
+        element: country,
+        label: "Country*",
+        context: "",
+        type: "combobox",
+        required: true,
+        options: ["United States +1", "India +91"],
+        signature: "phone-country",
+      },
+      profile: {
+        ...profile,
+        identity: { ...profile.identity, phone: "+91 73300 07006" },
+        location: { ...profile.location, country: "India" },
+        workAuth: { ...profile.workAuth, country: "India" },
+      },
+      platform: "generic",
+      url: "",
+      demographicsEnabled: false,
+    });
+
+    expect(mapping.canonicalKey).toBe("identity.phoneCountryCode");
+    expect(mapping.value).toBe("+91");
+  });
+
   it("marks Greenhouse visual stars without a preceding space as required", async () => {
     const { fields } = await loadHtml(
       `<!doctype html>
@@ -479,42 +446,6 @@ describe("field resolution", () => {
       value: "LinkedIn",
       source: "heuristic",
     });
-  });
-
-  it("maps Lever and Ashby single-name variants", async () => {
-    const lever = await loadHtml(
-      `<!doctype html>
-      <form>
-        <label>Name <input autocomplete="name" /></label>
-        <label>Email <input autocomplete="email" /></label>
-        <label>Phone <input autocomplete="tel" /></label>
-        <label>Resume <input id="resume-upload" type="file" /></label>
-      </form>`,
-      "https://jobs.lever.co/acme/1",
-    );
-    const ashby = await loadHtml(
-      `<!doctype html>
-      <form data-testid="CandidateApplicationForm">
-        <label>Name <input name="_systemfield_name" /></label>
-        <label>Email <input name="_systemfield_email" /></label>
-        <label>Phone <input name="_systemfield_phone" /></label>
-        <div data-testid="resume-upload"><label>Resume</label><input type="file" /></div>
-      </form>`,
-      "https://jobs.ashbyhq.com/acme/1/application",
-    );
-    const leverMappings = await Promise.all(
-      lever.fields.map((field) => resolveField({ field, profile, platform: lever.adapter.id, url: "", demographicsEnabled: false })),
-    );
-    const ashbyMappings = await Promise.all(
-      ashby.fields.map((field) => resolveField({ field, profile, platform: ashby.adapter.id, url: "", demographicsEnabled: false })),
-    );
-
-    expect(leverMappings.map((mapping) => mapping.canonicalKey)).toEqual(
-      expect.arrayContaining(["identity.fullName", "identity.email", "identity.phone", "documents.resume"]),
-    );
-    expect(ashbyMappings.map((mapping) => mapping.canonicalKey)).toEqual(
-      expect.arrayContaining(["identity.fullName", "identity.email", "identity.phone", "documents.resume"]),
-    );
   });
 
   it("maps Workday modern automation ids and file upload input", async () => {

@@ -1,6 +1,8 @@
 import type {
   ExtensionApplicationResponse,
   ExtensionApplicationUpsert,
+  ExtensionAutofillPlan,
+  ExtensionAutofillPlanRequest,
   ExtensionCoverLetterResponse,
   ExtensionFieldContext,
   ExtensionFieldMapping,
@@ -14,6 +16,7 @@ import {
   API_ANSWERS_PATH,
   API_APPLICATIONS_PATH,
   API_COVER_LETTER_PATH,
+  API_AUTOFILL_PLAN_PATH,
   API_FIELD_MAP_PATH,
   API_PROFILE_PATH,
   API_RESUME_PATH,
@@ -40,13 +43,29 @@ class ExtensionHttpError extends Error {
 
 const DEFAULT_TIMEOUT_MS = 20_000;
 
+function timeoutForPath(path: string) {
+  // AI-backed routes legitimately take longer than a CRUD call. Give them
+  // generous client budgets so we never abort before the server returns its
+  // plan (or its fast deterministic fallback) and mis-report a "request_timeout".
+  if (path === API_AUTOFILL_PLAN_PATH) return 35_000;
+  if (path === API_TAILOR_PATH || path === API_COVER_LETTER_PATH) return 90_000;
+  return DEFAULT_TIMEOUT_MS;
+}
+
 function apiUrl(path: string) {
   return `${JOBPOSTED_WEB_ORIGIN.replace(/\/$/, "")}${path}`;
 }
 
+function unavailableRouteMessage(path: string) {
+  if (path === API_AUTOFILL_PLAN_PATH) {
+    return `Autofill planner route was not found at ${apiUrl(path)}. Run or deploy apps/web with /api/extension/autofill-plan, or rebuild the extension with WXT_JOBPOSTED_WEB_ORIGIN pointing at the right web app.`;
+  }
+  return `request_failed:404`;
+}
+
 async function requestWithToken(path: string, accessToken: string, init: RequestInit = {}) {
   const controller = new AbortController();
-  const timeoutId = globalThis.setTimeout(() => controller.abort(), DEFAULT_TIMEOUT_MS);
+  const timeoutId = globalThis.setTimeout(() => controller.abort(), timeoutForPath(path));
   try {
     return await fetch(apiUrl(path), {
       ...init,
@@ -107,7 +126,9 @@ async function authedFetch<T>(path: string, init: RequestInit = {}): Promise<T> 
         ? body.message
         : body && typeof body === "object" && "error" in body && typeof body.error === "string"
           ? body.error
-        : `request_failed:${response.status}`;
+          : response.status === 404
+            ? unavailableRouteMessage(path)
+            : `request_failed:${response.status}`;
     throw new ExtensionHttpError(response.status, message);
   }
   return body as T;
@@ -137,6 +158,16 @@ export async function mapField(
     body: JSON.stringify({ field, profile }),
   });
   return response.mapping;
+}
+
+export async function createAutofillPlan(
+  payload: ExtensionAutofillPlanRequest,
+): Promise<ExtensionAutofillPlan> {
+  const response = await authedFetch<{ ok: true; plan: ExtensionAutofillPlan }>(API_AUTOFILL_PLAN_PATH, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+  return response.plan;
 }
 
 export async function syncApplication(

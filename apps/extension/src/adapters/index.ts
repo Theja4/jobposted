@@ -1,41 +1,11 @@
 import type { PlatformAdapter } from "../autofill/types";
 import { makeGenericAdapter } from "./common";
 import { workdayAdapter } from "./workday";
-import { ashbyAdapter, greenhouseAdapter, leverAdapter } from "./open-ats";
-import {
-  bambooAdapter,
-  doverAdapter,
-  icimsAdapter,
-  indeedAdapter,
-  jobviteAdapter,
-  linkedinAdapter,
-  paylocityAdapter,
-  ripplingAdapter,
-  smartRecruitersAdapter,
-  successFactorsAdapter,
-  taleoAdapter,
-  workableAdapter,
-} from "./more";
 
-const adapters: PlatformAdapter[] = [
-  workdayAdapter,
-  greenhouseAdapter,
-  leverAdapter,
-  ashbyAdapter,
-  linkedinAdapter,
-  icimsAdapter,
-  workableAdapter,
-  smartRecruitersAdapter,
-  taleoAdapter,
-  successFactorsAdapter,
-  jobviteAdapter,
-  bambooAdapter,
-  doverAdapter,
-  indeedAdapter,
-  ripplingAdapter,
-  paylocityAdapter,
-  makeGenericAdapter(),
-];
+// The AI-driven engine in src/content/* now handles every ATS except Workday, so the
+// legacy adapter list is down to Workday plus the generic fallback. detectAdapter is
+// only reached from the Workday branch of content.tsx's runAutofillPage.
+const adapters: PlatformAdapter[] = [workdayAdapter, makeGenericAdapter()];
 
 export function detectAdapter(url = window.location.href, dom = document): PlatformAdapter {
   const parsed = new URL(url);

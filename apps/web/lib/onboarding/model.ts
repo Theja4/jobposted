@@ -50,6 +50,8 @@ export type OnboardingConfig = {
       email: string;
       phone: string;
       location: string;
+      addressLine1: string;
+      postalCode: string;
     };
     links: {
       linkedin: string;
@@ -168,6 +170,8 @@ export function defaultOnboardingConfig(email = ""): OnboardingConfig {
         email,
         phone: "",
         location: "",
+        addressLine1: "",
+        postalCode: "",
       },
       links: {
         linkedin: "",
@@ -344,6 +348,8 @@ export function sanitizeOnboardingConfig(value: unknown, email = ""): Onboarding
         email: asString(basics.email) || email,
         phone: asString(basics.phone),
         location: asString(basics.location),
+        addressLine1: asString(basics.addressLine1),
+        postalCode: asString(basics.postalCode),
       },
       links: {
         linkedin: asString(links.linkedin),

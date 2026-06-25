@@ -263,6 +263,8 @@ function mergeParsed(config: OnboardingConfig, parsed: ParsedResumeProfile): Onb
         email: parsed.basics?.email || config.profile.basics.email,
         phone: parsed.basics?.phone || config.profile.basics.phone,
         location: parsed.basics?.location || config.profile.basics.location,
+        addressLine1: parsed.basics?.addressLine1 || config.profile.basics.addressLine1,
+        postalCode: parsed.basics?.postalCode || config.profile.basics.postalCode,
       },
       links: {
         linkedin: parsed.links?.linkedin || config.profile.links.linkedin,
@@ -1210,7 +1212,20 @@ function StepProfile({
             optional
             value={config.profile.basics.location}
             onChange={(location) => patchBasics({ location })}
-            placeholder="City, state, region, or country"
+            placeholder="City, state, or country"
+          />
+          <Field
+            label="Address line 1"
+            optional
+            value={config.profile.basics.addressLine1}
+            onChange={(addressLine1) => patchBasics({ addressLine1 })}
+            placeholder="Street address"
+          />
+          <Field
+            label="Postal code"
+            optional
+            value={config.profile.basics.postalCode}
+            onChange={(postalCode) => patchBasics({ postalCode })}
           />
           <Field label="LinkedIn" optional value={config.profile.links.linkedin} onChange={(linkedin) => patchLinks({ linkedin })} />
           <Field label="Portfolio / website" optional value={config.profile.links.portfolio} onChange={(portfolio) => patchLinks({ portfolio })} />

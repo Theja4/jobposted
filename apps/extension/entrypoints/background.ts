@@ -2,6 +2,7 @@ import {
   isExtensionMessage,
   type ExtensionApplicationResponse,
   type ExtensionApplicationUpsert,
+  type ExtensionAutofillDiscoveryResult,
   type ExtensionAutofillRunResult,
   type ExtensionCoverLetterResponse,
   type ExtensionJobContext,
@@ -11,6 +12,7 @@ import {
 } from "@jobposted/shared";
 import { EXTENSION_BRIDGE_PATH, JOBPOSTED_WEB_ORIGIN } from "../src/config/env";
 import {
+  createAutofillPlan,
   ExtensionHttpError,
   fetchProfile,
   fetchResume,
@@ -49,8 +51,11 @@ const PENDING_AUTH = new Map<string, PendingAuth>();
 const AUTH_TIMEOUT_MS = 5 * 60 * 1000;
 const CONTENT_SCRIPT_FILE = "content-scripts/content.js";
 const CONTENT_AUTOFILL_MESSAGE = "JOBPOSTED_AUTOFILL_CURRENT_PAGE";
+const CONTENT_DISCOVER_MESSAGE = "JOBPOSTED_DISCOVER_CURRENT_PAGE";
 const CONTENT_TRACK_MESSAGE = "JOBPOSTED_TRACK_CURRENT_PAGE";
 const CONTENT_JOB_CONTEXT_MESSAGE = "JOBPOSTED_JOB_CONTEXT";
+const CONTENT_PANEL_TOGGLE_MESSAGE = "JOBPOSTED_TOGGLE_IN_PAGE_PANEL";
+const PANEL_HOST_ID = "jobposted-autofill-panel-host";
 // Must comfortably exceed a realistic full-page fill. A form with several custom
 // comboboxes (phone country, location, yes/no screening dropdowns) can spend a few
 // seconds per control retrying, so the old 10s cap abandoned the form frame mid-run
@@ -58,6 +63,7 @@ const CONTENT_JOB_CONTEXT_MESSAGE = "JOBPOSTED_JOB_CONTEXT";
 // up". Keep this just under the side panel's 45s outer timeout so it stays a safety net.
 const FRAME_AUTOFILL_TIMEOUT_MS = 40_000;
 type AutofillContentResponse = Extract<ExtensionMessageResponse, { type: "AUTOFILL_ACTIVE_TAB" }>;
+type DiscoveryContentResponse = Extract<ExtensionMessageResponse, { type: "AUTOFILL_DISCOVER_ACTIVE_TAB" }>;
 type TrackerContentResponse = Extract<ExtensionMessageResponse, { type: "TRACKER_ADD_ACTIVE_TAB" }>;
 type JobContextContentResponse =
   | { ok: true; type: "JOB_CONTEXT"; context: ExtensionJobContext }
@@ -67,6 +73,9 @@ class ContentAutofillError extends Error {}
 class ContentTrackerError extends Error {}
 type AutofillFrameResult =
   | { ok: true; response: AutofillContentResponse }
+  | { ok: false; error: unknown };
+type DiscoveryFrameResult =
+  | { ok: true; response: DiscoveryContentResponse }
   | { ok: false; error: unknown };
 
 function bridgeUrl(requestId: string) {
@@ -87,6 +96,16 @@ function isAutofillRunResponse(value: unknown): value is AutofillContentResponse
       (value as { ok?: unknown }).ok === true &&
       (value as { type?: unknown }).type === "AUTOFILL_ACTIVE_TAB" &&
       typeof (value as { result?: { filled?: unknown } }).result?.filled === "number",
+  );
+}
+
+function isDiscoveryResponse(value: unknown): value is DiscoveryContentResponse {
+  return Boolean(
+    value &&
+      typeof value === "object" &&
+      (value as { ok?: unknown }).ok === true &&
+      (value as { type?: unknown }).type === "AUTOFILL_DISCOVER_ACTIVE_TAB" &&
+      typeof (value as { result?: { total?: unknown } }).result?.total === "number",
   );
 }
 
@@ -133,6 +152,20 @@ function bestAutofillResponse(responses: AutofillContentResponse[]) {
   );
 }
 
+function scoreDiscoveryResult(response: DiscoveryContentResponse) {
+  const result = response.result;
+  if (result.total === 0) return -100;
+  const required = result.fields.filter((field) => field.required).length;
+  const choiceFields = result.fields.filter((field) => field.options.length > 0 || field.type === "select" || field.type === "combobox" || field.type === "radio" || field.type === "multiselect").length;
+  return result.total * 3 + required * 4 + choiceFields * 2;
+}
+
+function bestDiscoveryResponse(responses: DiscoveryContentResponse[]) {
+  return responses.reduce((best, response) =>
+    scoreDiscoveryResult(response) > scoreDiscoveryResult(best) ? response : best,
+  );
+}
+
 function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promise<T> {
   return new Promise((resolve, reject) => {
     const timeoutId = setTimeout(() => reject(new Error(message)), ms);
@@ -167,6 +200,67 @@ async function injectContentScriptTopFrame(tabId: number) {
   });
 }
 
+type PanelToggleResponse = { ok?: boolean; mounted?: boolean; error?: string };
+
+async function panelIsVisible(tabId: number) {
+  const [result] = await chrome.scripting.executeScript({
+    target: { tabId, frameIds: [0] },
+    args: [PANEL_HOST_ID],
+    func: async (hostId: string) => {
+      for (let attempt = 0; attempt < 8; attempt += 1) {
+        const host = document.getElementById(hostId);
+        const rendered = Boolean(host?.shadowRoot?.querySelector(".jp-panel, .jp-tab-handle"));
+        if (rendered) return true;
+        await new Promise((resolve) => window.setTimeout(resolve, 50));
+      }
+      return false;
+    },
+  });
+  return result?.result === true;
+}
+
+async function toggleInPagePanel(tab?: chrome.tabs.Tab) {
+  const target =
+    tab && tabCanReceiveAutofill(tab)
+      ? (tab as chrome.tabs.Tab & { id: number })
+      : await activeTab();
+  await injectContentScriptTopFrame(target.id);
+  const response = (await chrome.tabs.sendMessage(
+    target.id,
+    { type: CONTENT_PANEL_TOGGLE_MESSAGE },
+    { frameId: 0 },
+  )) as PanelToggleResponse | undefined;
+  if (!response?.ok || response.mounted === false) {
+    throw new Error(response?.error || "JobPosted could not mount the in-page panel.");
+  }
+  if (!(await panelIsVisible(target.id))) {
+    throw new Error("JobPosted attached to this page, but the panel was not visible. Reload the page and try again.");
+  }
+}
+
+function panelOpenErrorMessage(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error || "");
+  if (/chrome:|edge:|brave:|about:|newtab|extensions/i.test(message)) {
+    return "Chrome does not allow extensions to open on this tab. Open a job application page, then click JobPosted again.";
+  }
+  if (/Cannot access contents|The extensions gallery|Cannot access a chrome|Cannot access|Missing host permission/i.test(message)) {
+    return "Chrome blocked JobPosted on this tab. Open a regular http/https job application page, then click the icon again.";
+  }
+  if (/Receiving end does not exist|Could not establish connection/i.test(message)) {
+    return "JobPosted could not attach to this page yet. Reload the page, then click the icon again.";
+  }
+  return message || "JobPosted could not open on this tab.";
+}
+
+async function openPanelActiveTab(): Promise<ExtensionMessageResponse> {
+  try {
+    await toggleInPagePanel();
+    return { ok: true, type: "PANEL_OPEN_ACTIVE_TAB" };
+  } catch (error) {
+    return { ok: false, error: panelOpenErrorMessage(error) };
+  }
+}
+
 async function requestFrameAutofill(
   tabId: number,
   frameId: number,
@@ -186,6 +280,59 @@ async function requestFrameAutofill(
   if (!response.ok) throw new ContentAutofillError(response.error);
   if (!isAutofillRunResponse(response)) throw new Error("autofill_unexpected_response");
   return response;
+}
+
+async function requestFrameDiscovery(tabId: number, frameId: number): Promise<DiscoveryContentResponse> {
+  const response = (await chrome.tabs.sendMessage(
+    tabId,
+    { type: CONTENT_DISCOVER_MESSAGE },
+    { frameId },
+  )) as ExtensionMessageResponse | undefined;
+  if (!response) throw new Error("discovery_no_response");
+  if (!response.ok) throw new ContentAutofillError(response.error);
+  if (!isDiscoveryResponse(response)) throw new Error("discovery_unexpected_response");
+  return response;
+}
+
+async function discoverTabAutofill(tabId: number): Promise<DiscoveryContentResponse> {
+  let frameIds: number[];
+  try {
+    frameIds = await injectContentScriptFrames(tabId);
+  } catch {
+    frameIds = [0];
+  }
+
+  const pending = new Map(
+    frameIds.map((frameId, index) => [
+      index,
+      withTimeout(
+        requestFrameDiscovery(tabId, frameId),
+        18_000,
+        `discovery_frame_timeout:${frameId}`,
+      )
+        .then((response): DiscoveryFrameResult => ({ ok: true, response }))
+        .catch((error): DiscoveryFrameResult => ({ ok: false, error })),
+    ]),
+  );
+  const responses: DiscoveryContentResponse[] = [];
+  let firstError: unknown = null;
+
+  while (pending.size > 0) {
+    const { index, result } = await Promise.race(
+      Array.from(pending, ([index, promise]) => promise.then((result) => ({ index, result }))),
+    );
+    pending.delete(index);
+    if (result.ok) {
+      responses.push(result.response);
+    } else {
+      firstError ??= result.error;
+    }
+  }
+
+  if (responses.length > 0) return bestDiscoveryResponse(responses);
+
+  if (firstError instanceof Error) throw firstError;
+  throw new Error("discovery_no_response");
 }
 
 async function requestTabAutofill(
@@ -221,9 +368,6 @@ async function requestTabAutofill(
     pending.delete(index);
     if (result.ok) {
       responses.push(result.response);
-      if (result.response.result.filled > 0) {
-        return bestAutofillResponse(responses);
-      }
     } else {
       firstError ??= result.error;
     }
@@ -255,6 +399,11 @@ async function autofillActiveTab(args: { continueSteps?: boolean }): Promise<Ext
       trackerError: error instanceof Error ? error.message : "Could not sync this job to the tracker.",
     };
   }
+}
+
+async function discoverActiveTab(): Promise<ExtensionAutofillDiscoveryResult> {
+  const tab = await activeTab();
+  return (await discoverTabAutofill(tab.id)).result;
 }
 
 async function syncAutofillResult(result: ExtensionAutofillRunResult): Promise<ExtensionApplicationResponse | null> {
@@ -458,6 +607,12 @@ async function handleMessage(message: ExtensionMessage): Promise<ExtensionMessag
       return { ok: true, type: "RESUME_GET", resume: await fetchResume(message.jobId) };
     case "FIELD_MAP":
       return { ok: true, type: "FIELD_MAP", mapping: await mapField(message.field, message.profile) };
+    case "AUTOFILL_PLAN":
+      return { ok: true, type: "AUTOFILL_PLAN", plan: await createAutofillPlan(message.payload) };
+    case "PANEL_OPEN_ACTIVE_TAB":
+      return openPanelActiveTab();
+    case "AUTOFILL_DISCOVER_ACTIVE_TAB":
+      return { ok: true, type: "AUTOFILL_DISCOVER_ACTIVE_TAB", result: await discoverActiveTab() };
     case "AUTOFILL_ACTIVE_TAB":
       return { ok: true, type: "AUTOFILL_ACTIVE_TAB", result: await autofillActiveTab(message) };
     case "TRACKER_ADD_ACTIVE_TAB":
@@ -487,10 +642,17 @@ async function handleMessage(message: ExtensionMessage): Promise<ExtensionMessag
 export default defineBackground(() => {
   void scheduleNextApplicationSyncRetry();
 
-  // Open the docked side panel with Chrome's Side Panel API instead of a popup.
-  chrome.sidePanel
-    ?.setPanelBehavior?.({ openPanelOnActionClick: true })
-    .catch(() => undefined);
+  chrome.action.onClicked.addListener((tab) => {
+    void toggleInPagePanel(tab).catch((error) => {
+      const text = panelOpenErrorMessage(error).slice(0, 80);
+      void chrome.action.setBadgeText({ text: "!" }).catch(() => undefined);
+      void chrome.action.setTitle({ title: `JobPosted: ${text}` }).catch(() => undefined);
+      setTimeout(() => {
+        void chrome.action.setBadgeText({ text: "" }).catch(() => undefined);
+        void chrome.action.setTitle({ title: "JobPosted" }).catch(() => undefined);
+      }, 3000);
+    });
+  });
 
   chrome.runtime.onStartup?.addListener(() => {
     void scheduleNextApplicationSyncRetry();

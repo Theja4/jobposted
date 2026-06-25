@@ -12,18 +12,18 @@ Manifest V3 extension for login-gated job applications. The extension fills ATS 
 
 ## Environment
 
-Create `apps/extension/.env.local` for local development:
+Create `apps/extension/.env.local` for local development only when you need to override the web app origin:
 
 ```bash
-WXT_JOBPOSTED_WEB_ORIGIN=http://localhost:3000
+WXT_JOBPOSTED_WEB_ORIGIN=http://localhost:3100
 WXT_SUPABASE_URL=...
 WXT_SUPABASE_ANON_KEY=...
 WXT_INCLUDE_LOCALHOST=1
 ```
 
-Extension builds default to `https://jobposted.app`. For local development, set
-`WXT_JOBPOSTED_WEB_ORIGIN=http://localhost:3000` and `WXT_INCLUDE_LOCALHOST=1`. The service-role key
-and AI/model keys are never bundled into the extension.
+Extension builds default to `https://jobposted.app`. Local-only builds must explicitly set
+`WXT_JOBPOSTED_WEB_ORIGIN=http://localhost:3100` and `WXT_INCLUDE_LOCALHOST=1`.
+The service-role key and AI/model keys are never bundled into the extension.
 
 The web app routes use:
 
@@ -31,9 +31,9 @@ The web app routes use:
 NEXT_PUBLIC_SUPABASE_URL=...
 NEXT_PUBLIC_SUPABASE_ANON_KEY=...
 SUPABASE_SERVICE_ROLE_KEY=...
-AI_GATEWAY_API_KEY=...        # optional, for ambiguous field mapping
-AI_GATEWAY_BASE_URL=https://ai-gateway.vercel.sh/v1
-AI_GATEWAY_MODEL=openai/gpt-5-mini
+OPENROUTER_API_KEY=...        # required for Mercury 2 autofill planning
+OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
+OPENROUTER_TIMEOUT_MS=18000
 ```
 
 ## Run
@@ -47,6 +47,12 @@ pnpm -F @jobposted/extension dev
 
 ```bash
 pnpm -F @jobposted/extension build
+```
+
+For local Chrome debugging with readable stack traces and source maps:
+
+```bash
+pnpm -F @jobposted/extension build:debug
 ```
 
 Load this folder in Chrome:
@@ -71,63 +77,54 @@ The extension never collects or stores Workday, LinkedIn, or employer passwords.
 ## Production Reliability
 
 - Live builds default to `https://jobposted.app`; local-only builds should explicitly set
-  `WXT_JOBPOSTED_WEB_ORIGIN=http://localhost:3000` and `WXT_INCLUDE_LOCALHOST=1`.
+  `WXT_JOBPOSTED_WEB_ORIGIN=http://localhost:3100` and `WXT_INCLUDE_LOCALHOST=1`.
 - Application sync is durable: transient network/server failures are stored in
   `chrome.storage.local`, retried with `chrome.alarms`, and shown in the popup as pending syncs.
 - Filled-but-not-submitted extension records do **not** set `submitted_at`, so they do not count
   against paid daily application limits.
-- The web app exposes `GET /api/health` for deployment monitoring and uses
-  `AI_GATEWAY_TIMEOUT_MS` to cap ambiguous field-mapping calls.
-- `Fill & Continue` respects the `autoAdvance` option, and auto-submit only clicks Submit when
-  every detected field is safe, with no `failed` or `needs_user` records.
+- The web app exposes `GET /api/health` for deployment monitoring. Autofill planning runs through
+  the server-side `/api/extension/autofill-plan` route, so model keys never enter the extension.
+- Extension autofill fills fields only. It never clicks the site's Submit button.
 
 ## Autofill Architecture
 
 - `entrypoints/background.ts`: session storage, refresh, settings, API proxy, application sync.
-- `entrypoints/content.tsx`: supported-host content script, session bridge listener, shadow overlay, fill runner.
-- `entrypoints/sidepanel/App.tsx`: explicit active-tab autofill action. The manifest grants broad
-  HTTP/HTTPS host access so company-hosted application forms and embedded ATS flows, such as
-  Databricks careers pages, can be filled after the user clicks the side-panel button.
-- `src/autofill/*`: platform-agnostic field discovery, canonical matching, React-safe value setting, file upload attachment.
-- `src/adapters/*`: thin ATS adapters that provide match rules, stable selector hints, step detection, Next/Submit controls, and maintenance notes.
+- `entrypoints/content.tsx`: session bridge listener, right-docked in-page panel, field extraction, and fill runner.
+- `entrypoints/popup/*`: toolbar launcher that opens the in-page panel and reports blocked-tab errors.
+- `src/content/autofill.ts`: compact field extraction and DOM application of the server plan.
 
-## Adding An Adapter
+## Adding A Supported Host
 
-1. Add a file in `src/adapters/<platform>.ts`.
-2. Implement `PlatformAdapter`:
-   - `match(url, dom)`
-   - `detectStep(dom)`
-   - `mapFields(dom)` with stable selectors mapped to canonical keys
-   - `findAdvance(dom)`
-   - `findSubmit(dom)`
-   - `notes`
-3. Export it from `src/adapters/index.ts` before `makeGenericAdapter()`.
-4. Add a small DOM fixture under `src/fixtures/`.
-5. Add/extend `src/autofill/field-resolution.test.ts`.
-6. Add the host to `ATS_HOSTS` in `wxt.config.ts` only if it is a named supported domain.
+1. Add the host pattern to `ATS_HOSTS` in `wxt.config.ts` only if it is a named supported domain.
+2. Add a small DOM fixture under `src/fixtures/`.
+3. Add/extend `src/content/autofill.test.ts` so extraction still emits compact fields.
+4. Keep provider-specific mapping rules in the server planner or prompt, not in the extension bundle.
 
-The extension intentionally keeps auto-mounted content scripts limited to named ATS hosts, but the
-side-panel autofill action has broad HTTP/HTTPS host access so user-triggered autofill also works on
-company-hosted forms and embedded ATS pages.
+The extension auto-mounts content scripts on named ATS hosts. User-triggered autofill also injects
+the in-page panel into the active HTTP/HTTPS tab so company-hosted forms and embedded ATS pages work.
 
-## Field Mapping And LLM Cache
+## Autofill Planning
 
-Resolution order:
+Planning order:
 
-1. Adapter selector hints.
-2. Label, ARIA, placeholder, surrounding text, fieldset legend, and options.
-3. Normalized canonical rules (`identity.firstName`, `workAuth.requiresSponsorship`, `documents.resume`, etc.).
-4. Reusable answers from `jobposted.profile_answers`.
-5. Background-brokered `/api/extension/field-map`, which checks `jobposted.extension_field_mappings` before optionally calling Vercel AI Gateway.
+1. Content script extracts compact field descriptors: handle, label, type, options, required state,
+   current value, and local section/repeater context.
+2. Background proxies the descriptors to `/api/extension/autofill-plan`.
+3. The web route authenticates the extension, loads the server-side master profile, calls Mercury 2
+   through OpenRouter when configured, and returns one page-level plan.
+4. The content script applies that plan with native setters, bubbling events, combobox selection,
+   radio/checkbox handling, file attachment, and dynamic "Other" free-text reveal handling.
 
 The backend returns data only:
 
 ```ts
 {
-  canonicalKey: "answers.notice_period",
-  value: "Two weeks",
+  fieldId: "jp-school-select-4",
+  action: "select",
+  value: "University of Nowhere",
+  optionLabel: "Other",
   confidence: 0.82,
-  source: "llm"
+  note: "Closest option was missing; selected Other."
 }
 ```
 
@@ -142,4 +139,4 @@ pnpm -F @jobposted/shared typecheck
 pnpm -F @jobposted/web typecheck
 ```
 
-Fixtures currently cover Workday, Greenhouse, Lever, Ashby, and generic fallback field resolution.
+Fixtures currently cover Workday, Greenhouse, Lever, Ashby, and generic compact field extraction.

@@ -10,5 +10,34 @@
   <input id="phone" type="tel" />
   <label for="resume">Resume</label>
   <input id="resume" type="file" name="resume" />
+  <div class="field select2-field">
+    <label for="gh-school">School</label>
+    <select id="gh-school" name="job_application[school]" style="display:none">
+      <option></option>
+      <option>Massachusetts Institute of Technology</option>
+      <option>Stanford University</option>
+      <option>Other</option>
+    </select>
+    <span class="select2-container"><a class="select2-choice">Select...</a></span>
+  </div>
+  <label for="gh-gender">Gender</label>
+  <select id="gh-gender">
+    <option></option>
+    <option>Male</option>
+    <option>Female</option>
+    <option>Decline To Self Identify</option>
+  </select>
+  <label for="gh-workauth">Are you legally authorized to work in the country in which you are applying?</label>
+  <select id="gh-workauth" name="job_application[work_auth]">
+    <option></option>
+    <option>Yes</option>
+    <option>No</option>
+  </select>
+  <div class="application-question">
+    <label>Please confirm whether any of the below applies to you. Select all that apply. This information will only be used to ensure compliance with U.S. sanctions and export controls.</label>
+    <label><input type="checkbox" name="job_application[sanctions][]" value="cuba" /> Citizen or permanent resident of Cuba, Iran, North Korea, or Syria</label>
+    <label><input type="checkbox" name="job_application[sanctions][]" value="russia" /> Ordinarily a resident of Russia or Belarus and not willing to relocate for a role</label>
+    <label><input type="checkbox" name="job_application[sanctions][]" value="none" /> None of the above</label>
+  </div>
   <button type="submit">Submit Application</button>
 </form>

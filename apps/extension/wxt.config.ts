@@ -99,6 +99,13 @@ export default defineConfig({
   },
   vite: () => ({
     plugins: [tailwindcss()],
+    build:
+      process.env.WXT_DEBUG_BUILD === "1"
+        ? {
+            minify: false,
+            sourcemap: true,
+          }
+        : undefined,
     define: {
       "import.meta.env.WXT_JOBPOSTED_WEB_ORIGIN": JSON.stringify(configuredWebOrigin),
       "import.meta.env.WXT_SUPABASE_URL": JSON.stringify(configuredSupabaseUrl),
@@ -118,7 +125,7 @@ export default defineConfig({
       96: "icon/96.png",
       128: "icon/128.png",
     },
-    permissions: ["storage", "activeTab", "scripting", "alarms", "cookies", "sidePanel"],
+    permissions: ["storage", "activeTab", "scripting", "alarms", "cookies"],
     host_permissions: [...UNIVERSAL_AUTOFILL_HOSTS, ...ATS_HOSTS, ...JOBPOSTED_HOSTS, ...API_HOSTS],
     action: {
       default_title: EXTENSION_NAME,
@@ -140,7 +147,7 @@ export default defineConfig({
     web_accessible_resources: [
       {
         resources: ["brand/*", "icon/*"],
-        matches: ATS_HOSTS,
+        matches: UNIVERSAL_AUTOFILL_HOSTS,
       },
     ],
     content_security_policy: {
