@@ -1,5 +1,6 @@
 import type {
   ExtensionAutofillPageField,
+  ExtensionAutofillPlan,
   ExtensionAutofillPlanItem,
   ExtensionFieldControl,
   ExtensionFieldFillRecord,
@@ -1189,6 +1190,108 @@ function isSelectableField(field: PageField) {
   );
 }
 
+function educationPlanFieldKey(field: Pick<ExtensionAutofillPageField, "label" | "section" | "repeater">) {
+  const label = normalize(field.label);
+  const section = normalize(field.section ?? "");
+  const inEducation = field.repeater === "education" || /\beducation\b/.test(section);
+  if (!inEducation && !/\b(school|university|college|institution|degree|field|major|discipline)\b/.test(label)) return null;
+  if (/\b(school|university|college|institution)\b/.test(label)) return "school" as const;
+  if (/\bdegree\b/.test(label)) return "degree" as const;
+  if (/\b(field|major|discipline|area of study)\b/.test(label)) return "field" as const;
+  return null;
+}
+
+function profileEducationForField(field: PageField, profile: MasterProfile) {
+  return profile.education[field.repeaterIndex ?? 0] ?? profile.education[0] ?? null;
+}
+
+function educationValueForField(field: PageField, profile: MasterProfile) {
+  const education = profileEducationForField(field, profile);
+  if (!education) return null;
+  const key = educationPlanFieldKey(field);
+  if (key === "school") return clean(education.school);
+  if (key === "degree") return clean(education.degree);
+  if (key === "field") return clean(education.field);
+  return null;
+}
+
+function bestOptionMatch<T>(wanted: string, options: T[], label: (option: T) => string) {
+  let best: { option: T; score: number } | null = null;
+  for (const option of options) {
+    const score = optionMatchScore(wanted, label(option));
+    if (!best || score > best.score) best = { option, score };
+  }
+  return best && best.score >= 0.45 ? best : null;
+}
+
+function isUnlistedEducationOption(value: string) {
+  return /\b(other|not listed|not in list|not available|not applicable|unlisted|unknown|not found|cannot find|can't find)\b/i.test(
+    value,
+  );
+}
+
+function educationFallbackOption<T>(
+  field: Pick<ExtensionAutofillPageField, "label" | "section" | "repeater">,
+  options: T[],
+  label: (option: T) => string,
+) {
+  if (!educationPlanFieldKey(field)) return null;
+  return options.find((option) => isUnlistedEducationOption(label(option))) ?? null;
+}
+
+function reliableEducationOption<T>(
+  field: Pick<ExtensionAutofillPageField, "label" | "section" | "repeater">,
+  wanted: string,
+  options: T[],
+  label: (option: T) => string,
+) {
+  const best = bestOptionMatch(wanted, options, label);
+  if (best && best.score >= 0.72) return best.option;
+  return educationFallbackOption(field, options, label);
+}
+
+function educationPlanItemForField(field: PageField, profile: MasterProfile): ExtensionAutofillPlanItem | null {
+  const value = educationValueForField(field, profile);
+  if (!value) return null;
+  const option =
+    field.type === "select" || field.type === "radio" || field.type === "combobox" || field.type === "typeahead" || field.type === "multiselect"
+      ? reliableEducationOption(field, value, field.options, (item) => item)
+      : null;
+  return {
+    fieldId: field.fieldId,
+    action: isSelectableField(field) ? "select" : "fill",
+    value,
+    optionLabel: option ?? (isSelectableField(field) ? value : null),
+    confidence: option ? 0.9 : 0.82,
+    note: "Profile education value.",
+  };
+}
+
+export function mergeProfileEducationPlan(fields: PageField[], plan: ExtensionAutofillPlan, profile: MasterProfile): ExtensionAutofillPlan {
+  const replacements = new Map<string, ExtensionAutofillPlanItem>();
+  for (const field of fields) {
+    const item = educationPlanItemForField(field, profile);
+    if (item) replacements.set(field.fieldId, item);
+  }
+  if (replacements.size === 0) return plan;
+
+  const mergedIds = new Set<string>();
+  const mergedFields = plan.fields.map((item) => {
+    const replacement = replacements.get(item.fieldId);
+    if (replacement) {
+      mergedIds.add(item.fieldId);
+      return replacement;
+    }
+    return item;
+  });
+  for (const field of fields) {
+    const replacement = replacements.get(field.fieldId);
+    if (replacement && !mergedIds.has(field.fieldId)) mergedFields.push(replacement);
+  }
+
+  return { ...plan, fields: mergedFields };
+}
+
 export async function hydrateChoiceFieldOptions(
   fields: PageField[],
   options: { waitMs?: number; shouldStop?: () => boolean } = {},
@@ -1314,12 +1417,7 @@ function optionMatchScore(wanted: string, option: string) {
 }
 
 function bestOption<T>(wanted: string, options: T[], label: (option: T) => string) {
-  let best: { option: T; score: number } | null = null;
-  for (const option of options) {
-    const score = optionMatchScore(wanted, label(option));
-    if (!best || score > best.score) best = { option, score };
-  }
-  return best && best.score >= 0.45 ? best.option : null;
+  return bestOptionMatch(wanted, options, label)?.option ?? null;
 }
 
 function affirmativeSingleChoiceFallback(wanted: string, options: string[]) {
@@ -1671,6 +1769,7 @@ function selectedChoiceText(field: PageField) {
 function choiceSelectionMatches(field: PageField, targetLabel: string, selectedOptionLabel?: string) {
   const selected = selectedChoiceText(field);
   if (selected && textMatchScore(targetLabel, selected) >= 0.45) return true;
+  if (selected && selectedOptionLabel && textMatchScore(selectedOptionLabel, selected) >= 0.45) return true;
   const mirrorValues = filledRequiredChoiceMirrors(field.element);
   if (mirrorValues.length > 0) {
     if (!selectedOptionLabel) return true;
@@ -1686,7 +1785,14 @@ function choiceSelectionMatches(field: PageField, targetLabel: string, selectedO
 }
 
 function choiceTargetLabel(field: PageField, label: string) {
+  const educationOption = reliableEducationOption(field, label, field.options, (option) => option);
+  if (educationOption) return educationOption;
+  if (educationPlanFieldKey(field)) return label;
   return bestOption(label, field.options, (option) => option) ?? affirmativeSingleChoiceFallback(label, field.options) ?? label;
+}
+
+function dynamicChoiceMatch(field: PageField, targetLabel: string, options: HTMLElement[]) {
+  return reliableEducationOption(field, targetLabel, options, optionTextForElement) ?? bestOption(targetLabel, options, optionTextForElement);
 }
 
 function fillSelect(field: PageField, label: string) {
@@ -1881,7 +1987,7 @@ async function fillCombobox(field: PageField, label: string) {
   const hydrated = mergeOptions(field.options, options.map(optionTextForElement));
   if (hydrated.length > field.options.length) field.options = hydrated;
   targetLabel = choiceTargetLabel(field, targetLabel);
-  let match = bestOption(targetLabel, options, optionTextForElement);
+  let match = dynamicChoiceMatch(field, targetLabel, options);
   if (match) {
     const matchLabel = optionTextForElement(match);
     selectChoiceOption(match);
@@ -1898,7 +2004,7 @@ async function fillCombobox(field: PageField, label: string) {
     const filtered = mergeOptions(field.options, options.map(optionTextForElement));
     if (filtered.length > field.options.length) field.options = filtered;
     targetLabel = choiceTargetLabel(field, targetLabel);
-    match = bestOption(targetLabel, options, optionTextForElement);
+    match = dynamicChoiceMatch(field, targetLabel, options);
     if (match) {
       const matchLabel = optionTextForElement(match);
       selectChoiceOption(match);

@@ -40,6 +40,7 @@ import {
   ensureRepeaters,
   extractPageFields,
   hydrateChoiceFieldOptions,
+  mergeProfileEducationPlan,
   type PageField,
 } from "../src/content/autofill";
 import { strategyForPlatform } from "../src/content/fill-strategy";
@@ -784,7 +785,7 @@ async function runAutofillPage(args: {
   if (fields.length === 0) return summarizeNoParsedFieldsResult(platform, stepName);
 
   args.onStatus?.("planning");
-  const plan = await planCurrentPage({ platform, stepName, fields, profile });
+  const plan = mergeProfileEducationPlan(fields, await planCurrentPage({ platform, stepName, fields, profile }), profile);
   args.onPlan?.(plan);
   if (args.shouldStop?.()) return summarizeRunResult({ platform, stepName, fields: [] });
 

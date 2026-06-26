@@ -7,8 +7,10 @@ import {
   ensureRepeaters,
   extractPageFields,
   hydrateChoiceFieldOptions,
+  mergeProfileEducationPlan,
+  type PageField,
 } from "./autofill";
-import type { ExtensionAutofillPlanItem, ExtensionResumeResponse, MasterProfile } from "@jobposted/shared";
+import type { ExtensionAutofillPlan, ExtensionAutofillPlanItem, ExtensionResumeResponse, MasterProfile } from "@jobposted/shared";
 
 const fixtures = import.meta.glob("../fixtures/*.html", {
   query: "?raw",
@@ -683,6 +685,143 @@ describe("content autofill extraction", () => {
     } finally {
       delete view.__jobpostedAutofillLayout;
     }
+  });
+
+  it("overrides skipped Greenhouse education dropdowns with profile education", () => {
+    const doc = installDom(`<!doctype html>
+      <form>
+        <section id="education-fields" class="education--container">
+          <h2>Education</h2>
+          <div id="school-select" class="select">
+            <label id="school--0-label">School*</label>
+            <div class="select__control">
+              <input id="school--0" class="select__input" role="combobox" aria-labelledby="school--0-label" />
+            </div>
+            <div class="select__menu"><div role="option" class="select__option">Other</div></div>
+          </div>
+          <div id="degree-select" class="select">
+            <label id="degree--0-label">Degree*</label>
+            <div class="select__control">
+              <input id="degree--0" class="select__input" role="combobox" aria-labelledby="degree--0-label" />
+            </div>
+            <div class="select__menu">
+              <div role="option" class="select__option">Associate's Degree</div>
+              <div role="option" class="select__option">Bachelor's Degree</div>
+              <div role="option" class="select__option">Other</div>
+            </div>
+          </div>
+          <div id="discipline-select" class="select">
+            <label id="discipline--0-label">Discipline*</label>
+            <div class="select__control">
+              <input id="discipline--0" class="select__input" role="combobox" aria-labelledby="discipline--0-label" />
+            </div>
+            <div class="select__menu">
+              <div role="option" class="select__option">Computer Science</div>
+              <div role="option" class="select__option">Engineering</div>
+              <div role="option" class="select__option">Other</div>
+            </div>
+          </div>
+        </section>
+      </form>`);
+    const fields = extractPageFields(doc);
+    const school = fields.find((item) => /school/i.test(item.label));
+    const degree = fields.find((item) => /degree/i.test(item.label));
+    const discipline = fields.find((item) => /discipline/i.test(item.label));
+    expect(school).toBeTruthy();
+    expect(degree).toBeTruthy();
+    expect(discipline).toBeTruthy();
+    expect(fields.filter((item) => item.repeater === "education")).toHaveLength(3);
+
+    const skippedPlan: ExtensionAutofillPlan = {
+      stepName: "Application",
+      fields: fields.map((field) => ({
+        fieldId: field.fieldId,
+        action: "skip",
+        value: null,
+        optionLabel: null,
+        confidence: 0.35,
+        note: "model skipped",
+      })),
+    };
+
+    const merged = mergeProfileEducationPlan(
+      fields,
+      skippedPlan,
+      profile({
+        education: [{ school: "University That Is Not Listed", degree: "Bachelor's Degree", field: "Computer Science" }],
+      }),
+    );
+    const itemFor = (field: PageField | undefined) => merged.fields.find((item) => item.fieldId === field?.fieldId);
+
+    expect(itemFor(school)).toMatchObject({ action: "select", value: "University That Is Not Listed", optionLabel: "Other" });
+    expect(itemFor(degree)).toMatchObject({ action: "select", value: "Bachelor's Degree", optionLabel: "Bachelor's Degree" });
+    expect(itemFor(discipline)).toMatchObject({ action: "select", value: "Computer Science", optionLabel: "Computer Science" });
+  });
+
+  it("falls back to Other on education comboboxes when the school is not available", async () => {
+    const doc = installDom(`<!doctype html>
+      <form>
+        <section id="education-fields" class="education--container">
+          <h2>Education</h2>
+          <div id="school-select" class="select">
+            <label id="school--0-label">School*</label>
+            <div class="select-shell">
+              <div class="select__control">
+                <div class="select__placeholder">Select...</div>
+                <input id="school--0" class="select__input" role="combobox" aria-autocomplete="list" aria-labelledby="school--0-label" />
+              </div>
+              <input class="requiredInput" required aria-hidden="true" value="" />
+            </div>
+          </div>
+          <div id="portal-root"></div>
+        </section>
+      </form>`);
+    const root = doc.getElementById("school-select") as HTMLElement;
+    const input = doc.getElementById("school--0") as HTMLInputElement;
+    input.addEventListener("click", () => {
+      if (doc.getElementById("school-listbox")) return;
+      input.setAttribute("aria-controls", "school-listbox");
+      const list = doc.createElement("div");
+      list.id = "school-listbox";
+      list.setAttribute("role", "listbox");
+      const other = doc.createElement("div");
+      other.className = "select__option";
+      other.setAttribute("role", "option");
+      other.textContent = "Other";
+      other.addEventListener("mousedown", () => {
+        root.querySelector("input[required]")?.remove();
+        const selected = doc.createElement("div");
+        selected.className = "select__single-value";
+        selected.textContent = "Other";
+        root.append(selected);
+        list.remove();
+      });
+      list.append(other);
+      doc.getElementById("portal-root")?.append(list);
+    });
+
+    const fields = extractPageFields(doc);
+    const school = fields.find((item) => /school/i.test(item.label));
+    expect(school).toBeTruthy();
+    expect(school!.repeater).toBe("education");
+
+    const records = await applyAutofillPlan({
+      fields,
+      plan: [
+        {
+          fieldId: school!.fieldId,
+          action: "select",
+          value: "University That Is Not Listed",
+          optionLabel: null,
+          confidence: 0.82,
+          note: "Profile school.",
+        },
+      ],
+      getResume: async () => null,
+    });
+
+    expect(records[0]).toMatchObject({ status: "filled" });
+    expect(root.querySelector(".select__single-value")?.textContent).toBe("Other");
   });
 
   it("keeps blank Greenhouse select wrappers in the fill plan instead of marking label text as current value", () => {
