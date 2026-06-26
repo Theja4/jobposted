@@ -756,6 +756,9 @@ describe("content autofill extraction", () => {
     expect(itemFor(school)).toMatchObject({ action: "select", value: "University That Is Not Listed", optionLabel: "Other" });
     expect(itemFor(degree)).toMatchObject({ action: "select", value: "Bachelor's Degree", optionLabel: "Bachelor's Degree" });
     expect(itemFor(discipline)).toMatchObject({ action: "select", value: "Computer Science", optionLabel: "Computer Science" });
+    expect(merged.fields.findIndex((item) => item.fieldId === degree!.fieldId)).toBeLessThan(
+      merged.fields.findIndex((item) => item.fieldId === school!.fieldId),
+    );
   });
 
   it("falls back to Other on education comboboxes when the school is not available", async () => {
@@ -822,6 +825,117 @@ describe("content autofill extraction", () => {
 
     expect(records[0]).toMatchObject({ status: "filled" });
     expect(root.querySelector(".select__single-value")?.textContent).toBe("Other");
+  });
+
+  it("does not let an async Greenhouse school search block degree selection", async () => {
+    const doc = installDom(`<!doctype html>
+      <form>
+        <section id="education-fields" class="education--container">
+          <h2>Education</h2>
+          <div id="school-select" class="select">
+            <label id="school--0-label">School*</label>
+            <div class="select-shell">
+              <div class="select__control">
+                <div class="select__placeholder">Select...</div>
+                <input id="school--0" class="select__input" role="combobox" aria-autocomplete="list" aria-labelledby="school--0-label" />
+              </div>
+              <input class="requiredInput" required aria-hidden="true" value="" />
+            </div>
+          </div>
+          <div id="degree-select" class="select">
+            <label id="degree--0-label">Degree*</label>
+            <div class="select-shell">
+              <div class="select__control">
+                <div class="select__placeholder">Select...</div>
+                <input id="degree--0" class="select__input" role="combobox" aria-autocomplete="list" aria-labelledby="degree--0-label" />
+              </div>
+              <input class="requiredInput" required aria-hidden="true" value="" />
+            </div>
+          </div>
+          <div id="portal-root"></div>
+        </section>
+      </form>`);
+    const portal = doc.getElementById("portal-root") as HTMLElement;
+    const degreeRoot = doc.getElementById("degree-select") as HTMLElement;
+    const schoolInput = doc.getElementById("school--0") as HTMLInputElement;
+    const degreeInput = doc.getElementById("degree--0") as HTMLInputElement;
+    let schoolSearchEvents = 0;
+
+    const openSchoolMenu = () => {
+      if (doc.getElementById("school-listbox")) return;
+      schoolInput.setAttribute("aria-controls", "school-listbox");
+      const list = doc.createElement("div");
+      list.id = "school-listbox";
+      list.setAttribute("role", "listbox");
+      const empty = doc.createElement("div");
+      empty.textContent = "No options";
+      list.append(empty);
+      portal.append(list);
+    };
+    schoolInput.addEventListener("click", openSchoolMenu);
+    schoolInput.addEventListener("keydown", (event) => {
+      if (event.key === "ArrowDown") openSchoolMenu();
+    });
+    schoolInput.addEventListener("input", () => {
+      schoolSearchEvents += 1;
+    });
+
+    const openDegreeMenu = () => {
+      if (doc.getElementById("degree-listbox")) return;
+      degreeInput.setAttribute("aria-controls", "degree-listbox");
+      const list = doc.createElement("div");
+      list.id = "degree-listbox";
+      list.setAttribute("role", "listbox");
+      const bachelor = doc.createElement("div");
+      bachelor.className = "select__option";
+      bachelor.setAttribute("role", "option");
+      bachelor.textContent = "Bachelor's Degree";
+      bachelor.addEventListener("mousedown", () => {
+        degreeRoot.querySelector("input[required]")?.remove();
+        const selected = doc.createElement("div");
+        selected.className = "select__single-value";
+        selected.textContent = "Bachelor's Degree";
+        degreeRoot.append(selected);
+        list.remove();
+      });
+      list.append(bachelor);
+      portal.append(list);
+    };
+    degreeInput.addEventListener("click", openDegreeMenu);
+    degreeInput.addEventListener("keydown", (event) => {
+      if (event.key === "ArrowDown") openDegreeMenu();
+    });
+
+    const fields = extractPageFields(doc);
+    const school = fields.find((item) => /school/i.test(item.label));
+    const degree = fields.find((item) => /degree/i.test(item.label));
+    expect(school).toBeTruthy();
+    expect(degree).toBeTruthy();
+    const skippedPlan: ExtensionAutofillPlan = {
+      stepName: "Application",
+      fields: fields.map((field) => ({
+        fieldId: field.fieldId,
+        action: "skip",
+        value: null,
+        optionLabel: null,
+        confidence: 0.35,
+        note: "model skipped",
+      })),
+    };
+    const merged = mergeProfileEducationPlan(
+      fields,
+      skippedPlan,
+      profile({
+        education: [{ school: "University That Is Not Listed", degree: "Bachelor's Degree", field: "Computer Science" }],
+      }),
+    );
+
+    const records = await applyAutofillPlan({ fields, plan: merged.fields, getResume: async () => null });
+
+    expect(records.find((record) => record.label === "Degree*")?.status).toBe("filled");
+    expect(records.find((record) => record.label === "School*")?.status).toBe("needs_user");
+    expect(degreeRoot.querySelector(".select__single-value")?.textContent).toBe("Bachelor's Degree");
+    expect(schoolSearchEvents).toBe(0);
   });
 
   it("keeps blank Greenhouse select wrappers in the fill plan instead of marking label text as current value", () => {

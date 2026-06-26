@@ -1269,6 +1269,7 @@ function educationPlanItemForField(field: PageField, profile: MasterProfile): Ex
 
 export function mergeProfileEducationPlan(fields: PageField[], plan: ExtensionAutofillPlan, profile: MasterProfile): ExtensionAutofillPlan {
   const replacements = new Map<string, ExtensionAutofillPlanItem>();
+  const fieldById = new Map(fields.map((field) => [field.fieldId, field]));
   for (const field of fields) {
     const item = educationPlanItemForField(field, profile);
     if (item) replacements.set(field.fieldId, item);
@@ -1276,20 +1277,30 @@ export function mergeProfileEducationPlan(fields: PageField[], plan: ExtensionAu
   if (replacements.size === 0) return plan;
 
   const mergedIds = new Set<string>();
-  const mergedFields = plan.fields.map((item) => {
+  const deferredSchoolFields: ExtensionAutofillPlanItem[] = [];
+  const mergedFields = plan.fields.flatMap((item) => {
     const replacement = replacements.get(item.fieldId);
     if (replacement) {
       mergedIds.add(item.fieldId);
-      return replacement;
+      if (educationPlanFieldKey(fieldById.get(item.fieldId) ?? { label: "", section: null, repeater: null }) === "school") {
+        deferredSchoolFields.push(replacement);
+        return [];
+      }
+      return [replacement];
     }
-    return item;
+    return [item];
   });
   for (const field of fields) {
     const replacement = replacements.get(field.fieldId);
-    if (replacement && !mergedIds.has(field.fieldId)) mergedFields.push(replacement);
+    if (!replacement || mergedIds.has(field.fieldId)) continue;
+    if (educationPlanFieldKey(field) === "school") {
+      deferredSchoolFields.push(replacement);
+    } else {
+      mergedFields.push(replacement);
+    }
   }
 
-  return { ...plan, fields: mergedFields };
+  return { ...plan, fields: [...mergedFields, ...deferredSchoolFields] };
 }
 
 export async function hydrateChoiceFieldOptions(
@@ -1795,6 +1806,11 @@ function dynamicChoiceMatch(field: PageField, targetLabel: string, options: HTML
   return reliableEducationOption(field, targetLabel, options, optionTextForElement) ?? bestOption(targetLabel, options, optionTextForElement);
 }
 
+function shouldAvoidSyntheticChoiceSearch(field: PageField) {
+  const reactSelectRoot = field.element.closest<HTMLElement>(".select");
+  return educationPlanFieldKey(field) === "school" && Boolean(reactSelectRoot && isReactSelectRoot(reactSelectRoot));
+}
+
 function fillSelect(field: PageField, label: string) {
   if (!(field.element instanceof HTMLSelectElement)) return false;
   const select = field.element;
@@ -1998,6 +2014,10 @@ async function fillCombobox(field: PageField, label: string) {
 
   if (input) {
     if (visibleDynamicChoiceOptions(element, ignoredOptions).length === 0) await openSearchableChoice(element, input, ignoredOptions);
+    if (shouldAvoidSyntheticChoiceSearch(field)) {
+      closeChoice(target);
+      return false;
+    }
     setChoiceSearchText(input, targetLabel);
     await sleep(220);
     options = visibleDynamicChoiceOptions(element, ignoredOptions);
