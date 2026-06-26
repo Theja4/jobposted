@@ -530,6 +530,81 @@ describe("content autofill extraction", () => {
     expect(root.querySelector("input[required]")).toBeNull();
   });
 
+  it("waits for async searchable location options after typing", async () => {
+    const doc = installDom(`<!doctype html>
+      <form>
+        <div id="location-select" class="select">
+          <label id="candidate-location-label">Location (City)*</label>
+          <div class="select-shell">
+            <div class="select__control">
+              <div class="select__placeholder">Select...</div>
+              <input id="candidate-location" class="select__input" role="combobox" aria-autocomplete="list" aria-labelledby="candidate-location-label" />
+            </div>
+            <input required tabindex="-1" aria-hidden="true" class="requiredInput" value="" />
+          </div>
+        </div>
+        <div id="portal-root"></div>
+      </form>`);
+    const root = doc.getElementById("location-select") as HTMLElement;
+    const input = doc.getElementById("candidate-location") as HTMLInputElement;
+    let searchTimer: number | null = null;
+    const commitChoice = (choice: string) => {
+      root.querySelector("input[required]")?.remove();
+      root.querySelector(".select__single-value")?.remove();
+      const selected = doc.createElement("div");
+      selected.className = "select__single-value";
+      selected.textContent = choice;
+      root.append(selected);
+      doc.getElementById("location-listbox")?.remove();
+    };
+    input.addEventListener("input", () => {
+      if (!/hyderabad/i.test(input.value) || searchTimer != null) return;
+      searchTimer = window.setTimeout(() => {
+        const list = doc.createElement("div");
+        list.id = "location-listbox";
+        list.setAttribute("role", "listbox");
+        input.setAttribute("aria-controls", "location-listbox");
+        const option = doc.createElement("div");
+        option.id = "location-option-hyderabad";
+        option.className = "select__option";
+        option.setAttribute("role", "option");
+        option.textContent = "Hyderabad, Telangana, India";
+        option.addEventListener("mousedown", () => commitChoice("Hyderabad, Telangana, India"));
+        list.append(option);
+        doc.getElementById("portal-root")?.append(list);
+      }, 950);
+    });
+    input.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") {
+        const option = doc.querySelector<HTMLElement>("#location-listbox [role='option']");
+        if (option) commitChoice(option.textContent ?? "");
+      }
+    });
+
+    const fields = extractPageFields(doc);
+    const location = fields.find((item) => /location/i.test(item.label));
+    expect(location).toBeTruthy();
+
+    const records = await applyAutofillPlan({
+      fields,
+      plan: [
+        {
+          fieldId: location!.fieldId,
+          action: "select",
+          value: "Hyderabad",
+          optionLabel: "Hyderabad",
+          confidence: 0.9,
+          note: "Profile city.",
+        },
+      ],
+      getResume: async () => null,
+    });
+
+    expect(records[0]?.status).toBe("filled");
+    expect(root.querySelector(".select__single-value")?.textContent).toBe("Hyderabad, Telangana, India");
+    expect(root.querySelector("input[required]")).toBeNull();
+  });
+
   it("ignores stale global country-code options when filling the active Greenhouse dropdown", async () => {
     const doc = installDom(`<!doctype html>
       <form>

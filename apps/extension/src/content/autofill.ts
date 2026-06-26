@@ -1914,6 +1914,20 @@ async function openSearchableChoice(element: HTMLElement, input: HTMLInputElemen
   return visibleDynamicChoiceOptions(element, ignoredOptions);
 }
 
+async function waitForDynamicChoiceOptions(
+  element: HTMLElement,
+  ignoredOptions: ReadonlySet<HTMLElement> = new Set(),
+  timeoutMs = 1800,
+) {
+  const deadline = Date.now() + timeoutMs;
+  let options = visibleDynamicChoiceOptions(element, ignoredOptions);
+  while (options.length === 0 && Date.now() <= deadline) {
+    await sleep(80);
+    options = visibleDynamicChoiceOptions(element, ignoredOptions);
+  }
+  return options;
+}
+
 function fillRadio(field: PageField, label: string) {
   const match = bestOption(label, field.elements, optionTextForElement);
   if (!match) return false;
@@ -2061,6 +2075,7 @@ async function fillCombobox(field: PageField, label: string) {
   const input = searchInputForChoice(element);
   if (options.length === 0 && input) {
     options = await openSearchableChoice(element, input, ignoredOptions);
+    if (options.length === 0) options = await waitForDynamicChoiceOptions(element, ignoredOptions, 900);
   }
   const hydrated = mergeOptions(field.options, options.map(optionTextForElement));
   if (hydrated.length > field.options.length) field.options = hydrated;
@@ -2084,6 +2099,7 @@ async function fillCombobox(field: PageField, label: string) {
     setChoiceSearchText(input, targetLabel);
     await sleep(220);
     options = visibleDynamicChoiceOptions(element, ignoredOptions);
+    if (options.length === 0) options = await waitForDynamicChoiceOptions(element, ignoredOptions);
     const filtered = mergeOptions(field.options, options.map(optionTextForElement));
     if (filtered.length > field.options.length) field.options = filtered;
     targetLabel = choiceTargetLabel(field, targetLabel);

@@ -423,7 +423,11 @@ function valueForField(field: ExtensionAutofillPageField, profile: MasterProfile
   if (/\bemail|e mail\b/.test(text)) return { value: profile.identity.email, confidence: 0.96, note: "Profile email." };
   if (/\b(phone|mobile|telephone)\b/.test(text)) return { value: phoneNationalNumber(profile), confidence: 0.93, note: "Profile phone national number." };
   if (/\baddress|street\b/.test(text)) return { value: profile.location.street ?? "", confidence: 0.86, note: "Profile street address." };
-  if (/\bcity\b/.test(text)) return { value: profile.location.city ?? "", confidence: 0.9, note: "Profile city." };
+  if (/\bcity\b/.test(text)) {
+    const city = profile.location.city ?? "";
+    const value = city && isChoiceField(field) ? join([city, profile.location.state, profile.location.country], ", ") : city;
+    return { value, confidence: value ? 0.9 : 0, note: "Profile city." };
+  }
   if (/\b(state|province|region)\b/.test(text)) return { value: profile.location.state ?? "", confidence: 0.86, note: "Profile state." };
   if (/\b(zip|postal)\b/.test(text)) return { value: profile.location.postalCode ?? "", confidence: 0.9, note: "Profile postal code." };
   if (/\bcountry\b/.test(text) && !isQuestion) return { value: profile.location.country ?? profile.workAuth.country ?? "", confidence: 0.84, note: "Profile country." };

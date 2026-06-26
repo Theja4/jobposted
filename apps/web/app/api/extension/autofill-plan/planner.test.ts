@@ -166,6 +166,37 @@ describe("autofill plan fallback guardrails", () => {
     expect(plan.fields[0]).toMatchObject({ value: "Second Institute" });
   });
 
+  it("uses full location context for city comboboxes but only city for text inputs", () => {
+    const baseProfile = profile({
+      location: { city: "Hyderabad", state: "Telangana", country: "India" },
+    });
+    const plan = buildFallbackAutofillPlan({
+      profile: baseProfile,
+      fields: [
+        field({
+          fieldId: "city-combobox",
+          label: "Location (City)",
+          type: "combobox",
+          options: [],
+        }),
+        field({
+          fieldId: "city-text",
+          label: "City",
+          type: "text",
+        }),
+      ],
+    });
+
+    expect(plan.fields.find((item) => item.fieldId === "city-combobox")).toMatchObject({
+      action: "select",
+      value: "Hyderabad, Telangana, India",
+    });
+    expect(plan.fields.find((item) => item.fieldId === "city-text")).toMatchObject({
+      action: "fill",
+      value: "Hyderabad",
+    });
+  });
+
   it("never free-texts a job title or country into a yes/no screening question", () => {
     const plan = buildFallbackAutofillPlan({
       profile: profile({
