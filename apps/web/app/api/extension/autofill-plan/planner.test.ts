@@ -63,6 +63,72 @@ describe("autofill plan fallback guardrails", () => {
     });
   });
 
+  it("does not fuzzy-match a missing school to a different institution", () => {
+    const plan = buildFallbackAutofillPlan({
+      profile: profile({
+        education: [{ school: "Atlanta Institute of Technology", degree: "Bachelor's Degree", field: "Computer Science" }],
+      }),
+      stepName: "Education",
+      fields: [
+        field({
+          fieldId: "school",
+          label: "School",
+          type: "select",
+          options: ["Art Institute of Atlanta", "0 - Other"],
+        }),
+      ],
+    });
+
+    expect(plan.fields[0]).toMatchObject({
+      fieldId: "school",
+      action: "select",
+      value: "Atlanta Institute of Technology",
+      optionLabel: "0 - Other",
+    });
+  });
+
+  it("overrides a model-selected unrelated school with deterministic Other fallback", () => {
+    const fields = [
+      field({
+        fieldId: "school",
+        label: "School",
+        type: "select",
+        options: ["Art Institute of Atlanta", "0 - Other"],
+      }),
+    ];
+    const fallback = buildFallbackAutofillPlan({
+      profile: profile({
+        education: [{ school: "University That Is Not Listed", degree: "Bachelor's Degree", field: "Computer Science" }],
+      }),
+      stepName: "Education",
+      fields,
+    });
+    const plan = normalizeAutofillPlan({
+      fields,
+      fallback,
+      raw: {
+        summary: "Model chose a nearby school.",
+        fields: [
+          {
+            fieldId: "school",
+            action: "select",
+            value: "University That Is Not Listed",
+            optionLabel: "Art Institute of Atlanta",
+            confidence: 0.86,
+            note: "Bad closest match.",
+          },
+        ],
+      },
+    });
+
+    expect(plan.fields[0]).toMatchObject({
+      fieldId: "school",
+      action: "select",
+      value: "University That Is Not Listed",
+      optionLabel: "0 - Other",
+    });
+  });
+
   it("uses logical defaults for Hispanic/Latino and work authorization when profile is blank", () => {
     const plan = buildFallbackAutofillPlan({
       profile: profile(),

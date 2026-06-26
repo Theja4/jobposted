@@ -1282,11 +1282,24 @@ function educationPlanItemForField(field: PageField, profile: MasterProfile): Ex
   };
 }
 
-function hasPlannerEducationValue(item: ExtensionAutofillPlanItem) {
-  if (item.action !== "select" && item.action !== "fill") return false;
-  const label = clean(item.optionLabel);
-  const value = typeof item.value === "string" ? clean(item.value) : "";
-  return Boolean(label || value);
+function educationPlanItemTarget(item: ExtensionAutofillPlanItem) {
+  return clean(item.optionLabel) || (typeof item.value === "string" ? clean(item.value) : "");
+}
+
+function targetsMatch(a: string, b: string) {
+  const left = clean(a);
+  const right = clean(b);
+  if (!left || !right) return false;
+  return compactNormalized(left) === compactNormalized(right) || textMatchScore(left, right) >= 0.94;
+}
+
+function shouldUseEducationReplacement(field: PageField, item: ExtensionAutofillPlanItem, replacement: ExtensionAutofillPlanItem) {
+  const existingTarget = educationPlanItemTarget(item);
+  if (!existingTarget) return true;
+  if (item.action !== "select" && item.action !== "fill") return true;
+  if (educationPlanFieldKey(field) !== "school") return false;
+  const replacementTarget = educationPlanItemTarget(replacement);
+  return Boolean(replacementTarget && !targetsMatch(existingTarget, replacementTarget));
 }
 
 export function mergeProfileEducationPlan(fields: PageField[], plan: ExtensionAutofillPlan, profile: MasterProfile): ExtensionAutofillPlan {
@@ -1302,7 +1315,8 @@ export function mergeProfileEducationPlan(fields: PageField[], plan: ExtensionAu
   const deferredSchoolFields: ExtensionAutofillPlanItem[] = [];
   const mergedFields = plan.fields.flatMap((item) => {
     const field = fieldById.get(item.fieldId);
-    const replacement = field && educationPlanFieldKey(field) && !hasPlannerEducationValue(item) ? replacements.get(item.fieldId) : null;
+    const candidate = field && educationPlanFieldKey(field) ? replacements.get(item.fieldId) : null;
+    const replacement = field && candidate && shouldUseEducationReplacement(field, item, candidate) ? candidate : null;
     if (replacement) {
       mergedIds.add(item.fieldId);
       if (educationPlanFieldKey(field ?? { label: "", section: null, repeater: null }) === "school") {
@@ -1882,7 +1896,7 @@ function fillSelect(field: PageField, label: string) {
   return true;
 }
 
-async function waitForChoiceSelection(field: PageField, targetLabel: string, selectedOptionLabel?: string, timeoutMs = 800) {
+async function waitForChoiceSelection(field: PageField, targetLabel: string, selectedOptionLabel?: string, timeoutMs = 1400) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() <= deadline) {
     if (choiceSelectionMatches(field, targetLabel, selectedOptionLabel)) return true;
@@ -2093,6 +2107,7 @@ async function fillCombobox(field: PageField, label: string) {
     if (input.value) clearChoiceSearchText(input);
   }
 
+  if (await waitForChoiceSelection(field, targetLabel, undefined, 1000)) return true;
   closeChoice(target);
   return false;
 }

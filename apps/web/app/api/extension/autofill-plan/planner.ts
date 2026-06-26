@@ -8,7 +8,7 @@ import type {
 type CandidateValue = string | string[] | boolean | null;
 
 const PLACEHOLDER_OPTION = /^(select|choose|please select|select one|choose one|--|n\/a)$/i;
-const OTHER_OPTION = /\b(other|not listed|not in list|none of the above|prefer not|decline|do not wish|choose not|not applicable|n\/a)\b/i;
+const OTHER_OPTION = /\b(other|not listed|not in list|not available|unlisted|not found|cannot find|unknown|none of the above|prefer not|decline|do not wish|choose not|not applicable|n\/a)\b/i;
 const MERCURY_SKIP_CONFIDENCE = 0.9;
 const CALLING_CODES = [
   "1",
@@ -286,6 +286,28 @@ export function pickOptionLabel(value: CandidateValue, options: string[]) {
   return normalizedOptions.find((option) => OTHER_OPTION.test(option)) ?? null;
 }
 
+function isSchoolField(field: ExtensionAutofillPageField) {
+  const text = normalize(`${field.label} ${field.section ?? ""}`);
+  return /\b(school|university|college|institution)\b/.test(text) && !/\bdegree|field of study|major|discipline\b/.test(text);
+}
+
+function pickSchoolOptionLabel(value: CandidateValue, options: string[]) {
+  const normalizedOptions = options.map(clean).filter((option) => option && !PLACEHOLDER_OPTION.test(option));
+  if (normalizedOptions.length === 0) return null;
+  const text = Array.isArray(value) ? value.join(", ") : typeof value === "boolean" ? titleCaseFromBoolean(value) : clean(value);
+  const normalized = normalize(text);
+  const compacted = compact(normalized);
+  if (normalized) {
+    const exact = normalizedOptions.find((option) => normalize(option) === normalized || compact(normalize(option)) === compacted);
+    if (exact) return exact;
+  }
+  return normalizedOptions.find((option) => OTHER_OPTION.test(option)) ?? null;
+}
+
+function pickFieldOptionLabel(value: CandidateValue, field: ExtensionAutofillPageField) {
+  return isSchoolField(field) ? pickSchoolOptionLabel(value, field.options) : pickOptionLabel(value, field.options);
+}
+
 function firstPresent(values: Array<string | null | undefined>) {
   return values.map(clean).find(Boolean) ?? "";
 }
@@ -526,6 +548,10 @@ function normalizePlanItem(
   field: ExtensionAutofillPageField,
   fallback?: ExtensionAutofillPlanItem,
 ): ExtensionAutofillPlanItem {
+  if (isSchoolField(field) && fallback?.action === "select" && clean(fallback.optionLabel)) {
+    return { ...fallback, fieldId: field.fieldId };
+  }
+
   const hasModelItem = Object.keys(item).length > 0;
   const value = item.value !== undefined ? item.value : fallback?.value ?? null;
   let action = item.action ?? fallback?.action ?? inferAction(field, value);
@@ -555,7 +581,7 @@ function normalizePlanItem(
     if (action !== "skip" && action !== "attach") action = "select";
   } else if (choiceField && action !== "skip" && action !== "attach") {
     action = "select";
-    const matchedOption = field.options.length > 0 ? pickOptionLabel(optionLabel || value, field.options) : null;
+    const matchedOption = field.options.length > 0 ? pickFieldOptionLabel(optionLabel || value, field) : null;
     optionLabel = matchedOption ?? optionLabel;
     const hasSelectionTarget = hasCandidateValue(optionLabel ?? value);
     action =
@@ -592,7 +618,7 @@ export function buildFallbackAutofillPlan(args: {
       fieldId: field.fieldId,
       action,
       value: resolved.value,
-      optionLabel: action === "select" ? pickOptionLabel(resolved.value, field.options) : null,
+      optionLabel: action === "select" ? pickFieldOptionLabel(resolved.value, field) : null,
       confidence: action === "skip" ? 0 : resolved.confidence,
       note: resolved.note,
     };

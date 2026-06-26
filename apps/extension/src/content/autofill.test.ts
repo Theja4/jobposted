@@ -500,7 +500,7 @@ describe("content autofill extraction", () => {
           root.querySelector("input[required]")?.remove();
           root.append(selected);
           menu.remove();
-        }, 260);
+        }, 1050);
       });
       menu.append(yes);
       doc.getElementById("portal-root")?.append(menu);
@@ -775,7 +775,7 @@ describe("content autofill extraction", () => {
     );
   });
 
-  it("preserves concrete planner-selected education options", () => {
+  it("preserves concrete planner-selected degree and discipline but guards school fallback", () => {
     const doc = installDom(`<!doctype html>
       <form>
         <section id="education-fields" class="education--container">
@@ -824,11 +824,28 @@ describe("content autofill extraction", () => {
       stepName: "Application",
       fields: fields.map((field) => ({
         fieldId: field.fieldId,
-        action: field.fieldId === degree?.fieldId || field.fieldId === discipline?.fieldId ? "select" : "skip",
-        value: field.fieldId === degree?.fieldId ? "B.Tech" : field.fieldId === discipline?.fieldId ? "Electronics" : null,
-        optionLabel: field.fieldId === degree?.fieldId ? "Bachelor's Degree" : field.fieldId === discipline?.fieldId ? "Engineering" : null,
-        confidence: field.fieldId === degree?.fieldId || field.fieldId === discipline?.fieldId ? 0.86 : 0.35,
-        note: field.fieldId === degree?.fieldId || field.fieldId === discipline?.fieldId ? "planner selected concrete option" : "model skipped",
+        action: field.fieldId === school?.fieldId || field.fieldId === degree?.fieldId || field.fieldId === discipline?.fieldId ? "select" : "skip",
+        value:
+          field.fieldId === school?.fieldId
+            ? "University That Is Not Listed"
+            : field.fieldId === degree?.fieldId
+              ? "B.Tech"
+              : field.fieldId === discipline?.fieldId
+                ? "Electronics"
+                : null,
+        optionLabel:
+          field.fieldId === school?.fieldId
+            ? "Art Institute of Atlanta"
+            : field.fieldId === degree?.fieldId
+              ? "Bachelor's Degree"
+              : field.fieldId === discipline?.fieldId
+                ? "Engineering"
+                : null,
+        confidence: field.fieldId === school?.fieldId || field.fieldId === degree?.fieldId || field.fieldId === discipline?.fieldId ? 0.86 : 0.35,
+        note:
+          field.fieldId === school?.fieldId || field.fieldId === degree?.fieldId || field.fieldId === discipline?.fieldId
+            ? "planner selected concrete option"
+            : "model skipped",
       })),
     };
 
@@ -1033,7 +1050,7 @@ describe("content autofill extraction", () => {
     expect(doc.querySelector("#degree-select .select__single-value")?.textContent).toBe("Bachelor's Degree");
     expect(doc.querySelector("#discipline-select .select__single-value")?.textContent).toBe("Computer Science");
     expect(doc.querySelector("#school-select .select__single-value")?.textContent).toBe("0 - Other");
-  });
+  }, 8000);
 
   it("does not let an async Greenhouse school search block degree selection", async () => {
     const doc = installDom(`<!doctype html>

@@ -29,6 +29,7 @@ When a form has a separate phone country/calling-code dropdown and a Phone input
 For Yes/No questions (work authorization, sponsorship, "have you worked here before", age eligibility) answer exactly "Yes" or "No" to match the options — never a country or other text.
 For multiselect "select all that apply" fields, set "value" to an array of the applicable option texts; for sanctions, export-control, or citizenship questions default to ["None of the above"] (or ["Not applicable"]) unless the profile clearly indicates otherwise.
 Use closest-option matching when exact select/radio/combobox choices are absent.
+For school/university/institution fields, do NOT use closest-option matching to choose a different institution. Select the exact profile school only when it is present. If the profile school is absent, select an Other, Not listed, Not available, or equivalent option when available and keep the real school in value; otherwise skip.
 If nothing matches and an Other, Prefer not to say, Decline, Choose not to answer, Not applicable, or similar option exists, select that option.
 When selecting Other for a real profile value, keep the real value in value so the extension can fill a revealed free-text input.
 If profile data is missing, infer low-stakes and EEO/preference answers when sensible: work authorization defaults to Yes, sponsorship defaults to No, 18+ defaults to Yes, Hispanic/Latino defaults to No.
