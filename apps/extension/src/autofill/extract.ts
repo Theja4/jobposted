@@ -165,6 +165,30 @@ function greenhouseChoiceContainerFor(element: HTMLElement) {
   return null;
 }
 
+function uploadFileLabelText(element: HTMLElement) {
+  if (!(element instanceof HTMLInputElement) || element.type !== "file") return "";
+  const doc = element.ownerDocument;
+  const id = element.getAttribute("id");
+  const direct = id ? doc.getElementById(`upload-label-${id}`) : null;
+  const directText = visibleText(direct?.textContent);
+  if (directText) return directText;
+
+  for (let node = element.parentElement; node && node !== doc.body; node = node.parentElement) {
+    const uploadLabels = Array.from(
+      node.querySelectorAll<HTMLElement>(
+        "[id*='upload-label' i], [class*='upload-label' i], [data-testid*='upload-label' i], [data-automation-id*='upload-label' i]",
+      ),
+    )
+      .map((label) => visibleText(label.textContent))
+      .filter((text) => text && !looksLikeActionControl(text));
+    const documentLabel = uploadLabels.find((text) => /\b(resume|cv|curriculum vitae|cover letter)\b/i.test(text));
+    if (documentLabel) return documentLabel;
+    if (uploadLabels.length === 1) return uploadLabels[0] ?? "";
+    if (node.matches("form, section, fieldset")) break;
+  }
+  return "";
+}
+
 function labelFor(element: HTMLElement): string {
   if (element.getAttribute("role") === "radio") {
     const groupLabel = customRadioGroupLabel(element);
@@ -177,6 +201,9 @@ function labelFor(element: HTMLElement): string {
 
   const ariaLabelledBy = textById(doc, element.getAttribute("aria-labelledby"));
   if (ariaLabelledBy && !(isChoiceLike(element) && isPlaceholderText(ariaLabelledBy))) return ariaLabelledBy;
+
+  const uploadLabel = uploadFileLabelText(element);
+  if (uploadLabel) return uploadLabel;
 
   const nativeLabels = labelElementsText(element);
   if (nativeLabels) return nativeLabels;

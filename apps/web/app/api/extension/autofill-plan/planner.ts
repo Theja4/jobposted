@@ -345,6 +345,7 @@ function valueForField(field: ExtensionAutofillPageField, profile: MasterProfile
   note: string;
 } {
   const text = normalize(`${field.label} ${field.section ?? ""}`);
+  const fileText = normalize(`${field.label} ${field.section ?? ""} ${field.fieldId}`);
   const raw = `${field.label} ${field.section ?? ""}`;
   const repeaterIndex = typeof field.repeaterIndex === "number" && Number.isFinite(field.repeaterIndex)
     ? Math.max(0, Math.floor(field.repeaterIndex))
@@ -386,14 +387,14 @@ function valueForField(field: ExtensionAutofillPageField, profile: MasterProfile
     };
   }
 
-  if (/\b(resume|cv|curriculum vitae)\b/.test(text) && field.type === "file") {
+  if (/\b(resume|cv|curriculum vitae)\b/.test(fileText) && field.type === "file") {
     return {
       value: profile.documents.resumeName ?? "resume",
       confidence: profile.documents.resumeUrl ? 0.96 : 0.2,
       note: profile.documents.resumeUrl ? "Attach the stored resume." : "No resume is available.",
     };
   }
-  if (/\bcover letter\b/.test(text) && field.type === "file") {
+  if (/\bcover letter\b/.test(fileText) && field.type === "file") {
     return {
       value: profile.documents.coverLetterName ?? "cover letter",
       confidence: profile.documents.coverLetterUrl ? 0.9 : 0.2,

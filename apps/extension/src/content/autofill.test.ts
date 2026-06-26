@@ -1,5 +1,5 @@
 import { parseHTML } from "linkedom";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   applyAutofillPlan,
   compactFields,
@@ -11,6 +11,13 @@ import {
   type PageField,
 } from "./autofill";
 import type { ExtensionAutofillPlan, ExtensionAutofillPlanItem, ExtensionResumeResponse, MasterProfile } from "@jobposted/shared";
+
+const nativeFetch = globalThis.fetch;
+
+afterEach(() => {
+  globalThis.fetch = nativeFetch;
+  vi.restoreAllMocks();
+});
 
 const fixtures = import.meta.glob("../fixtures/*.html", {
   query: "?raw",
@@ -31,6 +38,8 @@ function installDom(html: string, url = "https://boards.greenhouse.io/acme/jobs/
     InputEvent: window.InputEvent ?? window.Event,
     FocusEvent: window.FocusEvent ?? window.Event,
     KeyboardEvent: window.KeyboardEvent ?? window.Event,
+    MouseEvent: window.MouseEvent ?? window.Event,
+    File: window.File ?? globalThis.File,
     HTMLElement: window.HTMLElement,
     HTMLInputElement: window.HTMLInputElement,
     HTMLTextAreaElement: window.HTMLTextAreaElement,
@@ -108,6 +117,130 @@ describe("content autofill extraction", () => {
     expect((doc.querySelector("#email") as HTMLInputElement).value).toBe("asha@example.com");
   });
 
+  it("labels Greenhouse upload file inputs from the upload label instead of the Attach label", () => {
+    const doc = installDom(`<!doctype html>
+      <form>
+        <div class="file-upload">
+          <div id="upload-label-resume" class="label upload-label">Resume/CV<span class="required">*</span></div>
+          <button type="button" class="btn btn--rectangle">Attach</button>
+          <label class="visually-hidden" for="resume">Attach</label>
+          <input id="resume" class="visually-hidden" type="file" accept=".pdf,.doc,.docx,.txt,.rtf" />
+          <button type="button" class="btn btn--rectangle" data-testid="resume-text">Enter manually</button>
+        </div>
+      </form>`);
+
+    const fields = extractPageFields(doc);
+    const resume = fields.find((field) => field.type === "file");
+
+    expect(resume).toBeTruthy();
+    expect(resume!.label).toMatch(/Resume\/CV/);
+    expect(resume!.label).not.toBe("Attach");
+    expect(resume!.required).toBe(true);
+    expect(compactFields([resume!])[0]).toMatchObject({
+      label: expect.stringMatching(/Resume\/CV/),
+      type: "file",
+      required: true,
+    });
+  });
+
+  it("attaches Greenhouse resume file inputs labelled by the upload label", async () => {
+    const doc = installDom(`<!doctype html>
+      <form>
+        <div class="file-upload">
+          <div id="upload-label-resume" class="label upload-label">Resume/CV<span class="required">*</span></div>
+          <button type="button" class="btn btn--rectangle">Attach</button>
+          <label class="visually-hidden" for="resume">Attach</label>
+          <input id="resume" class="visually-hidden" type="file" accept=".pdf,.doc,.docx,.txt,.rtf" />
+          <button type="button" class="btn btn--rectangle" data-testid="resume-text">Enter manually</button>
+        </div>
+      </form>`);
+    globalThis.fetch = vi.fn(async () =>
+      new Response(new Blob(["resume"], { type: "application/pdf" }), {
+        headers: { "content-type": "application/pdf" },
+      }),
+    ) as typeof fetch;
+    const fields = extractPageFields(doc);
+    const resume = fields.find((field) => field.type === "file");
+    expect(resume).toBeTruthy();
+
+    const records = await applyAutofillPlan({
+      fields,
+      plan: [
+        {
+          fieldId: resume!.fieldId,
+          action: "attach",
+          value: "Theja Resume.pdf",
+          optionLabel: null,
+          confidence: 0.96,
+          note: "Attach stored resume.",
+        },
+      ],
+      getResume: async () => ({
+        ok: true,
+        resumeUrl: "https://files.example.com/resume.pdf",
+        resumeName: "Theja Resume.pdf",
+        coverLetterUrl: null,
+        coverLetterName: null,
+        genericResumeUsed: true,
+      }),
+    });
+
+    const input = doc.querySelector<HTMLInputElement>("#resume")!;
+    expect(records[0]?.status).toBe("filled");
+    expect(input.files?.item(0)?.name).toBe("Theja Resume.pdf");
+    expect(globalThis.fetch).toHaveBeenCalledWith("https://files.example.com/resume.pdf", { credentials: "omit" });
+  });
+
+  it("does not reattach a resume when an uploaded file row is already visible", async () => {
+    const doc = installDom(`<!doctype html>
+      <form>
+        <section data-automation-id="resumeSection">
+          <h3>Resume/CV</h3>
+          <label for="resume">Upload a file</label>
+          <input id="resume" type="file" accept=".pdf,.doc,.docx,.txt,.rtf" />
+          <div data-automation-id="uploadedFile">
+            <span>Theja_Chitturi.pdf</span>
+            <span>Successfully Uploaded!</span>
+            <button type="button" aria-label="Delete">Delete</button>
+          </div>
+        </section>
+      </form>`);
+    globalThis.fetch = vi.fn(async () => {
+      throw new Error("resume fetch should not run");
+    }) as typeof fetch;
+    const fields = extractPageFields(doc);
+    const resume = fields.find((field) => field.type === "file");
+    expect(resume).toBeTruthy();
+
+    const records = await applyAutofillPlan({
+      fields,
+      plan: [
+        {
+          fieldId: resume!.fieldId,
+          action: "attach",
+          value: "Theja_Chitturi.pdf",
+          optionLabel: null,
+          confidence: 0.96,
+          note: "Attach stored resume.",
+        },
+      ],
+      getResume: async () => ({
+        ok: true,
+        resumeUrl: "https://files.example.com/resume.pdf",
+        resumeName: "Theja_Chitturi.pdf",
+        coverLetterUrl: null,
+        coverLetterName: null,
+        genericResumeUsed: true,
+      }),
+    });
+
+    const input = doc.querySelector<HTMLInputElement>("#resume")!;
+    expect(records[0]?.status).toBe("skipped");
+    expect(records[0]?.error).toBe("Already attached resume/CV.");
+    expect(input.files?.length ?? 0).toBe(0);
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
+
   it.each([
     ["greenhouse", "School"],
     ["ashby", "How did you hear about us?"],
@@ -178,6 +311,99 @@ describe("content autofill extraction", () => {
     expect(workAuth).toBeTruthy();
     expect(workAuth!.type).not.toBe("text");
     expect(workAuth!.options).toEqual(expect.arrayContaining(["Yes", "No"]));
+  });
+
+  it("hydrates closed Greenhouse React selects from embedded application metadata", () => {
+    const doc = installDom(`<!doctype html>
+      <script>
+        window.__remixContext = {
+          "state": {
+            "loaderData": {
+              "job": {
+                "questions": [{
+                  "required": true,
+                  "label": "Are you legally authorized to work in the United States?",
+                  "fields": [{
+                    "name": "question_35961878002",
+                    "type": "multi_value_single_select",
+                    "values": [
+                      { "value": 238588662002, "label": "I am authorized to work in the United States for any employer" },
+                      { "value": 238588664002, "label": "I require sponsorship to work in the United States" },
+                      { "value": 238588665002, "label": "I am not authorized to work in the United States" }
+                    ]
+                  }]
+                }]
+              }
+            }
+          }
+        };
+      </script>
+      <form id="application-form" class="application--form">
+        <fieldset class="phone-input"><legend>Phone</legend><input id="phone" /></fieldset>
+        <div class="field-wrapper">
+          <div class="select">
+            <div class="select__container">
+              <label id="question_35961878002-label" for="question_35961878002" class="label select__label">
+                Are you legally authorized to work in the United States?<span aria-hidden="true">*</span>
+              </label>
+              <div class="select-shell">
+                <div class="select__control">
+                  <div class="select__placeholder">Select...</div>
+                  <input id="question_35961878002" class="select__input" role="combobox" aria-autocomplete="list" aria-labelledby="question_35961878002-label" />
+                </div>
+                <input required tabindex="-1" aria-hidden="true" class="requiredInput" value="" />
+              </div>
+            </div>
+          </div>
+        </div>
+      </form>`);
+    const fields = extractPageFields(doc);
+    const workAuth = fields.find((item) => /authorized to work/i.test(item.label));
+
+    expect(workAuth).toBeTruthy();
+    expect(workAuth!.required).toBe(true);
+    expect(workAuth!.section).not.toBe("Phone");
+    expect(workAuth!.options).toEqual([
+      "I am authorized to work in the United States for any employer",
+      "I require sponsorship to work in the United States",
+      "I am not authorized to work in the United States",
+    ]);
+    expect(compactFields([workAuth!])[0]?.optionMode).toBe("full");
+  });
+
+  it("marks Lever custom questions required from their wrapper and metadata", () => {
+    const doc = installDom(`<!doctype html>
+      <form>
+        <div class="section page-centered application-form" data-qa="additional-cards">
+          <h4 data-qa="card-name">Eligibility Questions</h4>
+          <input type="hidden" value='{"text":"Eligibility Questions","fields":[{"type":"dropdown","text":"Will you now or in the future require sponsorship for employment?","required":true,"id":"field1","options":[{"text":"Yes"},{"text":"No"}]}]}' name="cards[abc][baseTemplate]" />
+          <ul>
+            <li class="application-question custom-question">
+              <div>
+                <div class="application-label full-width dropdown">
+                  <div class="text">Will you now or in the future require sponsorship for employment?<span class="required">✱</span></div>
+                </div>
+                <div class="application-field full-width required-field">
+                  <div class="application-dropdown">
+                    <select name="cards[abc][field0]">
+                      <option value="">Select...</option>
+                      <option value="Yes">Yes</option>
+                      <option value="No">No</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+            </li>
+          </ul>
+        </div>
+      </form>`, "https://jobs.lever.co/acme/1/apply");
+    const fields = extractPageFields(doc);
+    const sponsorship = fields.find((item) => /future require sponsorship/i.test(item.label));
+
+    expect(sponsorship).toBeTruthy();
+    expect(sponsorship!.required).toBe(true);
+    expect(sponsorship!.options).toEqual(["Yes", "No"]);
+    expect(compactFields([sponsorship!])[0]).toMatchObject({ required: true, optionMode: "full" });
   });
 
   it("checks the chosen option in a 'select all that apply' group", async () => {
@@ -601,6 +827,75 @@ describe("content autofill extraction", () => {
     });
 
     expect(records[0]?.status).toBe("filled");
+    expect(root.querySelector(".select__single-value")?.textContent).toBe("Hyderabad, Telangana, India");
+    expect(root.querySelector("input[required]")).toBeNull();
+  });
+
+  it("searches Greenhouse city autocomplete with the city part when the plan value includes state and country", async () => {
+    const doc = installDom(`<!doctype html>
+      <form>
+        <div id="location-select" class="select">
+          <label id="candidate-location-label">Location (City)*</label>
+          <div class="select-shell">
+            <div class="select__control">
+              <div class="select__placeholder">Select...</div>
+              <input id="candidate-location" class="select__input" role="combobox" aria-autocomplete="list" aria-labelledby="candidate-location-label" />
+            </div>
+            <input required tabindex="-1" aria-hidden="true" class="requiredInput" value="" />
+          </div>
+        </div>
+        <div id="portal-root"></div>
+      </form>`);
+    const root = doc.getElementById("location-select") as HTMLElement;
+    const input = doc.getElementById("candidate-location") as HTMLInputElement;
+    const commitChoice = (choice: string) => {
+      root.querySelector("input[required]")?.remove();
+      root.querySelector(".select__single-value")?.remove();
+      const selected = doc.createElement("div");
+      selected.className = "select__single-value";
+      selected.textContent = choice;
+      root.append(selected);
+      doc.getElementById("location-listbox")?.remove();
+    };
+    input.addEventListener("input", () => {
+      doc.getElementById("location-listbox")?.remove();
+      if (input.value !== "Hyderabad") return;
+      const list = doc.createElement("div");
+      list.id = "location-listbox";
+      list.setAttribute("role", "listbox");
+      input.setAttribute("aria-controls", "location-listbox");
+      for (const choice of ["Hyderabad, Andhra Pradesh, India", "Hyderabad, Telangana, India"]) {
+        const option = doc.createElement("div");
+        option.className = "select__option";
+        option.setAttribute("role", "option");
+        option.textContent = choice;
+        option.addEventListener("mousedown", () => commitChoice(choice));
+        list.append(option);
+      }
+      doc.getElementById("portal-root")?.append(list);
+    });
+
+    const fields = extractPageFields(doc);
+    const location = fields.find((item) => /location/i.test(item.label));
+    expect(location).toBeTruthy();
+
+    const records = await applyAutofillPlan({
+      fields,
+      plan: [
+        {
+          fieldId: location!.fieldId,
+          action: "select",
+          value: "Hyderabad, Telangana, India",
+          optionLabel: null,
+          confidence: 0.9,
+          note: "Profile city with state and country.",
+        },
+      ],
+      getResume: async () => null,
+    });
+
+    expect(records[0]?.status).toBe("filled");
+    expect(input.value).toBe("Hyderabad");
     expect(root.querySelector(".select__single-value")?.textContent).toBe("Hyderabad, Telangana, India");
     expect(root.querySelector("input[required]")).toBeNull();
   });

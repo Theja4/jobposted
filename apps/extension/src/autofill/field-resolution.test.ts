@@ -134,6 +134,30 @@ describe("field resolution", () => {
     expect(byLabel.get("Preferred First Name *")?.value).toBe(profile.identity.firstName);
   });
 
+  it("uses Greenhouse upload labels for visually hidden resume file inputs", async () => {
+    const { adapter, fields } = await loadHtml(
+      `<!doctype html>
+      <form>
+        <div class="file-upload">
+          <div id="upload-label-resume" class="label upload-label">Resume/CV<span class="required">*</span></div>
+          <button type="button">Attach</button>
+          <label class="visually-hidden" for="resume">Attach</label>
+          <input id="resume" class="visually-hidden" type="file" accept=".pdf,.doc,.docx,.txt,.rtf" />
+          <button type="button">Enter manually</button>
+        </div>
+      </form>`,
+      "https://job-boards.greenhouse.io/acme/jobs/123",
+    );
+    expect(adapter.id).toBe("generic");
+    const resume = fields.find((field) => field.type === "file");
+    expect(resume).toBeTruthy();
+    expect(resume!.label).toMatch(/Resume\/CV/);
+    expect(resume!.label).not.toBe("Attach");
+
+    const mapping = await resolveField({ field: resume!, profile, platform: adapter.id, url: "", demographicsEnabled: false });
+    expect(mapping.canonicalKey).toBe("documents.resume");
+  });
+
   it("maps Databricks required custom dropdown questions", async () => {
     const { adapter, fields } = await loadHtml(
       `<!doctype html>

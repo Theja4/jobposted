@@ -182,6 +182,48 @@ describe("fillField file uploads", () => {
     expect(globalThis.fetch).toHaveBeenCalledOnce();
   });
 
+  it("does not reattach a resume when Workday already shows the uploaded file row", async () => {
+    const { document, window } = parseHTML(`
+      <section data-automation-id="resumeSection">
+        <h3>Resume/CV</h3>
+        <label for="resume">Upload a file</label>
+        <input id="resume" type="file" />
+        <div data-automation-id="uploadedFile">
+          <span>Theja_Chitturi.pdf</span>
+          <span>Successfully Uploaded!</span>
+          <button type="button" aria-label="Delete">Delete</button>
+        </div>
+      </section>
+    `);
+    installDomGlobals(window);
+    const input = document.querySelector<HTMLInputElement>("#resume") as HTMLInputElement;
+    const getResume = vi.fn(async () => ({
+      resumeUrl: "https://files.example.com/user/base/resume.pdf?token=signed",
+      resumeName: "Theja_Chitturi.pdf",
+    }));
+    globalThis.fetch = vi.fn(async () => {
+      throw new Error("resume fetch should not run");
+    }) as typeof fetch;
+    const field: FieldDescriptor = {
+      id: "resume",
+      element: input,
+      label: "Resume/CV",
+      context: "Resume/CV Upload a file",
+      type: "file",
+      required: true,
+      options: [],
+      signature: "resume:file",
+    };
+
+    const record = await fillField(field, mapping, { ...context, platform: "workday", getResume });
+
+    expect(record.status).toBe("skipped");
+    expect(record.error).toBe("Already attached resume/CV.");
+    expect(input.files?.length ?? 0).toBe(0);
+    expect(getResume).toHaveBeenCalledOnce();
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
+
   it("skips optional resume uploads only when no resume/CV is available", async () => {
     const getResume = vi.fn(async () => ({ resumeUrl: null }));
     globalThis.fetch = vi.fn() as typeof fetch;
@@ -922,6 +964,55 @@ describe("fillField phone normalization", () => {
     expect(cityButton.textContent).toBe("Hyderabad, Telangana, India");
     expect(countrySearch.value).toBe("");
     expect(document.getElementById("country")?.textContent).toBe("+91");
+  });
+
+  it("searches city autocompletes with the city part when the plan value includes state and country", async () => {
+    const { document, window } = parseHTML(`
+      <div>
+        <button id="city" role="combobox" aria-controls="city-options">Select...</button>
+        <div id="city-options" role="listbox">
+          <input id="city-search" role="textbox" />
+        </div>
+      </div>
+    `);
+    installDomGlobals(window);
+    const cityButton = document.getElementById("city") as HTMLElement;
+    const citySearch = document.getElementById("city-search") as HTMLInputElement;
+    citySearch.addEventListener("input", () => {
+      document.querySelectorAll("#city-options [role='option']").forEach((node) => node.remove());
+      if (citySearch.value !== "Hyderabad") return;
+      const option = document.createElement("div");
+      option.setAttribute("role", "option");
+      option.textContent = "Hyderabad, Telangana, India";
+      option.addEventListener("click", () => {
+        cityButton.textContent = option.textContent;
+      });
+      document.getElementById("city-options")?.append(option);
+    });
+
+    const record = await fillField(
+      {
+        id: "city",
+        element: cityButton,
+        label: "Location (City) *",
+        context: "",
+        type: "combobox",
+        required: true,
+        options: [],
+        signature: "city",
+      },
+      {
+        canonicalKey: "location.city",
+        value: "Hyderabad, Telangana, India",
+        confidence: 0.9,
+        source: "heuristic",
+      },
+      context,
+    );
+
+    expect(record.status).toBe("filled");
+    expect(citySearch.value).toBe("Hyderabad");
+    expect(cityButton.textContent).toBe("Hyderabad, Telangana, India");
   });
 
   it("does not write a reusable answer when the value is the question prompt", async () => {
@@ -1888,6 +1979,65 @@ describe("fillField custom choice controls", () => {
 
     expect(record.status).toBe("filled");
     expect(button.textContent).toContain("LinkedIn");
+  });
+
+  it("drills into Workday nested referral source menus before selecting a leaf option", async () => {
+    const { document, window } = parseHTML(`
+      <form data-automation-id="workdayApplication">
+        <div data-automation-id="formField-source">
+          <label id="source-label">How Did You Hear About Us?<span>*</span></label>
+          <button id="source" role="combobox" aria-labelledby="source-label source-value" aria-controls="source-options" aria-expanded="true">
+            <span id="source-value">Select...</span>
+          </button>
+          <ul id="source-options" role="listbox">
+            <li role="option">Event</li>
+            <li role="option">Internal</li>
+            <li id="job-board" role="option" aria-haspopup="menu">Job Board<span class="chevron">›</span></li>
+            <li role="option">Prior Worker</li>
+            <li role="option">Referral</li>
+            <li role="option">Social Media</li>
+          </ul>
+        </div>
+      </form>
+    `);
+    installDomGlobals(window);
+    const sourceValue = document.getElementById("source-value") as HTMLElement;
+    const menu = document.getElementById("source-options") as HTMLElement;
+    const renderJobBoardSubmenu = () => {
+      sourceValue.textContent = "Job Board";
+      menu.replaceChildren();
+      const heading = document.createElement("li");
+      heading.textContent = "Job Board";
+      heading.setAttribute("role", "presentation");
+      menu.append(heading);
+      for (const label of ["Dice", "Indeed", "LinkedIn", "Naukri"]) {
+        const option = document.createElement("li");
+        option.setAttribute("role", "option");
+        option.textContent = label;
+        option.addEventListener("mousedown", () => {
+          sourceValue.textContent = label;
+          menu.remove();
+        });
+        menu.append(option);
+      }
+    };
+    document.getElementById("job-board")?.addEventListener("mousedown", renderJobBoardSubmenu);
+
+    const field = extractFields(document, "workday", workdayAdapter.mapFields(document)).find((item) => /hear about us/i.test(item.label));
+    expect(field).toBeTruthy();
+    const record = await fillField(
+      field!,
+      {
+        canonicalKey: "answers.referral_source",
+        value: "LinkedIn",
+        confidence: 0.78,
+        source: "heuristic",
+      },
+      { ...context, platform: "workday" },
+    );
+
+    expect(record.status).toBe("filled");
+    expect(sourceValue.textContent).toBe("LinkedIn");
   });
 
   it("falls back to job board for referral source selects when LinkedIn is absent", async () => {

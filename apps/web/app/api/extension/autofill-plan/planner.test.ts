@@ -197,6 +197,26 @@ describe("autofill plan fallback guardrails", () => {
     });
   });
 
+  it("attaches a resume when Greenhouse exposes the file control label as Attach but the field id is resume", () => {
+    const plan = buildFallbackAutofillPlan({
+      profile: profile(),
+      fields: [
+        field({
+          fieldId: "resume",
+          label: "Attach",
+          type: "file",
+        }),
+      ],
+    });
+
+    expect(plan.fields[0]).toMatchObject({
+      fieldId: "resume",
+      action: "attach",
+      value: "Asha Resume.pdf",
+      confidence: 0.96,
+    });
+  });
+
   it("never free-texts a job title or country into a yes/no screening question", () => {
     const plan = buildFallbackAutofillPlan({
       profile: profile({

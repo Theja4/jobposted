@@ -131,6 +131,10 @@ function isPlaceholderOption(value: string) {
   );
 }
 
+function stripRequiredMarker(value: string) {
+  return visibleText(value).replace(/[\s*✱]+$/u, "").trim();
+}
+
 function looksLikeActionControl(value: string) {
   return /\b(?:add|attach|upload|browse|choose file|dropbox|manual|manually|remove|delete|cancel|submit|apply|send|save|next|continue|back|previous|close|locate me)\b/i.test(
     visibleText(value),
@@ -340,6 +344,7 @@ function nearestPrecedingHeading(element: HTMLElement) {
   const headings = Array.from(element.ownerDocument.querySelectorAll<HTMLElement>(SECTION_HEADING_SELECTOR)).filter(isVisible);
   let best: HTMLElement | null = null;
   for (const heading of headings) {
+    if (heading.tagName === "LEGEND" && !heading.closest("fieldset")?.contains(element)) continue;
     if (heading === element || precedes(heading, element)) best = heading;
   }
   return best;
@@ -369,12 +374,38 @@ function nearbyText(element: HTMLElement) {
   return "";
 }
 
+function uploadFileLabelText(element: HTMLElement) {
+  if (!(element instanceof HTMLInputElement) || element.type !== "file") return "";
+  const doc = element.ownerDocument;
+  const id = element.getAttribute("id");
+  const direct = id ? doc.getElementById(`upload-label-${id}`) : null;
+  const directText = visibleText(direct?.textContent);
+  if (directText) return directText;
+
+  for (let node = element.parentElement; node && node !== doc.body; node = node.parentElement) {
+    const uploadLabels = Array.from(
+      node.querySelectorAll<HTMLElement>(
+        "[id*='upload-label' i], [class*='upload-label' i], [data-testid*='upload-label' i], [data-automation-id*='upload-label' i]",
+      ),
+    )
+      .map((label) => visibleText(label.textContent))
+      .filter((text) => text && !looksLikeActionControl(text));
+    const documentLabel = uploadLabels.find((text) => /\b(resume|cv|curriculum vitae|cover letter)\b/i.test(text));
+    if (documentLabel) return documentLabel;
+    if (uploadLabels.length === 1) return uploadLabels[0] ?? "";
+    if (node.matches("form, section, fieldset")) break;
+  }
+  return "";
+}
+
 function labelFor(element: HTMLElement): string {
   const doc = element.ownerDocument;
   const aria = visibleText(element.getAttribute("aria-label"));
   if (aria) return aria;
   const labelled = textById(doc, element.getAttribute("aria-labelledby"));
   if (labelled) return labelled;
+  const upload = uploadFileLabelText(element);
+  if (upload) return upload;
   const native = labelElementsText(element);
   if (native) return native;
   const id = element.getAttribute("id");
@@ -473,9 +504,13 @@ function fieldType(element: HTMLElement): ExtensionFieldControl {
 
 function isRequired(element: HTMLElement, label: string) {
   if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement || element instanceof HTMLSelectElement) {
-    if (element.required) return true;
+    if (element.required || element.hasAttribute("required")) return true;
   }
-  return element.getAttribute("aria-required") === "true" || /\*\s*$|\brequired\b/i.test(label);
+  if (element.getAttribute("aria-required") === "true") return true;
+  if (element.querySelector("[required], [aria-required='true']")) return true;
+  const requiredContainer = element.closest<HTMLElement>(".required-field, .js-form-required, .form-required, [data-required='true']");
+  if (requiredContainer && requiredContainer.querySelectorAll(CONTROL_SELECTOR).length <= 1) return true;
+  return /[*✱]\s*$|\brequired\b/i.test(label);
 }
 
 function optionTextForElement(element: HTMLElement) {
@@ -532,17 +567,7 @@ function comboboxOptions(element: HTMLElement) {
   const listed = nodes.map((option) => visibleText(option.textContent || option.getAttribute("value")));
   // Merge in any backing native <select> (select2/chosen/react-select keep one in the DOM).
   const select = backingSelect(element);
-  const merged = [...listed, ...(select ? nativeSelectOptions(select) : [])];
-  const seen = new Set<string>();
-  const result: string[] = [];
-  for (const option of merged) {
-    const key = option.toLowerCase();
-    if (option && !seen.has(key) && !isPlaceholderOption(option)) {
-      seen.add(key);
-      result.push(option);
-    }
-  }
-  return result;
+  return mergeOptions(listed, select ? nativeSelectOptions(select) : [], metadataForField(element, labelFor(element))?.options ?? []);
 }
 
 function mergeOptions(...groups: string[][]) {
@@ -556,6 +581,167 @@ function mergeOptions(...groups: string[][]) {
     merged.push(text);
   }
   return merged;
+}
+
+interface ApplicationFieldMetadata {
+  label: string;
+  required: boolean | null;
+  names: string[];
+  options: string[];
+}
+
+const APPLICATION_METADATA_CACHE = new WeakMap<Document, ApplicationFieldMetadata[]>();
+
+function asRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+}
+
+function metadataOptionLabels(value: unknown) {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((item) => {
+      const record = asRecord(item);
+      return visibleText(record.label ?? record.text ?? record.name ?? record.value);
+    })
+    .filter(Boolean);
+}
+
+function parseAssignedJson(text: string, marker: string) {
+  const markerIndex = text.indexOf(marker);
+  if (markerIndex < 0) return null;
+  const start = text.indexOf("{", markerIndex);
+  if (start < 0) return null;
+
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  for (let index = start; index < text.length; index += 1) {
+    const char = text[index];
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+    if (char === "\\") {
+      escaped = inString;
+      continue;
+    }
+    if (char === '"') {
+      inString = !inString;
+      continue;
+    }
+    if (inString) continue;
+    if (char === "{") depth += 1;
+    if (char !== "}") continue;
+    depth -= 1;
+    if (depth !== 0) continue;
+    try {
+      return JSON.parse(text.slice(start, index + 1));
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
+function mergeMetadata(records: ApplicationFieldMetadata[], next: ApplicationFieldMetadata) {
+  const normalizedLabel = normalize(stripRequiredMarker(next.label));
+  const existing = records.find((record) => normalize(stripRequiredMarker(record.label)) === normalizedLabel);
+  if (!existing) {
+    records.push({
+      ...next,
+      names: mergeOptions(next.names),
+      options: mergeOptions(next.options),
+    });
+    return;
+  }
+  existing.required = existing.required === true || next.required === true ? true : existing.required ?? next.required;
+  existing.names = mergeOptions(existing.names, next.names);
+  existing.options = mergeOptions(existing.options, next.options);
+}
+
+function collectMetadataFromValue(value: unknown, records: ApplicationFieldMetadata[]) {
+  if (!value || typeof value !== "object") return;
+  if (Array.isArray(value)) {
+    value.forEach((item) => collectMetadataFromValue(item, records));
+    return;
+  }
+
+  const record = value as Record<string, unknown>;
+  const label = visibleText(record.label ?? record.text);
+  const fields = Array.isArray(record.fields) ? record.fields.map(asRecord) : [];
+  const directOptions = metadataOptionLabels(record.options);
+
+  if (label && fields.length > 0) {
+    const names = fields.map((field) => visibleText(field.name ?? field.id)).filter(Boolean);
+    const options = mergeOptions(
+      directOptions,
+      ...fields.map((field) => metadataOptionLabels(field.values ?? field.options)),
+    );
+    mergeMetadata(records, {
+      label,
+      required: typeof record.required === "boolean" ? record.required : null,
+      names,
+      options,
+    });
+  } else if (label && directOptions.length > 0) {
+    mergeMetadata(records, {
+      label,
+      required: typeof record.required === "boolean" ? record.required : null,
+      names: [visibleText(record.name ?? record.id)].filter(Boolean),
+      options: directOptions,
+    });
+  }
+
+  for (const child of Object.values(record)) collectMetadataFromValue(child, records);
+}
+
+function applicationFieldMetadata(doc: Document) {
+  const cached = APPLICATION_METADATA_CACHE.get(doc);
+  if (cached) return cached;
+
+  const records: ApplicationFieldMetadata[] = [];
+  for (const input of Array.from(doc.querySelectorAll<HTMLInputElement>("input[type='hidden'][value]"))) {
+    const value = input.value;
+    if (!/"fields"|"options"|"required"/.test(value)) continue;
+    try {
+      collectMetadataFromValue(JSON.parse(value), records);
+    } catch {
+      // Hidden inputs often include unrelated values. Ignore anything that is not JSON metadata.
+    }
+  }
+
+  for (const script of Array.from(doc.querySelectorAll<HTMLScriptElement>("script"))) {
+    const text = script.textContent ?? "";
+    if (!text.includes("window.__remixContext")) continue;
+    const parsed = parseAssignedJson(text, "window.__remixContext");
+    if (parsed) collectMetadataFromValue(parsed, records);
+  }
+
+  APPLICATION_METADATA_CACHE.set(doc, records);
+  return records;
+}
+
+function controlMetadataKeys(element: HTMLElement) {
+  return [
+    element,
+    ...Array.from(element.querySelectorAll<HTMLElement>("input, select, textarea, [role='combobox']")),
+  ]
+    .flatMap((control) => [control.getAttribute("id"), control.getAttribute("name"), control.getAttribute("data-automation-id"), control.getAttribute("data-testid")])
+    .map(visibleText)
+    .filter(Boolean);
+}
+
+function metadataForField(element: HTMLElement, label: string) {
+  const metadata = applicationFieldMetadata(element.ownerDocument);
+  if (metadata.length === 0) return null;
+
+  const keys = new Set(controlMetadataKeys(element));
+  const byKey = metadata.find((record) => record.names.some((name) => keys.has(name)));
+  if (byKey) return byKey;
+
+  const normalizedLabel = normalize(stripRequiredMarker(label));
+  if (!normalizedLabel) return null;
+  return metadata.find((record) => normalize(stripRequiredMarker(record.label)) === normalizedLabel) ?? null;
 }
 
 function currentValue(element: HTMLElement, elements: HTMLElement[]) {
@@ -624,13 +810,14 @@ function radioGroupLabel(element: HTMLElement): string {
 function buildField(element: HTMLElement, index: number, elements: HTMLElement[] = [element]): PageField {
   const type = fieldType(element);
   const label = type === "radio" && elements.length > 1 ? radioGroupLabel(element) : labelFor(element);
+  const metadata = metadataForField(element, label);
   const options =
     type === "select" && element instanceof HTMLSelectElement
-      ? nativeSelectOptions(element)
+      ? mergeOptions(nativeSelectOptions(element), metadata?.options ?? [])
       : type === "radio"
         ? elements.map(optionTextForElement).filter(Boolean)
         : type === "combobox" || type === "typeahead"
-          ? comboboxOptions(element)
+          ? mergeOptions(comboboxOptions(element), metadata?.options ?? [])
           : [];
   const id = fieldId(element, index, label, type);
   const section = sectionFor(element);
@@ -642,7 +829,7 @@ function buildField(element: HTMLElement, index: number, elements: HTMLElement[]
     label,
     type,
     options,
-    required: elements.some((item) => isRequired(item, label)),
+    required: metadata?.required === true || elements.some((item) => isRequired(item, label)),
     currentValue: currentValue(element, elements),
     section: section || null,
     repeater: repeaterFor(element),
@@ -2018,6 +2205,74 @@ function safeFilename(url: string, disposition: string | null, mime: string, fal
   return /\.[a-z0-9]{2,5}$/i.test(cleanName) ? cleanName : `${cleanName}.${extensionForMime(mime)}`;
 }
 
+function documentUploadFlag(wantsCoverLetter: boolean) {
+  return wantsCoverLetter ? "jpCoverLetterAttached" : "jpResumeAttached";
+}
+
+function documentUploadAlreadyHandled(doc: Document, wantsCoverLetter: boolean) {
+  return doc.documentElement.dataset[documentUploadFlag(wantsCoverLetter)] === "true";
+}
+
+function markDocumentUploadHandled(doc: Document, wantsCoverLetter: boolean) {
+  doc.documentElement.dataset[documentUploadFlag(wantsCoverLetter)] = "true";
+}
+
+function uploadedDocumentKindPattern(wantsCoverLetter: boolean) {
+  return wantsCoverLetter ? /\bcover letter\b/ : /\b(resume|cv|curriculum vitae)\b/;
+}
+
+function uploadedFilenameMatches(scopeText: string, filename?: string | null) {
+  const normalizedFilename = normalize(filename);
+  if (!normalizedFilename) return false;
+  if (scopeText.includes(normalizedFilename)) return true;
+  const withoutExtension = normalizedFilename.replace(/\s+(pdf|docx?|txt|rtf)$/i, "").trim();
+  return withoutExtension.length >= 4 && scopeText.includes(withoutExtension) && /\b(pdf|docx?|txt|rtf)\b/.test(scopeText);
+}
+
+function uploadedDocumentScopeCandidates(element: HTMLElement) {
+  const candidates: HTMLElement[] = [];
+  let current = element.parentElement;
+  for (let depth = 0; current && depth < 8; depth += 1, current = current.parentElement) {
+    if (
+      current.matches(
+        [
+          "section",
+          "fieldset",
+          "[role='group']",
+          "[data-automation-id]",
+          "[data-testid]",
+          "[class*='upload' i]",
+          "[class*='file' i]",
+          "[class*='resume' i]",
+          "[class*='cover' i]",
+          "[id*='upload' i]",
+          "[id*='file' i]",
+          "[id*='resume' i]",
+          "[id*='cover' i]",
+        ].join(","),
+      )
+    ) {
+      candidates.push(current);
+    }
+  }
+  const body = element.ownerDocument.body;
+  if (body) candidates.push(body);
+  return candidates.filter((candidate, index, all) => all.indexOf(candidate) === index);
+}
+
+function uploadedDocumentAlreadyVisible(element: HTMLElement, wantsCoverLetter: boolean, filename?: string | null) {
+  const kindPattern = uploadedDocumentKindPattern(wantsCoverLetter);
+  return uploadedDocumentScopeCandidates(element).some((scope) => {
+    const scopeText = normalize(visibleText(scope.textContent));
+    if (!scopeText) return false;
+    const hasUploadedSignal = /\b(successfully uploaded|uploaded|selected file|selected files|delete|remove)\b/.test(scopeText);
+    const hasDocumentType = /\b(pdf|docx?|txt|rtf)\b/.test(scopeText);
+    if (uploadedFilenameMatches(scopeText, filename) && (hasUploadedSignal || hasDocumentType)) return true;
+    if (scope === element.ownerDocument.body) return false;
+    return kindPattern.test(scopeText) && hasUploadedSignal && hasDocumentType;
+  });
+}
+
 function fileListFromFile(element: HTMLElement, file: File) {
   type DataTransferConstructor = new () => DataTransfer;
   const view = element.ownerDocument.defaultView as (Window & { DataTransfer?: DataTransferConstructor }) | null;
@@ -2043,14 +2298,26 @@ async function fillFile(field: PageField, resume: ExtensionResumeResponse | null
   const input = field.element instanceof HTMLInputElement ? field.element : field.element.querySelector<HTMLInputElement>("input[type='file']");
   if (!input) return { ok: false, error: "No file input was available." };
   const wantsCoverLetter = /\bcover letter\b/i.test(field.label);
+  const label = wantsCoverLetter ? "cover letter" : "resume/CV";
   const url = wantsCoverLetter ? resume?.coverLetterUrl : resume?.resumeUrl;
   const name = wantsCoverLetter ? resume?.coverLetterName : resume?.resumeName;
+  if (input.files?.length || documentUploadAlreadyHandled(input.ownerDocument, wantsCoverLetter)) {
+    return { ok: true, skipped: true, filename: input.files?.item(0)?.name ?? name ?? undefined, error: `Already attached ${label}.` };
+  }
+  if (uploadedDocumentAlreadyVisible(input, wantsCoverLetter, name)) {
+    markDocumentUploadHandled(input.ownerDocument, wantsCoverLetter);
+    return { ok: true, skipped: true, filename: name ?? undefined, error: `Already attached ${label}.` };
+  }
   if (!url) return { ok: false, error: wantsCoverLetter ? "No cover letter available." : "No resume available." };
   const response = await fetch(url, { credentials: "omit" });
   if (!response.ok) return { ok: false, error: "Could not download the document." };
   const blob = await response.blob();
   const mime = response.headers.get("content-type") || blob.type || "application/pdf";
   const file = new File([blob], safeFilename(url, response.headers.get("content-disposition"), mime, name ?? ""), { type: mime });
+  if (uploadedDocumentAlreadyVisible(input, wantsCoverLetter, file.name)) {
+    markDocumentUploadHandled(input.ownerDocument, wantsCoverLetter);
+    return { ok: true, skipped: true, filename: file.name, error: `Already attached ${label}.` };
+  }
   const files = fileListFromFile(input, file);
   try {
     input.files = files;
@@ -2058,7 +2325,31 @@ async function fillFile(field: PageField, resume: ExtensionResumeResponse | null
     Object.defineProperty(input, "files", { configurable: true, value: files });
   }
   dispatchFieldEvents(input);
+  if (input.files?.length) markDocumentUploadHandled(input.ownerDocument, wantsCoverLetter);
   return { ok: Boolean(input.files?.length), filename: file.name, error: input.files?.length ? undefined : "The file input rejected the document." };
+}
+
+function isCityLocationChoice(field: PageField) {
+  return /\b(location|city)\b/i.test(`${field.label} ${field.section ?? ""} ${field.fieldId}`) && /\bcity\b/i.test(`${field.label} ${field.fieldId}`);
+}
+
+function choiceSearchLabels(field: PageField, targetLabel: string) {
+  const label = clean(targetLabel);
+  if (!label) return [];
+  if (!isCityLocationChoice(field)) return [label];
+  const parts = label.split(",").map((part) => part.trim()).filter(Boolean);
+  if (parts.length <= 1) return [label];
+  const [city, state, country] = parts;
+  return Array.from(
+    new Set(
+      [
+        city,
+        city && country ? `${city}, ${country}` : "",
+        city && state ? `${city}, ${state}` : "",
+        label,
+      ].filter(Boolean),
+    ),
+  );
 }
 
 async function fillCombobox(field: PageField, label: string) {
@@ -2096,29 +2387,31 @@ async function fillCombobox(field: PageField, label: string) {
       closeChoice(target);
       return false;
     }
-    setChoiceSearchText(input, targetLabel);
-    await sleep(220);
-    options = visibleDynamicChoiceOptions(element, ignoredOptions);
-    if (options.length === 0) options = await waitForDynamicChoiceOptions(element, ignoredOptions);
-    const filtered = mergeOptions(field.options, options.map(optionTextForElement));
-    if (filtered.length > field.options.length) field.options = filtered;
-    targetLabel = choiceTargetLabel(field, targetLabel);
-    match = dynamicChoiceMatch(field, targetLabel, options);
-    if (match) {
-      const matchLabel = optionTextForElement(match);
-      selectChoiceOption(match);
-      if (await waitForChoiceSelection(field, targetLabel, matchLabel)) return true;
-      if (await commitSearchableChoiceByText(field, input, targetLabel, matchLabel)) return true;
-      pressChoiceKey(input, "Enter");
-      if (await waitForChoiceSelection(field, targetLabel, matchLabel, 400)) return true;
-      clearChoiceSearchText(input);
-      closeChoice(target);
-      return false;
-    }
-    if (options.length > 0) {
-      pressChoiceKey(input, "ArrowDown");
-      pressChoiceKey(input, "Enter");
-      if (await waitForChoiceSelection(field, targetLabel)) return true;
+    for (const searchLabel of choiceSearchLabels(field, targetLabel)) {
+      setChoiceSearchText(input, searchLabel);
+      await sleep(220);
+      options = visibleDynamicChoiceOptions(element, ignoredOptions);
+      if (options.length === 0) options = await waitForDynamicChoiceOptions(element, ignoredOptions);
+      const filtered = mergeOptions(field.options, options.map(optionTextForElement));
+      if (filtered.length > field.options.length) field.options = filtered;
+      targetLabel = choiceTargetLabel(field, targetLabel);
+      match = dynamicChoiceMatch(field, targetLabel, options);
+      if (match) {
+        const matchLabel = optionTextForElement(match);
+        selectChoiceOption(match);
+        if (await waitForChoiceSelection(field, targetLabel, matchLabel)) return true;
+        if (await commitSearchableChoiceByText(field, input, targetLabel, matchLabel)) return true;
+        pressChoiceKey(input, "Enter");
+        if (await waitForChoiceSelection(field, targetLabel, matchLabel, 400)) return true;
+        clearChoiceSearchText(input);
+        closeChoice(target);
+        return false;
+      }
+      if (options.length > 0) {
+        pressChoiceKey(input, "ArrowDown");
+        pressChoiceKey(input, "Enter");
+        if (await waitForChoiceSelection(field, targetLabel)) return true;
+      }
     }
     if (input.value) clearChoiceSearchText(input);
   }
@@ -2166,6 +2459,7 @@ async function fillPlanItem(field: PageField, item: ExtensionAutofillPlanItem, g
   if (item.action === "skip") return recordFor(field, item, field.required ? "needs_user" : "skipped", item.note ?? "Skipped.");
   if (item.action === "attach") {
     const result = await fillFile(field, await getResume());
+    if (result.skipped) return recordFor(field, item, "skipped", result.error, result.filename);
     return result.ok
       ? recordFor(field, item, "filled", undefined, result.filename)
       : recordFor(field, item, field.required ? "needs_user" : "skipped", result.error);

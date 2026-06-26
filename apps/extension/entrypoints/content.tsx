@@ -44,7 +44,7 @@ import {
   type PageField,
 } from "../src/content/autofill";
 import { strategyForPlatform } from "../src/content/fill-strategy";
-import { shouldDeferToEmbeddedApplication } from "../src/content/embedded-application";
+import { isApplicationHostUrl, shouldDeferToEmbeddedApplication } from "../src/content/embedded-application";
 import { isGreenhousePage, isLeverPage } from "../src/content/open-ats";
 import { isWorkdayPage, workdayCompany, workdayJobHeading, workdayStepName } from "../src/content/workday";
 
@@ -103,6 +103,16 @@ const PANEL_OPEN_EVENT = "jobposted-panel-open";
 
 type PanelStatus = "idle" | "scanning" | "planning" | "filling" | "done" | "error";
 type PanelFieldStatus = "pending" | "active" | "filled" | "skipped" | "needs_user" | "failed";
+
+const PANEL_STEP_SIGNATURE_SELECTOR = [
+  "[data-automation-id='progressBarActiveStep']",
+  "[data-automation-id='progressTrackerActiveStep']",
+  "[data-automation-id='stepName']",
+  "[aria-current='step']",
+  "main h1",
+  "form h1",
+  "h1",
+].join(",");
 
 interface PanelField {
   fieldId: string;
@@ -412,6 +422,69 @@ function detectStepName(doc: Document = document) {
     doc.querySelector("h1,h2,[aria-current='step']")?.textContent?.trim() ||
     "Current page"
   );
+}
+
+function compactText(value: unknown) {
+  return typeof value === "string" ? value.replace(/\s+/g, " ").trim() : "";
+}
+
+function panelStepMarker(doc: Document = document) {
+  const marker = doc.querySelector<HTMLElement>(PANEL_STEP_SIGNATURE_SELECTOR);
+  return compactText(marker?.textContent) || detectStepName(doc);
+}
+
+function embeddedApplicationFrameSignature(doc: Document = document) {
+  return Array.from(doc.querySelectorAll<HTMLIFrameElement>("iframe[src]"))
+    .map((frame) => frame.getAttribute("src") ?? "")
+    .filter((src) => isApplicationHostUrl(src, window.location.href))
+    .join("|");
+}
+
+function controlLabelText(control: HTMLElement, doc: Document = document) {
+  const labelElements = "labels" in control ? Array.from((control as HTMLInputElement).labels ?? []) : [];
+  const labelledBy = (control.getAttribute("aria-labelledby") ?? "")
+    .split(/\s+/)
+    .map((id) => doc.getElementById(id)?.textContent ?? "")
+    .join(" ");
+  return compactText(
+    [
+      control.getAttribute("aria-label"),
+      labelledBy,
+      labelElements.map((label) => label.textContent ?? "").join(" "),
+      control.closest("label")?.textContent,
+    ].join(" "),
+  );
+}
+
+function panelControlSignature(doc: Document = document) {
+  return Array.from(doc.querySelectorAll<HTMLElement>("input,select,textarea,[role='combobox'],[contenteditable='true']"))
+    .map((control) =>
+      compactText(
+        [
+          control.tagName,
+          control.getAttribute("type"),
+          control.getAttribute("role"),
+          control.getAttribute("id"),
+          control.getAttribute("name"),
+          control.getAttribute("data-automation-id"),
+          controlLabelText(control, doc),
+        ].join(" "),
+      ),
+    )
+    .filter(Boolean)
+    .slice(0, 30)
+    .join("|");
+}
+
+function panelPageSignature(doc: Document = document) {
+  return [
+    window.location.href,
+    detectPlatform(window.location.href, doc),
+    detectStepName(doc),
+    panelStepMarker(doc),
+    panelControlSignature(doc),
+    embeddedApplicationFrameSignature(doc),
+  ].join("\n");
 }
 
 function applicationMetadata(platform: ExtensionPlatform) {
@@ -834,6 +907,39 @@ async function runAutofillPage(args: {
   return summarizeRunResult({ platform, stepName, fields: records, tracker, trackerError });
 }
 
+type SuccessfulTypedMessageResponse = Extract<ExtensionMessageResponse, { ok: true; type: string }>;
+
+function assertBackgroundResponse<T extends SuccessfulTypedMessageResponse>(
+  response: ExtensionMessageResponse,
+  type: T["type"],
+  fallbackError: string,
+): T {
+  if (!response.ok) throw new Error(response.error || fallbackError);
+  if (response.type !== type) throw new Error(fallbackError);
+  return response as T;
+}
+
+async function discoverAutofillActiveTab(): Promise<ExtensionAutofillDiscoveryResult> {
+  const response = await message<ExtensionMessageResponse>({ type: "AUTOFILL_DISCOVER_ACTIVE_TAB" });
+  return assertBackgroundResponse<Extract<ExtensionMessageResponse, { type: "AUTOFILL_DISCOVER_ACTIVE_TAB" }>>(
+    response,
+    "AUTOFILL_DISCOVER_ACTIVE_TAB",
+    "Could not parse this page.",
+  ).result;
+}
+
+async function runAutofillActiveTab(args: { continueSteps?: boolean }): Promise<ExtensionAutofillRunResult> {
+  const response = await message<ExtensionMessageResponse>({
+    type: "AUTOFILL_ACTIVE_TAB",
+    continueSteps: Boolean(args.continueSteps),
+  });
+  return assertBackgroundResponse<Extract<ExtensionMessageResponse, { type: "AUTOFILL_ACTIVE_TAB" }>>(
+    response,
+    "AUTOFILL_ACTIVE_TAB",
+    "Autofill failed.",
+  ).result;
+}
+
 function installAutofillCommandListener() {
   const state = globalThis as typeof globalThis & { __jobpostedAutofillCommandListener?: boolean };
   if (state.__jobpostedAutofillCommandListener) return;
@@ -922,6 +1028,10 @@ function timeoutResponse(ms: number, error: string): Promise<ExtensionMessageRes
   return new Promise((resolve) => window.setTimeout(() => resolve({ ok: false, error }), ms));
 }
 
+function panelStatusIsRunning(status: PanelStatus) {
+  return status === "scanning" || status === "planning" || status === "filling";
+}
+
 function groupedFields(fields: PanelField[]) {
   return {
     required: fields.filter((field) => field.required),
@@ -1007,6 +1117,13 @@ function InPagePanel() {
   const [jobActionMessage, setJobActionMessage] = useState<string | null>(null);
   const [listOpen, setListOpen] = useState(true);
   const cancelRef = useRef(false);
+  const statusRef = useRef<PanelStatus>("idle");
+  const pageSignatureRef = useRef(panelPageSignature());
+
+  function updateStatus(nextStatus: PanelStatus) {
+    statusRef.current = nextStatus;
+    setStatus(nextStatus);
+  }
 
   async function refreshProfile() {
     const statusResponse = await message<ExtensionMessageResponse>({ type: "AUTH_STATUS" });
@@ -1034,6 +1151,46 @@ function InPagePanel() {
     return () => window.removeEventListener(PANEL_OPEN_EVENT, openPanel);
   }, []);
 
+  useEffect(() => {
+    let scheduled = false;
+    let intervalId: number | null = null;
+
+    const resetForCurrentPage = () => {
+      cancelRef.current = true;
+      setError(null);
+      setResult(null);
+      setFields([]);
+      setListOpen(true);
+      updateStatus("idle");
+    };
+
+    const checkForPageChange = () => {
+      if (scheduled) return;
+      scheduled = true;
+      window.requestAnimationFrame(() => {
+        scheduled = false;
+        if (panelStatusIsRunning(statusRef.current)) return;
+        const nextSignature = panelPageSignature();
+        if (nextSignature === pageSignatureRef.current) return;
+        pageSignatureRef.current = nextSignature;
+        resetForCurrentPage();
+      });
+    };
+
+    const observer = new MutationObserver(checkForPageChange);
+    if (document.body) observer.observe(document.body, { attributes: true, childList: true, subtree: true });
+    intervalId = window.setInterval(checkForPageChange, 750);
+    window.addEventListener("hashchange", checkForPageChange);
+    window.addEventListener("popstate", checkForPageChange);
+
+    return () => {
+      observer.disconnect();
+      if (intervalId != null) window.clearInterval(intervalId);
+      window.removeEventListener("hashchange", checkForPageChange);
+      window.removeEventListener("popstate", checkForPageChange);
+    };
+  }, []);
+
   const progress = useMemo(() => {
     if (fields.length === 0) return 0;
     const completed = fields.filter((field) => ["filled", "skipped", "needs_user", "failed"].includes(field.status)).length;
@@ -1055,54 +1212,63 @@ function InPagePanel() {
 
   async function runPanelAutofill() {
     cancelRef.current = false;
+    pageSignatureRef.current = panelPageSignature();
     setError(null);
     setResult(null);
     setFields([]);
-    setStatus("scanning");
+    updateStatus("scanning");
     try {
-      const discovery = await discoverAutofillPage();
+      const delegateToApplicationFrame = shouldDeferAutofillToEmbeddedApplication();
+      const discovery = delegateToApplicationFrame ? await discoverAutofillActiveTab() : await discoverAutofillPage();
       setFields(fieldsFromDiscovery(discovery));
       if (cancelRef.current) {
-        setStatus("idle");
+        updateStatus("idle");
         return;
       }
-      setStatus("planning");
-      const runResult = await runAutofillPage({
-        continueSteps: false,
-        forceGenericFallback: true,
-        suppressAutoTrack: false,
-        shouldStop: () => cancelRef.current,
-        onStatus: setStatus,
-        onFieldsDiscovered: (discoveredFields) => {
-          setFields(discoveredFields.map((field) => panelFieldFromPageField(field)));
-        },
-        onFieldStart: (field) => {
-          setFields((currentFields) => {
-            if (currentFields.some((currentField) => currentField.fieldId === field.fieldId)) {
-              return currentFields.map((currentField) =>
-                currentField.fieldId === field.fieldId ? { ...currentField, status: "active" } : currentField,
-              );
-            }
-            return [...currentFields, panelFieldFromPageField(field, "active")];
+      updateStatus("planning");
+      const runResult = delegateToApplicationFrame
+        ? await (async () => {
+            updateStatus("filling");
+            return runAutofillActiveTab({ continueSteps: false });
+          })()
+        : await runAutofillPage({
+            continueSteps: false,
+            forceGenericFallback: true,
+            suppressAutoTrack: false,
+            shouldStop: () => cancelRef.current,
+            onStatus: updateStatus,
+            onFieldsDiscovered: (discoveredFields) => {
+              setFields(discoveredFields.map((field) => panelFieldFromPageField(field)));
+            },
+            onFieldStart: (field) => {
+              setFields((currentFields) => {
+                if (currentFields.some((currentField) => currentField.fieldId === field.fieldId)) {
+                  return currentFields.map((currentField) =>
+                    currentField.fieldId === field.fieldId ? { ...currentField, status: "active" } : currentField,
+                  );
+                }
+                return [...currentFields, panelFieldFromPageField(field, "active")];
+              });
+            },
+            onField: (record) => {
+              setFields((currentFields) => mergePanelFieldRecord(currentFields, record));
+            },
           });
-        },
-        onField: (record) => {
-          setFields((currentFields) => mergePanelFieldRecord(currentFields, record));
-        },
-      });
+      if (cancelRef.current) {
+        updateStatus("idle");
+        return;
+      }
       setFields(fieldsFromRunResult(runResult));
       setResult(runResult);
-      if (cancelRef.current) {
-        setStatus("idle");
-      } else if (runResult.total === 0 || (runResult.filled === 0 && parserFailedResult(runResult))) {
+      if (runResult.total === 0 || (runResult.filled === 0 && parserFailedResult(runResult))) {
         setError(runResult.trackerError || "No application questions were parsed.");
-        setStatus("error");
+        updateStatus("error");
       } else {
-        setStatus("done");
+        updateStatus("done");
       }
       void refreshProfile();
     } catch (caught) {
-      setStatus("error");
+      updateStatus("error");
       setError(caught instanceof Error ? caught.message : "Autofill failed.");
     }
   }
@@ -1150,7 +1316,7 @@ function InPagePanel() {
   }
 
   const groups = groupedFields(fields);
-  const filling = status === "scanning" || status === "planning" || status === "filling";
+  const filling = panelStatusIsRunning(status);
 
   return (
     <aside className="jp-panel" aria-label="JobPosted autofill panel">
@@ -1220,7 +1386,7 @@ function InPagePanel() {
         <div className="jp-panel-body jp-fill-body">
           <div className="jp-progress-head">
             <strong>{fields.length > 0 ? `${fields.length} questions parsed` : "Parsing questions"}</strong>
-            <button type="button" className="jp-cancel" onClick={() => { cancelRef.current = true; setStatus("idle"); }}>
+            <button type="button" className="jp-cancel" onClick={() => { cancelRef.current = true; updateStatus("idle"); }}>
               Cancel
             </button>
           </div>
@@ -1259,6 +1425,12 @@ function InPagePanel() {
               <span>{resultError}</span>
             </div>
           )}
+          {!filling ? (
+            <button type="button" className="jp-autofill-button" disabled={Boolean(authError)} onClick={() => void runPanelAutofill()}>
+              <Wand2 aria-hidden="true" />
+              Autofill this page
+            </button>
+          ) : null}
           {listOpen && (
             <div className="jp-checklist">
               <ChecklistGroup title="Required" fields={groups.required} />

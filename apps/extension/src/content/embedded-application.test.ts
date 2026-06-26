@@ -32,6 +32,27 @@ describe("embedded application frame detection", () => {
     expect(shouldDeferToEmbeddedApplication(document, "https://company.example/jobs/apply", true)).toBe(true);
   });
 
+  it("defers public company career pages that embed a Greenhouse job application frame", () => {
+    const document = doc(`
+      <main><h1>Engineering Manager</h1></main>
+      <iframe
+        id="grnhse_iframe"
+        src="https://job-boards.greenhouse.io/embed/job_app?for=databricks&token=7439442002"
+      ></iframe>
+    `);
+
+    expect(hasEmbeddedApplicationFrame(document, "https://www.databricks.com/company/careers/role?gh_jid=7439442002")).toBe(
+      true,
+    );
+    expect(
+      shouldDeferToEmbeddedApplication(
+        document,
+        "https://www.databricks.com/company/careers/role?gh_jid=7439442002",
+        true,
+      ),
+    ).toBe(true);
+  });
+
   it("matches supported ATS hosts by hostname, not arbitrary URL text", () => {
     expect(isApplicationHostUrl("https://jobs.lever.co/example/123")).toBe(true);
     expect(isApplicationHostUrl("https://www.recaptcha.net/?next=https%3A%2F%2Fjobs.lever.co%2Fexample")).toBe(false);

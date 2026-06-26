@@ -93,6 +93,62 @@ function markDocumentUploadHandled(doc: Document, key: ExtensionFieldMapping["ca
   if (flag) doc.documentElement.dataset[flag] = "true";
 }
 
+function uploadedDocumentKindPattern(key: ExtensionFieldMapping["canonicalKey"]) {
+  return key === "documents.coverLetter" ? /\bcover letter\b/ : /\b(resume|cv|curriculum vitae)\b/;
+}
+
+function uploadedFilenameMatches(scopeText: string, filename?: string | null) {
+  const normalizedFilename = normalizedText(filename);
+  if (!normalizedFilename) return false;
+  if (scopeText.includes(normalizedFilename)) return true;
+  const withoutExtension = normalizedFilename.replace(/\s+(pdf|docx?|txt|rtf)$/i, "").trim();
+  return withoutExtension.length >= 4 && scopeText.includes(withoutExtension) && /\b(pdf|docx?|txt|rtf)\b/.test(scopeText);
+}
+
+function uploadedDocumentScopeCandidates(element: HTMLElement) {
+  const candidates: HTMLElement[] = [];
+  let current = element.parentElement;
+  for (let depth = 0; current && depth < 8; depth += 1, current = current.parentElement) {
+    if (
+      current.matches(
+        [
+          "section",
+          "fieldset",
+          "[role='group']",
+          "[data-automation-id]",
+          "[data-testid]",
+          "[class*='upload' i]",
+          "[class*='file' i]",
+          "[class*='resume' i]",
+          "[class*='cover' i]",
+          "[id*='upload' i]",
+          "[id*='file' i]",
+          "[id*='resume' i]",
+          "[id*='cover' i]",
+        ].join(","),
+      )
+    ) {
+      candidates.push(current);
+    }
+  }
+  const body = element.ownerDocument.body;
+  if (body) candidates.push(body);
+  return candidates.filter((candidate, index, all) => all.indexOf(candidate) === index);
+}
+
+function uploadedDocumentAlreadyVisible(element: HTMLElement, key: ExtensionFieldMapping["canonicalKey"], filename?: string | null) {
+  const kindPattern = uploadedDocumentKindPattern(key);
+  return uploadedDocumentScopeCandidates(element).some((scope) => {
+    const scopeText = normalizedText(visibleText(scope.textContent));
+    if (!scopeText) return false;
+    const hasUploadedSignal = /\b(successfully uploaded|uploaded|selected file|selected files|delete|remove)\b/.test(scopeText);
+    const hasDocumentType = /\b(pdf|docx?|txt|rtf)\b/.test(scopeText);
+    if (uploadedFilenameMatches(scopeText, filename) && (hasUploadedSignal || hasDocumentType)) return true;
+    if (scope === element.ownerDocument.body) return false;
+    return kindPattern.test(scopeText) && hasUploadedSignal && hasDocumentType;
+  });
+}
+
 function filenameFromContentDisposition(header: string | null) {
   if (!header) return null;
   const encoded = /filename\*\s*=\s*(?:UTF-8'')?([^;]+)/i.exec(header)?.[1];
@@ -1048,11 +1104,30 @@ function dispatchTypeahead(element: HTMLElement, value: string) {
   }
 }
 
+function locationCitySearchValues(value: ExtensionFieldMapping["value"]) {
+  const desired = desiredString(value);
+  if (!desired) return [];
+  const parts = desired.split(",").map((part) => part.trim()).filter(Boolean);
+  if (parts.length <= 1) return [desired];
+  const [city, state, country] = parts;
+  return Array.from(
+    new Set(
+      [
+        city,
+        city && country ? `${city}, ${country}` : "",
+        city && state ? `${city}, ${state}` : "",
+        desired,
+      ].filter(Boolean),
+    ),
+  );
+}
+
 function comboboxSearchValues(
   mapping: ExtensionFieldMapping,
   countryHint: string | null | undefined,
 ) {
   const desired = desiredString(mapping.value);
+  if (mapping.canonicalKey === "location.city") return locationCitySearchValues(mapping.value);
   if (mapping.canonicalKey !== "identity.phoneCountryCode") return desired ? [desired] : [];
   const code = callingCodeDigits(mapping.value, countryHint);
   return Array.from(new Set([code ? `+${code}` : "", countryHint?.trim() ?? "", code ?? "", desired].filter(Boolean)));
@@ -1262,11 +1337,62 @@ function rankedComboboxOptions(
     .sort((a, b) => b.score - a.score);
 }
 
+function optionSignature(options: HTMLElement[]) {
+  return options.map((option) => normalizedText(labelForChoice(option))).filter(Boolean).join("|");
+}
+
+function hasSubmenuSignal(option: HTMLElement) {
+  const popup = normalizedText(
+    [
+      option.getAttribute("aria-haspopup"),
+      option.getAttribute("aria-expanded"),
+      option.getAttribute("aria-label"),
+      option.getAttribute("data-automation-id"),
+      option.getAttribute("data-automation-label"),
+    ].join(" "),
+  );
+  if (/\b(menu|listbox|dialog|tree|submenu|expand|expanded|collapsed|true)\b/.test(popup)) return true;
+  return Boolean(
+    option.querySelector(
+      [
+        "[aria-haspopup]",
+        "[aria-expanded]",
+        "[aria-label*='submenu' i]",
+        "[aria-label*='expand' i]",
+        "[aria-label*='collapsed' i]",
+        "[class*='chevron' i]",
+        "[class*='caret' i]",
+        "[class*='arrow' i]",
+        "[data-automation-id*='chevron' i]",
+        "[data-automation-id*='caret' i]",
+      ].join(","),
+    ),
+  );
+}
+
+function isBroadReferralSourceCategory(option: HTMLElement, mapping: ExtensionFieldMapping) {
+  if (!isReferralSourceKey(mapping.canonicalKey)) return false;
+  return /^(event|internal|job boards?|prior worker|referrals?|social media)$/i.test(labelForChoice(option).trim());
+}
+
+function shouldExploreComboboxSubmenu(
+  option: HTMLElement,
+  mapping: ExtensionFieldMapping,
+  beforeOptions: HTMLElement[],
+  afterOptions: HTMLElement[],
+) {
+  if (afterOptions.length === 0) return false;
+  if (hasSubmenuSignal(option)) return true;
+  if (!isBroadReferralSourceCategory(option, mapping)) return false;
+  return optionSignature(afterOptions) !== optionSignature(beforeOptions);
+}
+
 async function pickComboboxOption(
   field: FieldDescriptor,
   mapping: ExtensionFieldMapping,
   countryHint: string | null | undefined,
   ignoredGlobalOptions: ReadonlySet<HTMLElement> | null = null,
+  depth = 0,
 ) {
   const freshCandidates = comboboxOptionCandidates(field, mapping, ignoredGlobalOptions);
   const fallbackCandidates = ignoredGlobalOptions
@@ -1276,7 +1402,14 @@ async function pickComboboxOption(
   for (const candidateSet of [freshCandidates, fallbackCandidates]) {
     for (const { option } of rankedComboboxOptions(candidateSet, mapping, countryHint)) {
       activateDropdownOption(option);
-      await sleep(160);
+      await sleep(220);
+      const afterCandidates = comboboxOptionCandidates(field, mapping, null).filter((candidate) => candidate !== option);
+      const shouldExploreSubmenu = depth < 3 && shouldExploreComboboxSubmenu(option, mapping, candidateSet, afterCandidates);
+      if (shouldExploreSubmenu) {
+        const nestedIgnored = new Set([...(ignoredGlobalOptions ?? []), ...candidateSet, option]);
+        if (await pickComboboxOption(field, mapping, countryHint, nestedIgnored, depth + 1)) return true;
+        continue;
+      }
       if (!fieldChoiceValueMatches(field, mapping, countryHint)) {
         dispatchKey(option, "Enter");
         dispatchKey(field.element, "Enter");
@@ -1550,11 +1683,19 @@ export async function fillField(
       const docs = await context.getResume(null);
       const documentUrl = documentUrlForKey(effectiveMapping.canonicalKey, docs, effectiveMapping.value);
       const documentName = documentNameForKey(effectiveMapping.canonicalKey, docs);
+      if (uploadedDocumentAlreadyVisible(field.element, effectiveMapping.canonicalKey, documentName)) {
+        markDocumentUploadHandled(field.element.ownerDocument, effectiveMapping.canonicalKey);
+        return { ...base, status: "skipped", error: `Already attached ${label}.`, valuePreview: documentName ?? undefined };
+      }
       if (!documentUrl) {
         if (field.required) field.element.classList.add("jp-field-highlight");
         return { ...base, status: field.required ? "needs_user" : "skipped", error: `No ${label} available.` };
       }
       const file = await fetchDocumentFile(documentUrl, label, documentName);
+      if (uploadedDocumentAlreadyVisible(field.element, effectiveMapping.canonicalKey, file.name)) {
+        markDocumentUploadHandled(field.element.ownerDocument, effectiveMapping.canonicalKey);
+        return { ...base, status: "skipped", error: `Already attached ${label}.`, valuePreview: file.name };
+      }
       if (!assignFileInput(field.element, file)) {
         field.element.classList.add("jp-field-highlight");
         return { ...base, status: field.required ? "needs_user" : "skipped", error: `Could not attach ${label} automatically.` };
