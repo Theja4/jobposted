@@ -20,9 +20,6 @@ importers:
       '@jobposted/shared':
         specifier: workspace:*
         version: link:../../packages/shared
-      '@supabase/supabase-js':
-        specifier: ^2.100.1
-        version: 2.107.0
       lucide-react:
         specifier: ^1.7.0
         version: 1.17.0(react@19.2.4)

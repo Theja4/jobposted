@@ -1,4 +1,3 @@
-import { createClient } from "@supabase/supabase-js";
 import {
   DEFAULT_EXTENSION_SETTINGS,
   type ExtensionAuthSession,
@@ -50,6 +49,10 @@ function jwtExpiresAt(accessToken: string) {
 
 function apiUrl(path: string) {
   return `${JOBPOSTED_WEB_ORIGIN.replace(/\/$/, "")}${path}`;
+}
+
+function supabaseAuthTokenUrl() {
+  return `${SUPABASE_URL.replace(/\/+$/, "")}/auth/v1/token?grant_type=refresh_token`;
 }
 
 function storageKeyFromSupabaseUrl() {
@@ -143,6 +146,27 @@ async function readPortalCookieSession(): Promise<ExtensionAuthSession | null> {
   return null;
 }
 
+function sessionFromSupabaseRefreshPayload(
+  value: unknown,
+  fallbackUser: ExtensionAuthSession["user"],
+): ExtensionAuthSession | null {
+  const root = asRecord(value);
+  const accessToken = str(root.access_token ?? root.accessToken);
+  if (!accessToken) return null;
+
+  const expiresIn = num(root.expires_in ?? root.expiresIn);
+  const user = asRecord(root.user);
+  const userId = str(user.id);
+  return normalizeSession({
+    accessToken,
+    refreshToken: str(root.refresh_token ?? root.refreshToken) || null,
+    expiresAt:
+      num(root.expires_at ?? root.expiresAt) ??
+      (expiresIn ? Math.floor(Date.now() / 1000) + expiresIn : jwtExpiresAt(accessToken)),
+    user: userId ? { id: userId, email: str(user.email) || null } : fallbackUser,
+  });
+}
+
 async function refreshViaJobPosted(session: ExtensionAuthSession): Promise<ExtensionAuthSession | null> {
   if (!session.refreshToken) return null;
   const response = await fetch(apiUrl(API_SESSION_PATH), {
@@ -153,6 +177,26 @@ async function refreshViaJobPosted(session: ExtensionAuthSession): Promise<Exten
   if (!response?.ok) return null;
   const body = (await response.json().catch(() => null)) as { session?: ExtensionAuthSession } | null;
   return body?.session?.accessToken ? normalizeSession(body.session) : null;
+}
+
+async function refreshViaSupabaseAuth(session: ExtensionAuthSession): Promise<ExtensionAuthSession | null> {
+  if (!SUPABASE_URL || !SUPABASE_ANON_KEY || !session.refreshToken || !supabaseEnvMatchesSession(session)) {
+    return null;
+  }
+
+  const response = await fetch(supabaseAuthTokenUrl(), {
+    method: "POST",
+    headers: {
+      apikey: SUPABASE_ANON_KEY,
+      authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({ refresh_token: session.refreshToken }),
+  }).catch(() => null);
+  if (!response?.ok) return null;
+
+  const body = await response.json().catch(() => null);
+  return sessionFromSupabaseRefreshPayload(body, session.user);
 }
 
 function supabaseEnvMatchesSession(session: ExtensionAuthSession) {
@@ -180,27 +224,13 @@ async function refreshSession(session: ExtensionAuthSession): Promise<ExtensionA
     return viaJobPosted;
   }
 
-  if (!SUPABASE_URL || !SUPABASE_ANON_KEY || !session.refreshToken || !supabaseEnvMatchesSession(session)) {
-    return null;
+  const viaSupabase = await refreshViaSupabaseAuth(session);
+  if (viaSupabase) {
+    await writeSession(viaSupabase);
+    return viaSupabase;
   }
 
-  const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-    auth: { persistSession: false, autoRefreshToken: false },
-  });
-  const { data, error } = await supabase.auth.refreshSession({
-    refresh_token: session.refreshToken,
-  });
-  if (error || !data.session) return null;
-  const refreshed: ExtensionAuthSession = {
-    accessToken: data.session.access_token,
-    refreshToken: data.session.refresh_token,
-    expiresAt: data.session.expires_at,
-    user: data.session.user
-      ? { id: data.session.user.id, email: data.session.user.email ?? null }
-      : session.user,
-  };
-  await writeSession(refreshed);
-  return refreshed;
+  return null;
 }
 
 export async function readSession(): Promise<ExtensionAuthSession | null> {

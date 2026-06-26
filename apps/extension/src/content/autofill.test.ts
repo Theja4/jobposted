@@ -592,6 +592,99 @@ describe("content autofill extraction", () => {
     expect(root.textContent).not.toContain("Afghanistan");
   });
 
+  it("ignores zero-size phone country options while selecting Greenhouse education dropdowns", async () => {
+    const doc = installDom(`<!doctype html>
+      <form>
+        <div id="degree-select" class="select">
+          <label id="degree--0-label">Degree*</label>
+          <div class="select-shell">
+            <div class="select__control">
+              <div class="select__placeholder">Select...</div>
+              <input id="degree--0" class="select__input" role="combobox" aria-labelledby="degree--0-label" />
+            </div>
+            <input required tabindex="-1" aria-hidden="true" class="requiredInput" value="" />
+          </div>
+        </div>
+        <ul id="iti-0__country-listbox" role="listbox">
+          <li role="option" id="country-af">Afghanistan +93</li>
+          <li role="option" id="country-in">India +91</li>
+        </ul>
+        <div id="portal-root"></div>
+      </form>`);
+    const fields = extractPageFields(doc);
+    const degree = fields.find((item) => item.label === "Degree*");
+    expect(degree).toBeTruthy();
+
+    const view = doc.defaultView as Window & { __jobpostedAutofillLayout?: boolean };
+    view.__jobpostedAutofillLayout = true;
+    const rect = (width: number, height: number, left = 0, top = 0) =>
+      ({ width, height, left, top, right: left + width, bottom: top + height, x: left, y: top, toJSON: () => ({}) }) as DOMRect;
+    const setRect = (element: Element | null, width: number, height: number, left = 0, top = 0) => {
+      if (!element) return;
+      (element as HTMLElement).getBoundingClientRect = () => rect(width, height, left, top);
+    };
+    setRect(doc.getElementById("iti-0__country-listbox"), 0, 0);
+    setRect(doc.getElementById("country-af"), 0, 0);
+    setRect(doc.getElementById("country-in"), 0, 0);
+
+    const root = doc.getElementById("degree-select") as HTMLElement;
+    const input = doc.getElementById("degree--0") as HTMLInputElement;
+    input.addEventListener("click", () => {
+      if (doc.getElementById("react-select-degree--0-listbox")) return;
+      input.setAttribute("aria-expanded", "true");
+      input.setAttribute("aria-controls", "react-select-degree--0-listbox");
+      const list = doc.createElement("div");
+      list.id = "react-select-degree--0-listbox";
+      list.setAttribute("role", "listbox");
+      const associate = doc.createElement("div");
+      associate.id = "react-select-degree--0-option-0";
+      associate.className = "select__option";
+      associate.setAttribute("role", "option");
+      associate.textContent = "Associate's Degree";
+      const bachelor = doc.createElement("div");
+      bachelor.id = "react-select-degree--0-option-1";
+      bachelor.className = "select__option";
+      bachelor.setAttribute("role", "option");
+      bachelor.textContent = "Bachelor's Degree";
+      bachelor.addEventListener("mousedown", () => {
+        root.querySelector("input[required]")?.remove();
+        const selected = doc.createElement("div");
+        selected.className = "select__single-value";
+        selected.textContent = "Bachelor's Degree";
+        root.append(selected);
+        list.remove();
+      });
+      list.append(associate, bachelor);
+      doc.getElementById("portal-root")?.append(list);
+      setRect(list, 602, 302, 500, 490);
+      setRect(associate, 600, 36, 501, 494);
+      setRect(bachelor, 600, 36, 501, 530);
+    });
+
+    try {
+      const records = await applyAutofillPlan({
+        fields,
+        plan: [
+          {
+            fieldId: degree!.fieldId,
+            action: "select",
+            value: "Bachelor's Degree",
+            optionLabel: "Bachelor's Degree",
+            confidence: 0.9,
+            note: "Profile degree.",
+          },
+        ],
+        getResume: async () => null,
+      });
+
+      expect(records[0]).toMatchObject({ status: "filled" });
+      expect(root.querySelector(".select__single-value")?.textContent).toBe("Bachelor's Degree");
+      expect(root.textContent).not.toContain("Afghanistan");
+    } finally {
+      delete view.__jobpostedAutofillLayout;
+    }
+  });
+
   it("keeps blank Greenhouse select wrappers in the fill plan instead of marking label text as current value", () => {
     const doc = installDom(`<!doctype html>
       <form>
@@ -879,11 +972,11 @@ describe("content autofill extraction", () => {
     expect(titles.map((item) => item.repeaterIndex)).toEqual([0, 1]);
   });
 
-  it("uses Greenhouse-style headings for generic add buttons and repeater context", async () => {
+  it("uses Greenhouse-style containers for generic add buttons and repeater context", async () => {
     const doc = installDom(`<!doctype html>
       <form class="application--form">
-        <div class="application-heading"><h2>Employment</h2></div>
-        <div id="employment-fields">
+        <fieldset class="phone-input"><legend>Phone</legend><input id="phone" /></fieldset>
+        <div id="employment-fields" class="employment--container">
           <label for="company-name-0">Company name</label>
           <input id="company-name-0" />
           <label for="title-0">Title</label>
@@ -891,8 +984,7 @@ describe("content autofill extraction", () => {
           <button type="button" class="add-another-button" id="employment-add">Add another</button>
         </div>
         <hr />
-        <div class="application-heading"><h2>Education</h2></div>
-        <div id="education-fields">
+        <div id="education-fields" class="education--container">
           <div class="select">
             <label id="school--0-label">School*</label>
             <div class="select-shell">
@@ -905,32 +997,56 @@ describe("content autofill extraction", () => {
         <div class="application-heading"><h2>Voluntary Self-Identification</h2></div>
       </form>`);
 
+    let employmentIndex = 1;
     doc.querySelector("#employment-add")?.addEventListener("click", () => {
       const row = doc.createElement("div");
-      row.innerHTML = `<label for="company-name-1">Company name</label><input id="company-name-1" />`;
+      const index = employmentIndex++;
+      row.innerHTML = `<label for="company-name-${index}">Company name</label><input id="company-name-${index}" />`;
       doc.getElementById("employment-fields")?.append(row);
     });
+    let educationIndex = 1;
     doc.querySelector("#education-add")?.addEventListener("click", () => {
-      throw new Error("education add button should not be clicked for a single education row");
+      const row = doc.createElement("div");
+      const index = educationIndex++;
+      row.innerHTML = `<div class="select">
+        <label id="school--${index}-label">School*</label>
+        <div class="select-shell">
+          <input id="school--${index}" class="select__input" role="combobox" aria-labelledby="school--${index}-label" />
+          <input class="requiredInput" required aria-hidden="true" />
+        </div>
+      </div>`;
+      doc.getElementById("education-fields")?.append(row);
     });
 
     await ensureRepeaters(
       doc,
       profile({
+        education: [
+          { school: "Osmania University", degree: "Bachelor's Degree", field: "Computer Science" },
+          { school: "JNTU Hyderabad", degree: "Master's Degree", field: "Data Science" },
+          { school: "IIT Madras", degree: "Certificate", field: "Machine Learning" },
+        ],
         experience: [
           { title: "Analyst", company: "ION Group", startDate: "2021", endDate: "2026", current: false, bullets: [] },
           { title: "Intern", company: "Virtusa", startDate: "2020", endDate: "2021", current: false, bullets: [] },
+          { title: "Associate", company: "Acme", startDate: "2019", endDate: "2020", current: false, bullets: [] },
+          { title: "Trainee", company: "Beta", startDate: "2018", endDate: "2019", current: false, bullets: [] },
         ],
       }),
     );
 
     const fields = extractPageFields(doc);
-    const company = fields.find((item) => item.label === "Company name");
-    const school = fields.find((item) => item.label === "School*");
+    const companies = fields.filter((item) => item.label === "Company name");
+    const schools = fields.filter((item) => item.label === "School*");
 
-    expect(doc.querySelector("#company-name-1")).toBeTruthy();
-    expect(company).toMatchObject({ section: "Employment", repeater: "experience", repeaterIndex: 0 });
-    expect(school).toMatchObject({ section: "Education", repeater: "education", repeaterIndex: 0 });
+    expect(doc.querySelector("#company-name-3")).toBeTruthy();
+    expect(doc.querySelector("#school--2")).toBeTruthy();
+    expect(companies.map((item) => item.section)).toEqual(["Employment", "Employment", "Employment", "Employment"]);
+    expect(companies.map((item) => item.repeater)).toEqual(["experience", "experience", "experience", "experience"]);
+    expect(companies.map((item) => item.repeaterIndex)).toEqual([0, 1, 2, 3]);
+    expect(schools.map((item) => item.section)).toEqual(["Education", "Education", "Education"]);
+    expect(schools.map((item) => item.repeater)).toEqual(["education", "education", "education"]);
+    expect(schools.map((item) => item.repeaterIndex)).toEqual([0, 1, 2]);
   });
 
   it("treats a React-select required mirror value as a successful selection", async () => {

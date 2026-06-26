@@ -45,6 +45,20 @@ const FULL_OPTIONS_LIMIT = 30;
 const RANKED_OPTIONS_LIMIT = 16;
 const DICTIONARY_OPTIONS_LIMIT = 8;
 const SECTION_HEADING_SELECTOR = "h1,h2,h3,h4,legend,[role='heading'],[data-automation-id='stepName']";
+const SECTION_CONTAINER_SELECTOR = [
+  "section",
+  "fieldset",
+  "[data-testid]",
+  "[data-automation-id]",
+  "[class*='section' i]",
+  "[class*='education' i]",
+  "[class*='experience' i]",
+  "[class*='employment' i]",
+  "[id*='education' i]",
+  "[id*='experience' i]",
+  "[id*='employment' i]",
+].join(",");
+const MAX_REPEATER_ROWS = 12;
 
 type OptionDictionary = NonNullable<ExtensionAutofillPageField["optionDictionary"]>;
 
@@ -216,16 +230,38 @@ function isInsideJobPostedPanel(element: Element) {
 
 function isVisible(element: HTMLElement) {
   if (isInsideJobPostedPanel(element)) return false;
-  if (element.closest("[hidden], [aria-hidden='true']")) return false;
   if (element instanceof HTMLInputElement && /^(hidden|submit|button|image|reset)$/i.test(element.type)) return false;
   // A hidden <select> with real options is the data model behind a custom dropdown
   // widget (select2/chosen/react-select). Keep it: we read its options and fill it by
   // value + change event, which those widgets mirror back into their visible UI.
   if (element instanceof HTMLSelectElement && element.options.length > 1) return true;
   const view = element.ownerDocument.defaultView;
-  const style = view?.getComputedStyle?.(element);
-  if (style && (style.display === "none" || style.visibility === "hidden" || style.opacity === "0")) return false;
+  for (let node: HTMLElement | null = element; node; node = node.parentElement) {
+    if (node.hasAttribute("hidden") || node.getAttribute("aria-hidden") === "true") return false;
+    const style = view?.getComputedStyle?.(node);
+    if (style && (style.display === "none" || style.visibility === "hidden" || style.visibility === "collapse" || style.opacity === "0")) {
+      return false;
+    }
+  }
+  if (hasBrowserLayout(element) && !hasRenderedBox(element)) return false;
   return true;
+}
+
+function hasBrowserLayout(element: HTMLElement) {
+  const view = element.ownerDocument.defaultView;
+  if (!view || typeof element.getBoundingClientRect !== "function") return false;
+  const syntheticLayout = Boolean((view as Window & { __jobpostedAutofillLayout?: boolean }).__jobpostedAutofillLayout);
+  const userAgent = view.navigator?.userAgent ?? "";
+  if (/\b(linkedom|jsdom|happy-dom)\b/i.test(userAgent) && !syntheticLayout) return false;
+  const layoutView = view as unknown as { innerWidth?: number; visualViewport?: unknown };
+  return syntheticLayout || Boolean(layoutView.visualViewport || layoutView.innerWidth || element.ownerDocument.documentElement?.clientWidth);
+}
+
+function hasRenderedBox(element: HTMLElement) {
+  const rect = element.getBoundingClientRect();
+  if (rect.width > 0 && rect.height > 0) return true;
+  const rects = element.getClientRects?.();
+  return Boolean(rects && Array.from(rects).some((item) => item.width > 0 && item.height > 0));
 }
 
 export function countVisibleApplicationControls(doc: Document = document) {
@@ -271,6 +307,32 @@ function precedes(a: HTMLElement, b: HTMLElement) {
 
 function visibleHeadingText(element: HTMLElement) {
   return visibleText(`${element.getAttribute("aria-label") ?? ""} ${element.getAttribute("data-automation-id") ?? ""} ${element.textContent ?? ""}`);
+}
+
+function elementDescriptor(element: HTMLElement) {
+  return normalize(
+    `${element.id} ${typeof element.className === "string" ? element.className : ""} ${element.getAttribute("data-testid") ?? ""} ${element.getAttribute("data-automation-id") ?? ""} ${element.getAttribute("aria-label") ?? ""}`,
+  );
+}
+
+function semanticSectionKind(element: HTMLElement) {
+  const descriptor = elementDescriptor(element);
+  if (/\b(education|school|university|college)\b/.test(descriptor)) return "Education";
+  if (/\b(experience|employment|work history|job history|positions?)\b/.test(descriptor)) return "Employment";
+  return "";
+}
+
+function semanticSectionContainer(element: HTMLElement) {
+  for (let node: HTMLElement | null = element; node && node !== element.ownerDocument.body; node = node.parentElement) {
+    if (!node.matches(SECTION_CONTAINER_SELECTOR)) continue;
+    if (semanticSectionKind(node)) return node;
+  }
+  return null;
+}
+
+function semanticSectionText(element: HTMLElement) {
+  const container = semanticSectionContainer(element);
+  return container ? semanticSectionKind(container) : "";
 }
 
 function nearestPrecedingHeading(element: HTMLElement) {
@@ -344,8 +406,9 @@ function sectionFor(element: HTMLElement) {
   const fieldset = element.closest("fieldset");
   const legend = fieldset?.querySelector("legend");
   const scoped = scopedHeadingText(element);
+  const semantic = semanticSectionText(element);
   const preceding = nearestPrecedingHeadingText(element);
-  return [legend?.textContent, scoped || preceding]
+  return [legend?.textContent, scoped || semantic || preceding]
     .map(visibleText)
     .filter(Boolean)
     .join(" ");
@@ -356,7 +419,7 @@ function repeaterFor(element: HTMLElement): ExtensionAutofillPageField["repeater
   if (workdayHint) return workdayHint;
   const local =
     element.closest<HTMLElement>(
-      ".select, .select__container, .input-wrapper, .field, fieldset, section, [data-automation-id], [data-testid], [class*='field' i]",
+      ".select, .select__container, .input-wrapper, .field, fieldset, section, [data-automation-id], [data-testid], [class*='field' i], [class*='education' i], [class*='experience' i], [class*='employment' i], [id*='education' i], [id*='experience' i], [id*='employment' i]",
     ) ?? element;
   const text = normalize(`${labelFor(element)} ${sectionFor(element)} ${textWithoutControls(local)}`);
   if (/\b(education|school|university|college)\b/.test(text)) return "education";
@@ -1305,9 +1368,21 @@ function choiceActivationTarget(element: HTMLElement) {
 }
 
 function dispatchMouseLike(element: HTMLElement, type: string) {
-  const EventCtor = element.ownerDocument.defaultView?.MouseEvent ?? Event;
+  const view = element.ownerDocument.defaultView ?? window;
+  const rect = element.getBoundingClientRect?.();
+  const clientX = rect ? rect.left + Math.max(1, rect.width / 2) : 0;
+  const clientY = rect ? rect.top + Math.max(1, rect.height / 2) : 0;
   const isDown = /(?:pointerdown|mousedown)$/i.test(type);
-  element.dispatchEvent(new EventCtor(type, { bubbles: true, cancelable: true, button: 0, buttons: isDown ? 1 : 0, view: element.ownerDocument.defaultView }));
+  const eventInit = { bubbles: true, cancelable: true, button: 0, buttons: isDown ? 1 : 0, clientX, clientY, view };
+  const PointerEventCtor = view.PointerEvent ?? globalThis.PointerEvent;
+  if (PointerEventCtor && type.startsWith("pointer")) {
+    element.dispatchEvent(
+      new PointerEventCtor(type, { ...eventInit, pointerId: 1, pointerType: "mouse", isPrimary: true }),
+    );
+    return;
+  }
+  const MouseEventCtor = view.MouseEvent ?? globalThis.MouseEvent ?? Event;
+  element.dispatchEvent(new MouseEventCtor(type.replace(/^pointer/, "mouse"), eventInit));
 }
 
 function isSearchableChoiceInput(element: HTMLElement) {
@@ -1980,6 +2055,8 @@ function sectionIntentRegex(intent: "education" | "experience") {
 }
 
 function headingMatchesRepeaterIntent(element: HTMLElement, intent: "education" | "experience") {
+  const semantic = semanticSectionText(element);
+  if (semantic && sectionIntentRegex(intent).test(normalize(semantic))) return true;
   const heading = nearestPrecedingHeading(element);
   if (!heading) return false;
   return sectionIntentRegex(intent).test(normalize(visibleHeadingText(heading)));
@@ -1987,7 +2064,8 @@ function headingMatchesRepeaterIntent(element: HTMLElement, intent: "education" 
 
 function closestRepeaterSection(element: HTMLElement) {
   return (
-    element.closest<HTMLElement>("section, fieldset, [data-testid], [data-automation-id], [class*='section' i], [class*='education' i], [class*='experience' i]") ??
+    semanticSectionContainer(element) ??
+    element.closest<HTMLElement>(SECTION_CONTAINER_SELECTOR) ??
     element.parentElement ??
     element
   );
@@ -2002,12 +2080,10 @@ function sectionForRepeaterIntent(doc: Document, intent: "education" | "experien
 
   return (
     Array.from(
-      doc.querySelectorAll<HTMLElement>(
-        "section, fieldset, [data-testid], [data-automation-id], [class*='education' i], [class*='experience' i]",
-      ),
+      doc.querySelectorAll<HTMLElement>(SECTION_CONTAINER_SELECTOR),
     )
       .filter(isVisible)
-      .find((element) => pattern.test(normalize(`${element.getAttribute("data-automation-id") ?? ""} ${element.textContent ?? ""}`))) ?? null
+      .find((element) => pattern.test(`${elementDescriptor(element)} ${normalize(element.textContent ?? "")}`)) ?? null
   );
 }
 
@@ -2033,11 +2109,12 @@ function findRepeaterAddButton(doc: Document, intent: "education" | "experience"
 }
 
 async function clickAddButtons(doc: Document, intent: "education" | "experience", count: number) {
-  for (let index = 1; index < Math.min(count, 5); index += 1) {
+  const desiredCount = Math.max(0, Math.min(count, MAX_REPEATER_ROWS));
+  for (let index = 1; index < desiredCount; index += 1) {
     const button = findRepeaterAddButton(doc, intent);
     if (!button) return;
     button.click();
-    await sleep(160);
+    await sleep(240);
   }
 }
 
