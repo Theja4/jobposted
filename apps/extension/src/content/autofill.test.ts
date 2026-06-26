@@ -775,6 +775,77 @@ describe("content autofill extraction", () => {
     );
   });
 
+  it("preserves concrete planner-selected education options", () => {
+    const doc = installDom(`<!doctype html>
+      <form>
+        <section id="education-fields" class="education--container">
+          <h2>Education</h2>
+          <div id="school-select" class="select">
+            <label id="school--0-label">School*</label>
+            <div class="select__control">
+              <input id="school--0" class="select__input" role="combobox" aria-labelledby="school--0-label" />
+            </div>
+            <div class="select__menu">
+              <div role="option" class="select__option">0 - Not Applicable</div>
+              <div role="option" class="select__option">0 - Other</div>
+            </div>
+          </div>
+          <div id="degree-select" class="select">
+            <label id="degree--0-label">Degree*</label>
+            <div class="select__control">
+              <input id="degree--0" class="select__input" role="combobox" aria-labelledby="degree--0-label" />
+            </div>
+            <div class="select__menu">
+              <div role="option" class="select__option">Bachelor's Degree</div>
+              <div role="option" class="select__option">Other</div>
+            </div>
+          </div>
+          <div id="discipline-select" class="select">
+            <label id="discipline--0-label">Discipline*</label>
+            <div class="select__control">
+              <input id="discipline--0" class="select__input" role="combobox" aria-labelledby="discipline--0-label" />
+            </div>
+            <div class="select__menu">
+              <div role="option" class="select__option">Computer Science</div>
+              <div role="option" class="select__option">Engineering</div>
+              <div role="option" class="select__option">Other</div>
+            </div>
+          </div>
+        </section>
+      </form>`);
+    const fields = extractPageFields(doc);
+    const school = fields.find((item) => /school/i.test(item.label));
+    const degree = fields.find((item) => /degree/i.test(item.label));
+    const discipline = fields.find((item) => /discipline/i.test(item.label));
+    expect(school).toBeTruthy();
+    expect(degree).toBeTruthy();
+    expect(discipline).toBeTruthy();
+    const plannerPlan: ExtensionAutofillPlan = {
+      stepName: "Application",
+      fields: fields.map((field) => ({
+        fieldId: field.fieldId,
+        action: field.fieldId === degree?.fieldId || field.fieldId === discipline?.fieldId ? "select" : "skip",
+        value: field.fieldId === degree?.fieldId ? "B.Tech" : field.fieldId === discipline?.fieldId ? "Electronics" : null,
+        optionLabel: field.fieldId === degree?.fieldId ? "Bachelor's Degree" : field.fieldId === discipline?.fieldId ? "Engineering" : null,
+        confidence: field.fieldId === degree?.fieldId || field.fieldId === discipline?.fieldId ? 0.86 : 0.35,
+        note: field.fieldId === degree?.fieldId || field.fieldId === discipline?.fieldId ? "planner selected concrete option" : "model skipped",
+      })),
+    };
+
+    const merged = mergeProfileEducationPlan(
+      fields,
+      plannerPlan,
+      profile({
+        education: [{ school: "University That Is Not Listed", degree: "B.Tech", field: "Electronics" }],
+      }),
+    );
+    const itemFor = (field: PageField | undefined) => merged.fields.find((item) => item.fieldId === field?.fieldId);
+
+    expect(itemFor(school)).toMatchObject({ action: "select", optionLabel: "0 - Other" });
+    expect(itemFor(degree)).toMatchObject({ action: "select", value: "B.Tech", optionLabel: "Bachelor's Degree" });
+    expect(itemFor(discipline)).toMatchObject({ action: "select", value: "Electronics", optionLabel: "Engineering" });
+  });
+
   it("falls back to Other on education comboboxes when the school is not available", async () => {
     const doc = installDom(`<!doctype html>
       <form>

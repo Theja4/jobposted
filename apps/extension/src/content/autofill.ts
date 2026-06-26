@@ -1249,13 +1249,18 @@ function educationFallbackOption<T>(
   return options.find((option) => isUnlistedEducationOption(label(option))) ?? null;
 }
 
+function isFallbackEducationOptionText(value: string) {
+  return EDUCATION_FALLBACK_PATTERNS.some((pattern) => pattern.test(value)) || isUnlistedEducationOption(value);
+}
+
 function reliableEducationOption<T>(
   field: Pick<ExtensionAutofillPageField, "label" | "section" | "repeater">,
   wanted: string,
   options: T[],
   label: (option: T) => string,
 ) {
-  const best = bestOptionMatch(wanted, options, label);
+  const realOptions = options.filter((option) => !isFallbackEducationOptionText(label(option)));
+  const best = bestOptionMatch(wanted, realOptions.length > 0 ? realOptions : options, label);
   if (best && best.score >= 0.72) return best.option;
   return educationFallbackOption(field, options, label);
 }
@@ -1277,6 +1282,13 @@ function educationPlanItemForField(field: PageField, profile: MasterProfile): Ex
   };
 }
 
+function hasPlannerEducationValue(item: ExtensionAutofillPlanItem) {
+  if (item.action !== "select" && item.action !== "fill") return false;
+  const label = clean(item.optionLabel);
+  const value = typeof item.value === "string" ? clean(item.value) : "";
+  return Boolean(label || value);
+}
+
 export function mergeProfileEducationPlan(fields: PageField[], plan: ExtensionAutofillPlan, profile: MasterProfile): ExtensionAutofillPlan {
   const replacements = new Map<string, ExtensionAutofillPlanItem>();
   const fieldById = new Map(fields.map((field) => [field.fieldId, field]));
@@ -1289,15 +1301,17 @@ export function mergeProfileEducationPlan(fields: PageField[], plan: ExtensionAu
   const mergedIds = new Set<string>();
   const deferredSchoolFields: ExtensionAutofillPlanItem[] = [];
   const mergedFields = plan.fields.flatMap((item) => {
-    const replacement = replacements.get(item.fieldId);
+    const field = fieldById.get(item.fieldId);
+    const replacement = field && educationPlanFieldKey(field) && !hasPlannerEducationValue(item) ? replacements.get(item.fieldId) : null;
     if (replacement) {
       mergedIds.add(item.fieldId);
-      if (educationPlanFieldKey(fieldById.get(item.fieldId) ?? { label: "", section: null, repeater: null }) === "school") {
+      if (educationPlanFieldKey(field ?? { label: "", section: null, repeater: null }) === "school") {
         deferredSchoolFields.push(replacement);
         return [];
       }
       return [replacement];
     }
+    if (field && educationPlanFieldKey(field)) mergedIds.add(item.fieldId);
     return [item];
   });
   for (const field of fields) {
