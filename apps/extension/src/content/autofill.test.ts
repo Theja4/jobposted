@@ -40,6 +40,17 @@ function installDom(html: string, url = "https://boards.greenhouse.io/acme/jobs/
   return document;
 }
 
+function normalizedTestText(value: unknown) {
+  return String(value ?? "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
 function profile(overrides: Partial<MasterProfile> = {}): MasterProfile {
   return {
     identity: { firstName: "Asha", lastName: "Raman", email: "asha@example.com", phone: "+91 98765 43210" },
@@ -877,6 +888,15 @@ describe("content autofill extraction", () => {
       const root = doc.getElementById(rootId) as HTMLElement;
       const input = doc.getElementById(inputId) as HTMLInputElement;
       const listId = `react-select-${inputId}-listbox`;
+      const commitChoice = (choice: string) => {
+        root.querySelector("input[required]")?.remove();
+        root.querySelector(".select__single-value")?.remove();
+        const selected = doc.createElement("div");
+        selected.className = "select__single-value";
+        selected.textContent = choice;
+        root.append(selected);
+        doc.getElementById(listId)?.remove();
+      };
       const openMenu = () => {
         if (doc.getElementById(listId)) return;
         input.setAttribute("aria-controls", listId);
@@ -889,15 +909,7 @@ describe("content autofill extraction", () => {
           option.className = "select__option";
           option.setAttribute("role", "option");
           option.textContent = choice;
-          option.addEventListener("mousedown", () => {
-            root.querySelector("input[required]")?.remove();
-            root.querySelector(".select__single-value")?.remove();
-            const selected = doc.createElement("div");
-            selected.className = "select__single-value";
-            selected.textContent = choice;
-            root.append(selected);
-            list.remove();
-          });
+          option.addEventListener("mousedown", (event) => event.preventDefault());
           list.append(option);
         });
         portal.append(list);
@@ -905,6 +917,13 @@ describe("content autofill extraction", () => {
       input.addEventListener("click", openMenu);
       input.addEventListener("keydown", (event) => {
         if (event.key === "ArrowDown") openMenu();
+        if (event.key === "Enter") {
+          const wanted = normalizedTestText(input.value);
+          const choice =
+            choices.find((item) => normalizedTestText(item) === wanted) ??
+            choices.find((item) => normalizedTestText(item).includes(wanted));
+          if (choice) commitChoice(choice);
+        }
         if (event.key === "Escape") doc.getElementById(listId)?.remove();
       });
     };

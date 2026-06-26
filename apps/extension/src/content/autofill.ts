@@ -1514,12 +1514,27 @@ function isSearchableChoiceInput(element: HTMLElement) {
   );
 }
 
+function reactSelectControl(element: HTMLElement) {
+  return isReactSelectRoot(element)
+    ? element.querySelector<HTMLElement>("[class^='select__control'], [class*=' select__control']")
+    : null;
+}
+
 function activateChoice(element: HTMLElement) {
   const target = choiceActivationTarget(element);
+  element.scrollIntoView?.({ block: "center", inline: "nearest" });
+  const control = reactSelectControl(element);
+  if (control && control !== target) {
+    dispatchMouseLike(control, "pointerdown");
+    dispatchMouseLike(control, "mousedown");
+    dispatchMouseLike(control, "pointerup");
+    dispatchMouseLike(control, "mouseup");
+    control.click();
+  }
   target.focus?.();
   if (isSearchableChoiceInput(target)) {
     // React-select-like widgets often ignore synthetic mouse events on the
-    // wrapper, but they will open from their focused input plus keyboard nav.
+    // wrapper, so also open from their focused input plus keyboard nav.
     target.click();
     return target;
   }
@@ -1529,6 +1544,15 @@ function activateChoice(element: HTMLElement) {
   dispatchMouseLike(target, "mouseup");
   target.click();
   return target;
+}
+
+async function commitSearchableChoiceByText(field: PageField, input: HTMLInputElement, targetLabel: string, selectedOptionLabel?: string) {
+  const searchText = selectedOptionLabel || targetLabel;
+  clearChoiceSearchText(input);
+  setChoiceSearchText(input, searchText);
+  await sleep(180);
+  pressChoiceKey(input, "Enter");
+  return waitForChoiceSelection(field, targetLabel, selectedOptionLabel ?? searchText, 500);
 }
 
 function pressChoiceKey(element: HTMLElement, key: string) {
@@ -2018,6 +2042,7 @@ async function fillCombobox(field: PageField, label: string) {
     const matchLabel = optionTextForElement(match);
     selectChoiceOption(match);
     if (await waitForChoiceSelection(field, targetLabel, matchLabel)) return true;
+    if (input && (await commitSearchableChoiceByText(field, input, targetLabel, matchLabel))) return true;
     pressChoiceKey(input ?? target, "Enter");
     if (await waitForChoiceSelection(field, targetLabel, matchLabel, 400)) return true;
   }
@@ -2039,6 +2064,7 @@ async function fillCombobox(field: PageField, label: string) {
       const matchLabel = optionTextForElement(match);
       selectChoiceOption(match);
       if (await waitForChoiceSelection(field, targetLabel, matchLabel)) return true;
+      if (await commitSearchableChoiceByText(field, input, targetLabel, matchLabel)) return true;
       pressChoiceKey(input, "Enter");
       if (await waitForChoiceSelection(field, targetLabel, matchLabel, 400)) return true;
       clearChoiceSearchText(input);
