@@ -1230,12 +1230,22 @@ function isUnlistedEducationOption(value: string) {
   );
 }
 
+const EDUCATION_FALLBACK_PATTERNS = [
+  /\bother\b/i,
+  /\b(not listed|not in list|not available|unlisted|not found|cannot find|can't find)\b/i,
+  /\b(not applicable|unknown)\b/i,
+];
+
 function educationFallbackOption<T>(
   field: Pick<ExtensionAutofillPageField, "label" | "section" | "repeater">,
   options: T[],
   label: (option: T) => string,
 ) {
   if (!educationPlanFieldKey(field)) return null;
+  for (const pattern of EDUCATION_FALLBACK_PATTERNS) {
+    const match = options.find((option) => pattern.test(label(option)));
+    if (match) return match;
+  }
   return options.find((option) => isUnlistedEducationOption(label(option))) ?? null;
 }
 

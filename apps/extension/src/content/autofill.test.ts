@@ -697,7 +697,10 @@ describe("content autofill extraction", () => {
             <div class="select__control">
               <input id="school--0" class="select__input" role="combobox" aria-labelledby="school--0-label" />
             </div>
-            <div class="select__menu"><div role="option" class="select__option">Other</div></div>
+            <div class="select__menu">
+              <div role="option" class="select__option">0 - Not Applicable</div>
+              <div role="option" class="select__option">0 - Other</div>
+            </div>
           </div>
           <div id="degree-select" class="select">
             <label id="degree--0-label">Degree*</label>
@@ -753,7 +756,7 @@ describe("content autofill extraction", () => {
     );
     const itemFor = (field: PageField | undefined) => merged.fields.find((item) => item.fieldId === field?.fieldId);
 
-    expect(itemFor(school)).toMatchObject({ action: "select", value: "University That Is Not Listed", optionLabel: "Other" });
+    expect(itemFor(school)).toMatchObject({ action: "select", value: "University That Is Not Listed", optionLabel: "0 - Other" });
     expect(itemFor(degree)).toMatchObject({ action: "select", value: "Bachelor's Degree", optionLabel: "Bachelor's Degree" });
     expect(itemFor(discipline)).toMatchObject({ action: "select", value: "Computer Science", optionLabel: "Computer Science" });
     expect(merged.fields.findIndex((item) => item.fieldId === degree!.fieldId)).toBeLessThan(
@@ -787,19 +790,23 @@ describe("content autofill extraction", () => {
       const list = doc.createElement("div");
       list.id = "school-listbox";
       list.setAttribute("role", "listbox");
+      const notApplicable = doc.createElement("div");
+      notApplicable.className = "select__option";
+      notApplicable.setAttribute("role", "option");
+      notApplicable.textContent = "0 - Not Applicable";
       const other = doc.createElement("div");
       other.className = "select__option";
       other.setAttribute("role", "option");
-      other.textContent = "Other";
+      other.textContent = "0 - Other";
       other.addEventListener("mousedown", () => {
         root.querySelector("input[required]")?.remove();
         const selected = doc.createElement("div");
         selected.className = "select__single-value";
-        selected.textContent = "Other";
+        selected.textContent = "0 - Other";
         root.append(selected);
         list.remove();
       });
-      list.append(other);
+      list.append(notApplicable, other);
       doc.getElementById("portal-root")?.append(list);
     });
 
@@ -824,7 +831,118 @@ describe("content autofill extraction", () => {
     });
 
     expect(records[0]).toMatchObject({ status: "filled" });
-    expect(root.querySelector(".select__single-value")?.textContent).toBe("Other");
+    expect(root.querySelector(".select__single-value")?.textContent).toBe("0 - Other");
+  });
+
+  it("fills Greenhouse education dropdowns when school fallback precedes exact degree and discipline options", async () => {
+    const doc = installDom(`<!doctype html>
+      <form>
+        <section id="education-fields" class="education--container">
+          <h2>Education</h2>
+          <div id="school-select" class="select">
+            <label id="school--0-label">School*</label>
+            <div class="select-shell">
+              <div class="select__control">
+                <div class="select__placeholder">Select...</div>
+                <input id="school--0" class="select__input" role="combobox" aria-autocomplete="list" aria-labelledby="school--0-label" />
+              </div>
+              <input class="requiredInput" required aria-hidden="true" value="" />
+            </div>
+          </div>
+          <div id="degree-select" class="select">
+            <label id="degree--0-label">Degree*</label>
+            <div class="select-shell">
+              <div class="select__control">
+                <div class="select__placeholder">Select...</div>
+                <input id="degree--0" class="select__input" role="combobox" aria-autocomplete="list" aria-labelledby="degree--0-label" />
+              </div>
+              <input class="requiredInput" required aria-hidden="true" value="" />
+            </div>
+          </div>
+          <div id="discipline-select" class="select">
+            <label id="discipline--0-label">Discipline*</label>
+            <div class="select-shell">
+              <div class="select__control">
+                <div class="select__placeholder">Select...</div>
+                <input id="discipline--0" class="select__input" role="combobox" aria-autocomplete="list" aria-labelledby="discipline--0-label" />
+              </div>
+              <input class="requiredInput" required aria-hidden="true" value="" />
+            </div>
+          </div>
+          <div id="portal-root"></div>
+        </section>
+      </form>`);
+    const portal = doc.getElementById("portal-root") as HTMLElement;
+    const attachMenu = (rootId: string, inputId: string, choices: string[]) => {
+      const root = doc.getElementById(rootId) as HTMLElement;
+      const input = doc.getElementById(inputId) as HTMLInputElement;
+      const listId = `react-select-${inputId}-listbox`;
+      const openMenu = () => {
+        if (doc.getElementById(listId)) return;
+        input.setAttribute("aria-controls", listId);
+        const list = doc.createElement("div");
+        list.id = listId;
+        list.setAttribute("role", "listbox");
+        choices.forEach((choice, index) => {
+          const option = doc.createElement("div");
+          option.id = `${listId}-option-${index}`;
+          option.className = "select__option";
+          option.setAttribute("role", "option");
+          option.textContent = choice;
+          option.addEventListener("mousedown", () => {
+            root.querySelector("input[required]")?.remove();
+            root.querySelector(".select__single-value")?.remove();
+            const selected = doc.createElement("div");
+            selected.className = "select__single-value";
+            selected.textContent = choice;
+            root.append(selected);
+            list.remove();
+          });
+          list.append(option);
+        });
+        portal.append(list);
+      };
+      input.addEventListener("click", openMenu);
+      input.addEventListener("keydown", (event) => {
+        if (event.key === "ArrowDown") openMenu();
+        if (event.key === "Escape") doc.getElementById(listId)?.remove();
+      });
+    };
+    attachMenu("school-select", "school--0", ["0 - Not Applicable", "0 - Other", "Aalborg University"]);
+    attachMenu("degree-select", "degree--0", ["Associate's Degree", "Bachelor's Degree", "Other"]);
+    attachMenu("discipline-select", "discipline--0", ["Computer Science", "Engineering", "Other"]);
+
+    const fields = extractPageFields(doc);
+    await hydrateChoiceFieldOptions(fields, { waitMs: 0 });
+    const skippedPlan: ExtensionAutofillPlan = {
+      stepName: "Application",
+      fields: fields.map((field) => ({
+        fieldId: field.fieldId,
+        action: "skip",
+        value: null,
+        optionLabel: null,
+        confidence: 0.35,
+        note: "model skipped",
+      })),
+    };
+    const merged = mergeProfileEducationPlan(
+      fields,
+      skippedPlan,
+      profile({
+        education: [{ school: "University That Is Not Listed", degree: "Bachelor's Degree", field: "Computer Science" }],
+      }),
+    );
+
+    const records = await applyAutofillPlan({ fields, plan: merged.fields, getResume: async () => null });
+
+    expect(records.filter((record) => record.status === "filled").map((record) => record.label)).toEqual([
+      "Degree*",
+      "Discipline*",
+      "School*",
+    ]);
+    expect(doc.querySelector("#degree-select .select__single-value")?.textContent).toBe("Bachelor's Degree");
+    expect(doc.querySelector("#discipline-select .select__single-value")?.textContent).toBe("Computer Science");
+    expect(doc.querySelector("#school-select .select__single-value")?.textContent).toBe("0 - Other");
   });
 
   it("does not let an async Greenhouse school search block degree selection", async () => {
