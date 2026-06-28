@@ -2,7 +2,6 @@
 
 import { useEffect, useRef, useState } from "react";
 import {
-  AnimatePresence,
   motion,
   useMotionValue,
   useReducedMotion,
@@ -14,8 +13,6 @@ import Link from "next/link";
 import { ArrowRight, LayoutGrid, MousePointer2, Send } from "lucide-react";
 import { useAuthUser } from "@/components/auth/useAuthUser";
 import { AnimatedGetStartedButton } from "./AnimatedGetStartedButton";
-
-const ROTATING_HERO_WORDS = ["Prepare", "sleep", "work", "relax"] as const;
 
 /**
  * Scroll-driven hero: a stack of rounded cards peeks below the headline, then the
@@ -116,9 +113,9 @@ function HeadlineBlock() {
   return (
     <div className="mx-auto flex w-full max-w-3xl flex-col items-center px-5 pt-24 text-center sm:pt-28">
       <h1 className="text-5xl leading-[1.02] font-extrabold tracking-[-0.04em] text-balance text-ink sm:text-6xl lg:text-7xl">
-        <span className="block">Your job applications automated while you</span>
+        <span className="block">Your job applications</span>
         <span className="mt-2 block sm:mt-3">
-          <RotatingWord />
+          <AutomatedWord />
         </span>
       </h1>
 
@@ -132,62 +129,45 @@ function HeadlineBlock() {
   );
 }
 
-function RotatingWord() {
-  const [index, setIndex] = useState(0);
+function AutomatedWord() {
   const reduce = useReducedMotion();
-  const word = ROTATING_HERO_WORDS[index];
-
-  useEffect(() => {
-    if (reduce) return;
-
-    const interval = window.setInterval(() => {
-      setIndex((current) => (current + 1) % ROTATING_HERO_WORDS.length);
-    }, 5000);
-
-    return () => window.clearInterval(interval);
-  }, [reduce]);
 
   return (
-    <span className="relative inline-flex w-[4.6em] justify-center align-baseline text-brand-700 [perspective:900px]">
-      <AnimatePresence mode="wait" initial={false}>
-        <motion.span
-          key={word}
-          initial={reduce ? false : { opacity: 0, y: "0.55em", rotateX: -78, filter: "blur(5px)" }}
-          animate={{ opacity: 1, y: 0, rotateX: 0, filter: "blur(0px)" }}
-          exit={reduce ? undefined : { opacity: 0, y: "-0.55em", rotateX: 78, filter: "blur(5px)" }}
-          transition={{ duration: 0.42, ease: [0.22, 1, 0.36, 1] }}
-          className="relative inline-block origin-center whitespace-nowrap pr-[0.03em] font-serif italic tracking-[-0.035em] text-brand-700 [transform-style:preserve-3d]"
+    <span className="relative inline-flex justify-center align-baseline text-brand-700 [perspective:900px]">
+      <motion.span
+        initial={reduce ? false : { opacity: 0, y: "0.5em", rotateX: -72, filter: "blur(5px)" }}
+        animate={{ opacity: 1, y: 0, rotateX: 0, filter: "blur(0px)" }}
+        transition={{ duration: 0.55, ease: [0.22, 1, 0.36, 1] }}
+        className="relative inline-block origin-center whitespace-nowrap pr-[0.03em] font-serif italic tracking-[-0.035em] text-brand-700 [transform-style:preserve-3d]"
+      >
+        automated
+        <svg
+          aria-hidden
+          viewBox="0 0 180 24"
+          className="pointer-events-none absolute -bottom-[0.16em] left-1/2 h-[0.24em] w-[108%] -translate-x-1/2 overflow-visible"
+          preserveAspectRatio="none"
         >
-          {word}
-          <svg
-            aria-hidden
-            viewBox="0 0 180 24"
-            className="pointer-events-none absolute -bottom-[0.16em] left-1/2 h-[0.24em] w-[108%] -translate-x-1/2 overflow-visible"
-            preserveAspectRatio="none"
-          >
-            <motion.path
-              key={`${word}-stroke`}
-              d="M7 15 C43 23, 76 5, 116 13 S160 19, 173 9"
-              fill="none"
-              stroke="#f8b84e"
-              strokeWidth="9"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              initial={reduce ? false : { pathLength: 0, opacity: 0 }}
-              animate={{ pathLength: 1, opacity: 1 }}
-              transition={{ duration: 0.38, delay: 0.12, ease: [0.22, 1, 0.36, 1] }}
-            />
-            <path
-              d="M8 16 C45 21, 77 8, 117 14 S160 18, 172 10"
-              fill="none"
-              stroke="#174fb8"
-              strokeWidth="2"
-              strokeLinecap="round"
-              opacity="0.22"
-            />
-          </svg>
-        </motion.span>
-      </AnimatePresence>
+          <motion.path
+            d="M7 15 C43 23, 76 5, 116 13 S160 19, 173 9"
+            fill="none"
+            stroke="#f8b84e"
+            strokeWidth="9"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            initial={reduce ? false : { pathLength: 0, opacity: 0 }}
+            animate={{ pathLength: 1, opacity: 1 }}
+            transition={{ duration: 0.5, delay: 0.35, ease: [0.22, 1, 0.36, 1] }}
+          />
+          <path
+            d="M8 16 C45 21, 77 8, 117 14 S160 18, 172 10"
+            fill="none"
+            stroke="#174fb8"
+            strokeWidth="2"
+            strokeLinecap="round"
+            opacity="0.22"
+          />
+        </svg>
+      </motion.span>
     </span>
   );
 }
