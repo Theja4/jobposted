@@ -220,3 +220,48 @@ export function targetsFor(config: BoardConfig, type: IngestAtsType): IngestTarg
 export function countBoards(config: BoardConfig): number {
   return ATS_TYPES.reduce((sum, type) => sum + targetsFor(config, type).length, 0);
 }
+
+/**
+ * Partition a board config into `shardCount` deterministic shards and return the one at
+ * `shardIndex`. Lets the 4-hourly Vercel Cron cover a large board list across the day (one shard
+ * per run) without exceeding the function's 60s limit. `shardCount <= 1` returns the config as-is.
+ *
+ * Boards are assigned round-robin over a single stable global ordering (sorted slug, across ATS
+ * types) so each shard gets a mix of sources rather than, e.g., every Greenhouse board landing in
+ * the same slot.
+ */
+export function shardBoardConfig(
+  config: BoardConfig,
+  shardCount: number,
+  shardIndex: number,
+): BoardConfig {
+  if (!Number.isFinite(shardCount) || shardCount <= 1) return config;
+  const count = Math.trunc(shardCount);
+  const index = ((Math.trunc(shardIndex) % count) + count) % count;
+
+  const sharded: BoardConfig = {
+    greenhouse: [],
+    lever: [],
+    ashby: [],
+    smartrecruiters: [],
+    workable: [],
+    teamtailor: [],
+    companies: [],
+  };
+
+  let i = 0;
+  for (const type of ATS_TYPES) {
+    for (const slug of [...config[type]].sort()) {
+      if (i % count === index) sharded[type].push(slug);
+      i += 1;
+    }
+  }
+
+  [...config.companies]
+    .sort((a, b) => a.name.localeCompare(b.name))
+    .forEach((company, c) => {
+      if (c % count === index) sharded.companies.push(company);
+    });
+
+  return sharded;
+}

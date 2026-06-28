@@ -23,7 +23,7 @@ import {
 } from "./company-assets-backfill";
 import { enrichRawJobsWithCompanyAssets } from "./company-assets";
 import { purgeOldUnreferencedJobs, type JobRetentionSummary } from "./job-retention";
-import { countBoards, loadBoardConfig, targetsFor, type BoardConfig } from "./config";
+import { countBoards, loadBoardConfig, shardBoardConfig, targetsFor, type BoardConfig } from "./config";
 import { mapLimit } from "./util";
 
 export { countBoards, loadBoardConfig } from "./config";
@@ -186,6 +186,20 @@ export async function runIngestMaintenance(): Promise<IngestMaintenanceSummary> 
   return { backfill, companyAssets, jobRetention };
 }
 
+/**
+ * Pick the shard to run this invocation. With INGEST_SHARD_COUNT > 1 the board list is split into
+ * shards and the current 4-hourly cron slot (UTC hour / 4) selects one, so a large list is covered
+ * across the day without any single run exceeding the function's time limit.
+ */
+function shardForThisRun(config: BoardConfig): { config: BoardConfig; shard?: { index: number; count: number } } {
+  const shardCount = Number(process.env.INGEST_SHARD_COUNT ?? 1);
+  if (!Number.isFinite(shardCount) || shardCount <= 1) return { config };
+  const count = Math.trunc(shardCount);
+  const slot = Math.floor(new Date().getUTCHours() / 4);
+  const index = ((slot % count) + count) % count;
+  return { config: shardBoardConfig(config, count, index), shard: { index, count } };
+}
+
 /** Web-standard handler for wiring into Vercel Cron (returns the run summary as JSON). */
 export async function cronHandler(): Promise<Response> {
   const config = await loadBoardConfig();
@@ -199,10 +213,11 @@ export async function cronHandler(): Promise<Response> {
       { status: 500, headers: { "content-type": "application/json" } },
     );
   }
-  const summary = await runIngest(config, { withQuestions: process.env.INGEST_QUESTIONS === "1" });
+  const { config: runConfig, shard } = shardForThisRun(config);
+  const summary = await runIngest(runConfig, { withQuestions: process.env.INGEST_QUESTIONS === "1" });
   const maintenance = await runIngestMaintenance();
 
-  return new Response(JSON.stringify({ ok: true, ...summary, ...maintenance }), {
+  return new Response(JSON.stringify({ ok: true, shard, ...summary, ...maintenance }), {
     headers: { "content-type": "application/json" },
   });
 }
