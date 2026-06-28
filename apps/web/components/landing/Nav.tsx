@@ -5,6 +5,7 @@ import { NavAuthButtons } from "@/components/auth/NavAuthButtons";
 const LINKS = [
   { href: "/#features", label: "Features" },
   { href: "/#how-it-works", label: "How it works" },
+  { href: "/#extension", label: "Extension", isNew: true },
   { href: "/#analytics", label: "Results" },
   { href: "/#trust", label: "Control" },
   { href: "/pricing", label: "Pricing" },
@@ -23,9 +24,14 @@ export function Nav() {
             <a
               key={link.href}
               href={link.href}
-              className="rounded-full px-3 py-2 text-sm font-semibold text-ink/72 transition-colors duration-150 hover:bg-white/70 hover:text-ink lg:px-3.5"
+              className="inline-flex items-center gap-1.5 rounded-full px-3 py-2 text-sm font-semibold text-ink/72 transition-colors duration-150 hover:bg-white/70 hover:text-ink lg:px-3.5"
             >
               {link.label}
+              {"isNew" in link && link.isNew ? (
+                <span className="rounded-full bg-[linear-gradient(135deg,#5ee4ff,#1f64e0)] px-1.5 py-0.5 text-[9px] font-black tracking-wide text-white uppercase">
+                  New
+                </span>
+              ) : null}
             </a>
           ))}
         </div>

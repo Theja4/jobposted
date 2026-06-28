@@ -2,6 +2,7 @@ import { Nav } from "@/components/landing/Nav";
 import { Hero } from "@/components/landing/Hero";
 import { SocialProof } from "@/components/landing/SocialProof";
 import { Steps } from "@/components/landing/Steps";
+import { Extension } from "@/components/landing/Extension";
 import { OpportunityUnlock } from "@/components/landing/OpportunityUnlock";
 import { Metrics } from "@/components/landing/Metrics";
 import { BigWord } from "@/components/landing/BigWord";
@@ -19,6 +20,7 @@ export default function HomePage() {
       <Hero />
       <SocialProof />
       <Steps />
+      <Extension />
       <OpportunityUnlock />
       <Metrics />
       <BigWord />
