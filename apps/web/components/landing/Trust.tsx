@@ -169,17 +169,17 @@ function ConfirmPipeline({ reduce }: { reduce: boolean }) {
           <motion.span
             animate={reduce ? undefined : { opacity: [0, 0, 0, 1, 1, 0], scale: [0.8, 0.8, 0.8, 1, 1, 0.9] }}
             transition={reduce ? undefined : { ...LOOP, times: [0, 0.58, 0.72, 0.8, 0.92, 1] }}
-            className="absolute top-1/2 right-0 -translate-y-1/2 rounded-full bg-mint/90 px-3.5 py-1.5 text-xs font-black text-white shadow-[0_10px_24px_rgba(38,196,133,0.4)]"
+            className="absolute top-1/2 right-0 -translate-y-1/2 rounded-full bg-mint/90 px-3.5 py-1.5 text-xs font-black whitespace-nowrap text-white shadow-[0_10px_24px_rgba(38,196,133,0.4)]"
             style={reduce ? { opacity: 1 } : undefined}
           >
-            Sent ✓
+            Auto filled ✓
           </motion.span>
 
           {/* stage labels */}
           <div className="absolute inset-x-2 bottom-0 flex justify-between text-xs font-bold tracking-[0.14em] text-white/45 uppercase">
             <span>Matched</span>
             <span className="-translate-x-3">Tailored</span>
-            <span>Sent for you</span>
+            <span>Auto filled for you</span>
           </div>
         </div>
       </div>
