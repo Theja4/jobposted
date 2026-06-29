@@ -1290,10 +1290,10 @@ function InPagePanel() {
       if (response.ok && response.type === "TAILOR_ACTIVE_TAB") {
         const url = response.result.resumeUrl ?? response.result.resumeDocxUrl ?? null;
         setJobActionMessage(response.result.matchScore ? `Match score ${response.result.matchScore}%` : "Custom resume ready");
-        if (url) await chrome.tabs.create({ url, active: true });
+        if (url) await message({ type: "OPEN_TAB", url });
       } else if (response.ok && response.type === "COVER_LETTER_ACTIVE_TAB") {
         setJobActionMessage("Cover letter ready");
-        if (response.result.coverLetterUrl) await chrome.tabs.create({ url: response.result.coverLetterUrl, active: true });
+        if (response.result.coverLetterUrl) await message({ type: "OPEN_TAB", url: response.result.coverLetterUrl });
       } else {
         setJobActionMessage(response.ok ? "Action did not return a file." : response.error);
       }

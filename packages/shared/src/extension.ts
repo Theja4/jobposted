@@ -380,6 +380,7 @@ export type ExtensionMessage =
   | { type: "TRACKER_ADD_ACTIVE_TAB" }
   | { type: "TAILOR_ACTIVE_TAB" }
   | { type: "COVER_LETTER_ACTIVE_TAB" }
+  | { type: "OPEN_TAB"; url: string }
   | { type: "APPLICATION_SYNC"; payload: ExtensionApplicationUpsert }
   | { type: "APPLICATION_SYNC_RETRY" }
   | { type: "SYNC_QUEUE_STATUS" }
@@ -402,6 +403,7 @@ export type ExtensionMessageResponse =
   | { ok: true; type: "TRACKER_ADD_ACTIVE_TAB"; result: ExtensionApplicationResponse }
   | { ok: true; type: "TAILOR_ACTIVE_TAB"; result: ExtensionTailorResponse }
   | { ok: true; type: "COVER_LETTER_ACTIVE_TAB"; result: ExtensionCoverLetterResponse }
+  | { ok: true; type: "OPEN_TAB" }
   | { ok: true; type: "APPLICATION_SYNC"; result: ExtensionApplicationResponse }
   | { ok: true; type: "APPLICATION_SYNC_RETRY"; status: ExtensionSyncQueueStatus }
   | { ok: true; type: "SYNC_QUEUE_STATUS"; status: ExtensionSyncQueueStatus }

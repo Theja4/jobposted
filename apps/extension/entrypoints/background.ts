@@ -621,6 +621,10 @@ async function handleMessage(message: ExtensionMessage): Promise<ExtensionMessag
       return { ok: true, type: "TAILOR_ACTIVE_TAB", result: await tailorActiveTab() };
     case "COVER_LETTER_ACTIVE_TAB":
       return { ok: true, type: "COVER_LETTER_ACTIVE_TAB", result: await coverLetterActiveTab() };
+    case "OPEN_TAB":
+      // Content scripts can't touch chrome.tabs; they delegate tab creation here.
+      await chrome.tabs.create({ url: message.url, active: true });
+      return { ok: true, type: "OPEN_TAB" };
     case "APPLICATION_SYNC":
       return { ok: true, type: "APPLICATION_SYNC", result: await syncApplicationWithQueue(message.payload) };
     case "APPLICATION_SYNC_RETRY":
