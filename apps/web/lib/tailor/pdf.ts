@@ -28,8 +28,17 @@ const MIN_DENSITY = 0.84;
 const MAX_DENSITY = 1.16;
 const DENSITY_STEPS = 20;
 const TARGET_SINGLE_PAGE_FILL = 0.84;
+// Multi-pagers should fill the final page rather than trail off; a touch lower than
+// the single-page target so we don't over-space a long resume's last page.
+const TARGET_LAST_PAGE_FILL = 0.72;
 const MAX_VERTICAL_FILL = 2.6;
 const VERTICAL_FILL_STEPS = 24;
+// Orphan rescue: a trailing page this empty (a 1–2 line spillover) is unprofessional,
+// so we try harder compression to pull it back onto one fewer page.
+const ORPHAN_RESCUE_FILL = 0.18;
+const EMERGENCY_DENSITY = 0.78; // density floor used ONLY while rescuing an orphan
+const MIN_VERTICAL = 0.9; // spacing-tighten floor used ONLY while rescuing an orphan
+const ORPHAN_TIGHTEN_STEPS = 4;
 
 const INK = rgb(0.04, 0.07, 0.13);
 const RULE = rgb(0, 0, 0);
@@ -517,38 +526,56 @@ function paginate(doc: PDFDocument | null, blocks: Block[], fonts: Fonts): PageP
   return { pages, lastFill: Math.max(0, Math.min(1, consumedLast / USABLE_H)) };
 }
 
+type FitPlan = { density: number; vertical: number; plan: PagePlan };
+type PlanAt = (d: number, vertical?: number) => PagePlan;
+
+/** Densest (largest-type) layout scanning high→low density that still renders in exactly `pages`. */
+function densestPlanAtPages(planAt: PlanAt, pages: number, dMin: number, dMax: number, vertical = 1): FitPlan | null {
+  for (let i = DENSITY_STEPS; i >= 0; i--) {
+    const density = dMin + ((dMax - dMin) * i) / DENSITY_STEPS;
+    const plan = planAt(density, vertical);
+    if (plan.pages === pages) return { density, vertical, plan };
+  }
+  return null;
+}
+
 /**
  * Pick the densest font/spacing scale that still renders in the minimum feasible number of pages.
  * Because larger density ⇒ taller content ⇒ more pages (monotone), the densest layout at the
  * minimum page count fills those pages as fully as possible — so a slightly-too-long resume packs
  * back onto one full page instead of orphaning a line, and a true two-pager fills both pages.
  */
-function fitResume(resume: ResumeContent, fonts: Fonts): { density: number; vertical: number; plan: PagePlan } {
-  const planAt = (d: number, vertical = 1) => paginate(null, layout(resume, makeStyle(d, vertical), fonts), fonts);
-  const target = Math.max(1, planAt(MIN_DENSITY).pages); // fewest pages achievable
+function fitResume(resume: ResumeContent, fonts: Fonts): FitPlan {
+  const planAt: PlanAt = (d, vertical = 1) => paginate(null, layout(resume, makeStyle(d, vertical), fonts), fonts);
+  const minPlan = planAt(MIN_DENSITY);
+  const target = Math.max(1, minPlan.pages); // fewest pages achievable
 
-  let best: { density: number; vertical: number; plan: PagePlan } | null = null;
-  for (let i = DENSITY_STEPS; i >= 0; i--) {
-    const density = MIN_DENSITY + ((MAX_DENSITY - MIN_DENSITY) * i) / DENSITY_STEPS;
-    const plan = planAt(density);
-    if (plan.pages === target) {
-      best = { density, vertical: 1, plan }; // first match scanning high→low = densest layout at target pages
-      break;
+  // Orphan rescue: when even the most-compact layout still spills only a sliver onto a trailing
+  // page (a 1–2 line orphan above a near-empty page), tighten spacing and allow an emergency
+  // density floor to pull it back onto one fewer page. Genuine multi-pagers, whose trailing page
+  // is already well filled, never trip this and keep their natural page count.
+  if (target > 1 && minPlan.lastFill < ORPHAN_RESCUE_FILL) {
+    for (let i = 0; i <= ORPHAN_TIGHTEN_STEPS; i++) {
+      const vertical = 1 - ((1 - MIN_VERTICAL) * i) / ORPHAN_TIGHTEN_STEPS;
+      const rescued = densestPlanAtPages(planAt, target - 1, EMERGENCY_DENSITY, MAX_DENSITY, vertical);
+      if (rescued) return rescued;
     }
   }
-  best = best ?? { density: MIN_DENSITY, vertical: 1, plan: planAt(MIN_DENSITY) };
 
-  // If a resume comfortably fits on one page, the density ceiling alone can still leave a visually
-  // unfinished bottom third. Fill that space by expanding structural whitespace, capped so sparse
-  // resumes do not turn into oversized type or a forced two-pager.
-  if (target === 1 && best.plan.lastFill < TARGET_SINGLE_PAGE_FILL) {
+  let best = densestPlanAtPages(planAt, target, MIN_DENSITY, MAX_DENSITY) ?? { density: MIN_DENSITY, vertical: 1, plan: minPlan };
+
+  // Bottom-fill: a sparse final page (a big blank gap) reads as unprofessional whether the resume
+  // is one page or three. Expand structural whitespace until the last page is reasonably full,
+  // capped so we never spill onto a new page or balloon the type.
+  const fillTarget = target === 1 ? TARGET_SINGLE_PAGE_FILL : TARGET_LAST_PAGE_FILL;
+  if (best.plan.lastFill < fillTarget) {
     let filled = best;
     for (let i = 1; i <= VERTICAL_FILL_STEPS; i++) {
       const vertical = 1 + ((MAX_VERTICAL_FILL - 1) * i) / VERTICAL_FILL_STEPS;
       const plan = planAt(best.density, vertical);
       if (plan.pages !== target) break;
       filled = { density: best.density, vertical, plan };
-      if (plan.lastFill >= TARGET_SINGLE_PAGE_FILL) break;
+      if (plan.lastFill >= fillTarget) break;
     }
     best = filled;
   }

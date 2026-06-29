@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { ExtensionApplicationUpsert } from "@jobposted/shared";
 import {
   buildExtensionApplicationRow,
+  canonicalizeJobUrl,
   type ExistingExtensionApplicationRow,
 } from "@/lib/extension/application-sync";
 
@@ -34,6 +35,32 @@ const existing: ExistingExtensionApplicationRow = {
   rendered_pdf_path: "user_1/tailored/job_1.pdf",
   submitted_at: null,
 };
+
+describe("canonicalizeJobUrl", () => {
+  it("treats the same posting opened from different referrers as one URL", () => {
+    const a = canonicalizeJobUrl("https://boards.greenhouse.io/acme/jobs/1?utm_source=linkedin&gh_src=abc123");
+    const b = canonicalizeJobUrl("https://boards.greenhouse.io/acme/jobs/1#app");
+    expect(a).toBe(b);
+  });
+
+  it("preserves job-identifying query params like gh_jid", () => {
+    expect(canonicalizeJobUrl("https://job-boards.greenhouse.io/embed/job_app?gh_jid=42&utm_medium=email")).toBe(
+      "https://job-boards.greenhouse.io/embed/job_app?gh_jid=42",
+    );
+  });
+
+  it("normalizes host case and a trailing slash but keeps distinct jobs distinct", () => {
+    expect(canonicalizeJobUrl("https://Jobs.Lever.co/acme/123/")).toBe("https://jobs.lever.co/acme/123");
+    expect(canonicalizeJobUrl("https://jobs.lever.co/acme/124")).not.toBe(
+      canonicalizeJobUrl("https://jobs.lever.co/acme/123"),
+    );
+  });
+
+  it("returns non-URL input untouched", () => {
+    expect(canonicalizeJobUrl("not a url")).toBe("not a url");
+    expect(canonicalizeJobUrl("")).toBe("");
+  });
+});
 
 describe("buildExtensionApplicationRow", () => {
   it("preserves existing tailored resume artifacts when extension sync has no resume", () => {

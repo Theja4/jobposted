@@ -8,6 +8,60 @@ function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
 }
 
+// Tracking/analytics query params that never identify a posting. Stripping them
+// keeps the same job from being saved twice just because it was opened from a
+// different referrer. Anything not on this list (e.g. Greenhouse's `gh_jid`,
+// Workday's job tokens) is preserved because it can be part of the job's identity.
+const TRACKING_PARAM_PREFIXES = ["utm_"];
+const TRACKING_PARAMS = new Set([
+  "gclid",
+  "fbclid",
+  "msclkid",
+  "mc_cid",
+  "mc_eid",
+  "igshid",
+  "_hsenc",
+  "_hsmi",
+  "gh_src",
+  "ref",
+  "referrer",
+  "trk",
+  "trackingid",
+  "refid",
+  "li_fat_id",
+]);
+
+/**
+ * Canonicalize a job apply URL so the same posting always maps to one identity.
+ * The link is the authoritative dedup key for the tracker — company and title are
+ * scraped from the page and too noisy to dedup on — so this normalization is what
+ * makes "already present" reliable: lowercase scheme/host, drop the hash and
+ * tracking params, and collapse a trailing slash.
+ */
+export function canonicalizeJobUrl(value: unknown) {
+  const trimmed = asString(value);
+  if (!trimmed) return "";
+  try {
+    const url = new URL(trimmed);
+    url.protocol = url.protocol.toLowerCase();
+    url.hostname = url.hostname.toLowerCase();
+    url.hash = "";
+    for (const key of [...url.searchParams.keys()]) {
+      const lower = key.toLowerCase();
+      if (TRACKING_PARAMS.has(lower) || TRACKING_PARAM_PREFIXES.some((prefix) => lower.startsWith(prefix))) {
+        url.searchParams.delete(key);
+      }
+    }
+    url.searchParams.sort();
+    if (url.pathname.length > 1 && url.pathname.endsWith("/")) {
+      url.pathname = url.pathname.replace(/\/+$/, "");
+    }
+    return url.toString();
+  } catch {
+    return trimmed;
+  }
+}
+
 export type ExistingExtensionApplicationRow = {
   id: string;
   job_id: string | null;

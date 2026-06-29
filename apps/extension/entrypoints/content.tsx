@@ -2,13 +2,20 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import {
   AlertTriangle,
+  Bookmark,
+  BookmarkCheck,
+  Building2,
+  Check,
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
   Circle,
+  ClipboardCheck,
   FileText,
   Loader2,
   Mail,
+  MapPin,
+  Pencil,
   PenLine,
   Settings,
   Sparkles,
@@ -47,6 +54,11 @@ import { strategyForPlatform } from "../src/content/fill-strategy";
 import { isApplicationHostUrl, shouldDeferToEmbeddedApplication } from "../src/content/embedded-application";
 import { isGreenhousePage, isLeverPage } from "../src/content/open-ats";
 import { isWorkdayPage, workdayCompany, workdayJobHeading, workdayStepName } from "../src/content/workday";
+import {
+  JOB_CONTEXT_CONFIDENCE_THRESHOLD,
+  resolveJobContext,
+  type ResolvedJobContext,
+} from "../src/content/job-context";
 
 const includeLocalhost =
   import.meta.env.MODE !== "production" ||
@@ -487,23 +499,35 @@ function panelPageSignature(doc: Document = document) {
   ].join("\n");
 }
 
+function resolvePageJobContext(platform: ExtensionPlatform, doc: Document = document): ResolvedJobContext {
+  return resolveJobContext({
+    doc,
+    url: window.location.href,
+    hints:
+      platform === "workday"
+        ? { role: workdayJobHeading(doc), company: workdayCompany(doc) }
+        : undefined,
+  });
+}
+
+// User-confirmed overrides from the panel's job-context card. When the resolver
+// is unsure and the user corrects the company/role, this is what gets written to
+// the tracker instead of the DOM-derived guess. Cleared on every page change.
+let jobIdentityOverride: { company: string; role: string } | null = null;
+function setJobIdentityOverride(value: { company: string; role: string } | null) {
+  jobIdentityOverride = value;
+}
+
 function applicationMetadata(platform: ExtensionPlatform) {
-  const title = document.title.replace(/\s+/g, " ").trim();
-  const heading =
-    document.querySelector("h1")?.textContent?.trim() ||
-    (platform === "workday" ? workdayJobHeading(document) : "") ||
-    title;
-  const company =
-    (platform === "workday" ? workdayCompany(document) : "") ||
-    document.querySelector("[class*='company' i]")?.textContent?.trim() ||
-    title.split("|").at(-1)?.trim() ||
-    "Unknown company";
+  const resolved = resolvePageJobContext(platform);
   return {
     source: "extension" as const,
     platform,
-    company,
-    role: heading || "Unknown role",
+    company: jobIdentityOverride?.company || resolved.company || "Unknown company",
+    role: jobIdentityOverride?.role || resolved.role || "Unknown role",
     jobUrl: window.location.href,
+    confidence: resolved.confidence,
+    contextSource: resolved.source,
   };
 }
 
@@ -572,10 +596,14 @@ async function loadAutofillPrereqs(forceGenericFallback: boolean) {
   return { platform, settings, profile: profileResponse.profile };
 }
 
-async function syncAutofill(fieldsFilled: ExtensionFieldFillRecord[], platform: ExtensionPlatform) {
+async function syncAutofill(
+  fieldsFilled: ExtensionFieldFillRecord[],
+  platform: ExtensionPlatform,
+  status: "filled" | "submitted" = "filled",
+) {
   const payload = {
     ...applicationMetadata(platform),
-    status: "filled" as const,
+    status,
     appliedAt: new Date().toISOString(),
     fieldsFilled,
   };
@@ -776,8 +804,9 @@ async function runAdapterAutofillPage(args: {
   let trackerError: string | null = null;
   if (!args.suppressAutoTrack && settings.autoTrackAutofill && allRecords.length > 0) {
     try {
-      const response = await syncAutofill(allRecords, adapter.id);
+      const response = await syncAutofill(allRecords, adapter.id, "submitted");
       if (response.ok && response.type === "APPLICATION_SYNC") tracker = response.result;
+      else if (!response.ok) trackerError = response.error;
     } catch (error) {
       trackerError = error instanceof Error ? error.message : "Could not sync this application.";
     }
@@ -896,7 +925,7 @@ async function runAutofillPage(args: {
   let trackerError: string | null = null;
   if (!args.suppressAutoTrack && settings.autoTrackAutofill && records.length > 0) {
     try {
-      const response = await syncAutofill(records, platform);
+      const response = await syncAutofill(records, platform, "submitted");
       if (response.ok && response.type === "APPLICATION_SYNC") tracker = response.result;
     } catch (error) {
       trackerError = error instanceof Error ? error.message : "Could not sync this application.";
@@ -1116,6 +1145,18 @@ function InPagePanel() {
   const [jobAction, setJobAction] = useState<"tailor" | "cover-letter" | null>(null);
   const [jobActionMessage, setJobActionMessage] = useState<string | null>(null);
   const [listOpen, setListOpen] = useState(true);
+  const [autoTrack, setAutoTrack] = useState(true);
+  const [identity, setIdentity] = useState<ResolvedJobContext | null>(null);
+  // `identityEdit` is the transient draft shown only while the edit form is open;
+  // `identityConfirmed` is the user's saved correction that overrides the resolver.
+  const [identityEdit, setIdentityEdit] = useState<{ company: string; role: string } | null>(null);
+  const [identityConfirmed, setIdentityConfirmed] = useState<{ company: string; role: string } | null>(null);
+  const [synced, setSynced] = useState(false);
+  const [savedStage, setSavedStage] = useState<"applied" | "review">("applied");
+  const [alreadyPresent, setAlreadyPresent] = useState(false);
+  const [trackerQueued, setTrackerQueued] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const cancelRef = useRef(false);
   const statusRef = useRef<PanelStatus>("idle");
   const pageSignatureRef = useRef(panelPageSignature());
@@ -1123,6 +1164,62 @@ function InPagePanel() {
   function updateStatus(nextStatus: PanelStatus) {
     statusRef.current = nextStatus;
     setStatus(nextStatus);
+  }
+
+  function refreshIdentity() {
+    try {
+      setIdentity(resolvePageJobContext(detectPlatform()));
+    } catch {
+      setIdentity(null);
+    }
+    setIdentityEdit(null);
+    setIdentityConfirmed(null);
+    setJobIdentityOverride(null);
+  }
+
+  function startIdentityEdit() {
+    setIdentityEdit({ company: displayCompany, role: displayRole });
+  }
+
+  function saveIdentityEdit() {
+    if (!identityEdit) return;
+    const company = identityEdit.company.trim();
+    const role = identityEdit.role.trim();
+    const next = company || role ? { company, role } : null;
+    setJobIdentityOverride(next);
+    setIdentityConfirmed(next);
+    setIdentityEdit(null);
+  }
+
+  async function saveJobToTracker() {
+    if (saving || synced) return;
+    setSaving(true);
+    setSaveError(null);
+    try {
+      const response = await syncAutofill([], detectPlatform());
+      if (response.ok && response.type === "APPLICATION_SYNC" && response.result.applicationId) {
+        setAlreadyPresent(Boolean(response.result.duplicate));
+        setSavedStage("review"); // Save is sent as "filled" → lands in the To review column
+        setSynced(true);
+      } else if (response.ok && response.type === "APPLICATION_SYNC" && response.result.queued) {
+        setTrackerQueued(true);
+      } else {
+        setSaveError(response.ok ? "Saved couldn’t be confirmed — please retry." : response.error);
+      }
+    } catch (caught) {
+      setSaveError(caught instanceof Error ? caught.message : "Could not save this job.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function toggleAutoTrack(next: boolean) {
+    setAutoTrack(next);
+    const response = await message<ExtensionMessageResponse>({
+      type: "SETTINGS_SET",
+      settings: { autoTrackAutofill: next },
+    });
+    if (response.ok && response.type === "SETTINGS_SET") setAutoTrack(response.settings.autoTrackAutofill);
   }
 
   async function refreshProfile() {
@@ -1140,6 +1237,11 @@ function InPagePanel() {
 
   useEffect(() => {
     void refreshProfile();
+    refreshIdentity();
+    void (async () => {
+      const response = await message<ExtensionMessageResponse>({ type: "SETTINGS_GET" });
+      if (response.ok && response.type === "SETTINGS_GET") setAutoTrack(response.settings.autoTrackAutofill);
+    })();
   }, []);
 
   useEffect(() => {
@@ -1161,6 +1263,13 @@ function InPagePanel() {
       setResult(null);
       setFields([]);
       setListOpen(true);
+      setSynced(false);
+      setSavedStage("applied");
+      setAlreadyPresent(false);
+      setTrackerQueued(false);
+      setSaving(false);
+      setSaveError(null);
+      refreshIdentity();
       updateStatus("idle");
     };
 
@@ -1191,6 +1300,43 @@ function InPagePanel() {
     };
   }, []);
 
+  // While the "Offline — queued" banner is showing, drive the background queue to
+  // a resolution instead of leaving the banner stuck forever. The background only
+  // retries on its own backoff alarm (30s → … → 60m), so we kick an immediate
+  // flush and then poll the queue status; once it drains we flip to "saved".
+  useEffect(() => {
+    if (!trackerQueued) return;
+    let cancelled = false;
+    let intervalId: number | null = null;
+
+    const reconcile = async (forceRetry: boolean) => {
+      const response = await message<ExtensionMessageResponse>({
+        type: forceRetry ? "APPLICATION_SYNC_RETRY" : "SYNC_QUEUE_STATUS",
+      });
+      if (cancelled) return;
+      const status =
+        response.ok &&
+        (response.type === "APPLICATION_SYNC_RETRY" || response.type === "SYNC_QUEUE_STATUS")
+          ? response.status
+          : null;
+      if (status && status.pending === 0) {
+        setTrackerQueued(false);
+        setSynced(true);
+        if (intervalId != null) window.clearInterval(intervalId);
+      }
+    };
+
+    // Attempt a flush right away (covers "back online" without waiting for the alarm),
+    // then keep polling the queue so the banner resolves once it syncs.
+    void reconcile(true);
+    intervalId = window.setInterval(() => void reconcile(true), 15_000);
+
+    return () => {
+      cancelled = true;
+      if (intervalId != null) window.clearInterval(intervalId);
+    };
+  }, [trackerQueued]);
+
   const progress = useMemo(() => {
     if (fields.length === 0) return 0;
     const completed = fields.filter((field) => ["filled", "skipped", "needs_user", "failed"].includes(field.status)).length;
@@ -1209,6 +1355,14 @@ function InPagePanel() {
   const resumeName = profile?.documents.resumeName || "Resume not attached";
   const lowConfidence = fields.some((field) => field.confidence > 0 && field.confidence < 0.7);
   const resultError = error ?? result?.trackerError ?? null;
+  const displayCompany = identityEdit?.company ?? identityConfirmed?.company ?? identity?.company ?? "";
+  const displayRole = identityEdit?.role ?? identityConfirmed?.role ?? identity?.role ?? "";
+  const identityNeedsReview = Boolean(
+    identity &&
+      !identityEdit &&
+      !identityConfirmed &&
+      identity.confidence < JOB_CONTEXT_CONFIDENCE_THRESHOLD,
+  );
 
   async function runPanelAutofill() {
     cancelRef.current = false;
@@ -1219,41 +1373,48 @@ function InPagePanel() {
     updateStatus("scanning");
     try {
       const delegateToApplicationFrame = shouldDeferAutofillToEmbeddedApplication();
-      const discovery = delegateToApplicationFrame ? await discoverAutofillActiveTab() : await discoverAutofillPage();
-      setFields(fieldsFromDiscovery(discovery));
-      if (cancelRef.current) {
-        updateStatus("idle");
-        return;
+      let runResult: ExtensionAutofillRunResult;
+      if (delegateToApplicationFrame) {
+        // The embedded application frame runs autofill in a child frame via the background,
+        // which can't stream discovered fields/status back here — so we keep a quick discovery
+        // pass to preview the questions, then fill.
+        const discovery = await discoverAutofillActiveTab();
+        setFields(fieldsFromDiscovery(discovery));
+        if (cancelRef.current) {
+          updateStatus("idle");
+          return;
+        }
+        updateStatus("filling");
+        runResult = await runAutofillActiveTab({ continueSteps: false });
+      } else {
+        // Single pass: runAutofillPage extracts the fields once — the costly part is opening
+        // each custom dropdown to read its options — streams them back via onFieldsDiscovered
+        // so the panel previews the questions, then plans and fills from that same extraction.
+        // A separate discovery pass would re-open every dropdown for nothing.
+        runResult = await runAutofillPage({
+          continueSteps: false,
+          forceGenericFallback: true,
+          suppressAutoTrack: false,
+          shouldStop: () => cancelRef.current,
+          onStatus: updateStatus,
+          onFieldsDiscovered: (discoveredFields) => {
+            setFields(discoveredFields.map((field) => panelFieldFromPageField(field)));
+          },
+          onFieldStart: (field) => {
+            setFields((currentFields) => {
+              if (currentFields.some((currentField) => currentField.fieldId === field.fieldId)) {
+                return currentFields.map((currentField) =>
+                  currentField.fieldId === field.fieldId ? { ...currentField, status: "active" } : currentField,
+                );
+              }
+              return [...currentFields, panelFieldFromPageField(field, "active")];
+            });
+          },
+          onField: (record) => {
+            setFields((currentFields) => mergePanelFieldRecord(currentFields, record));
+          },
+        });
       }
-      updateStatus("planning");
-      const runResult = delegateToApplicationFrame
-        ? await (async () => {
-            updateStatus("filling");
-            return runAutofillActiveTab({ continueSteps: false });
-          })()
-        : await runAutofillPage({
-            continueSteps: false,
-            forceGenericFallback: true,
-            suppressAutoTrack: false,
-            shouldStop: () => cancelRef.current,
-            onStatus: updateStatus,
-            onFieldsDiscovered: (discoveredFields) => {
-              setFields(discoveredFields.map((field) => panelFieldFromPageField(field)));
-            },
-            onFieldStart: (field) => {
-              setFields((currentFields) => {
-                if (currentFields.some((currentField) => currentField.fieldId === field.fieldId)) {
-                  return currentFields.map((currentField) =>
-                    currentField.fieldId === field.fieldId ? { ...currentField, status: "active" } : currentField,
-                  );
-                }
-                return [...currentFields, panelFieldFromPageField(field, "active")];
-              });
-            },
-            onField: (record) => {
-              setFields((currentFields) => mergePanelFieldRecord(currentFields, record));
-            },
-          });
       if (cancelRef.current) {
         updateStatus("idle");
         return;
@@ -1264,6 +1425,14 @@ function InPagePanel() {
         setError(runResult.trackerError || "No application questions were parsed.");
         updateStatus("error");
       } else {
+        // Only claim "saved" when the server actually persisted a row (returned an
+        // applicationId). A queued retry or a swallowed {ok:false} must not read as saved.
+        const tracker = runResult.tracker;
+        const persisted = Boolean(tracker && tracker.applicationId);
+        setSynced(autoTrack && persisted);
+        setSavedStage("applied"); // autofill is sent as "submitted" → lands in the Applied column
+        setAlreadyPresent(autoTrack && persisted && Boolean(tracker?.duplicate));
+        setTrackerQueued(autoTrack && !persisted && Boolean(tracker?.queued));
         updateStatus("done");
       }
       void refreshProfile();
@@ -1309,6 +1478,7 @@ function InPagePanel() {
       <div className="jp-tab-handle">
         <button type="button" className="jp-collapse-tab" title="Open JobPosted" onClick={() => setCollapsed(false)}>
           <img src={assetUrl("brand/jobposted-mark.png")} alt="" />
+          <span className="jp-collapse-label">JobPosted</span>
           <ChevronLeft aria-hidden="true" />
         </button>
       </div>
@@ -1322,14 +1492,12 @@ function InPagePanel() {
     <aside className="jp-panel" aria-label="JobPosted autofill panel">
       <header className="jp-panel-header">
         <div className="jp-brand">
-          <img src={assetUrl("brand/jobposted-mark.png")} alt="" />
+          <span className="jp-brand-mark">
+            <img src={assetUrl("brand/jobposted-mark.png")} alt="" />
+          </span>
           <div>
             <strong>JobPosted</strong>
-            {status === "done" && result ? (
-              <span>{doneSummary}</span>
-            ) : (
-              <span>Autofill</span>
-            )}
+            <span>{status === "done" && result ? doneSummary : "Application copilot"}</span>
           </div>
         </div>
         <div className="jp-header-actions">
@@ -1345,100 +1513,178 @@ function InPagePanel() {
         </div>
       </header>
 
-      {status === "idle" && (
-        <div className="jp-panel-body">
-          {authError ? (
-            <section className="jp-message jp-message-warn">
-              <AlertTriangle aria-hidden="true" />
-              <span>{authError}</span>
-              <button type="button" onClick={() => void startSignIn()}>Connect</button>
-            </section>
-          ) : null}
+      <div className="jp-panel-scroll">
+        {authError ? (
+          <section className="jp-message jp-message-warn jp-rise">
+            <AlertTriangle aria-hidden="true" />
+            <span>{authError}</span>
+            <button type="button" onClick={() => void startSignIn()}>Connect</button>
+          </section>
+        ) : null}
 
-          <button type="button" className="jp-autofill-button" disabled={Boolean(authError)} onClick={() => void runPanelAutofill()}>
-            <Wand2 aria-hidden="true" />
-            Autofill
-          </button>
-
-          <PanelCard
-            icon={<FileText aria-hidden="true" />}
-            title={resumeName}
-            actionLabel="Generate Custom Resume"
-            busy={jobAction === "tailor"}
-            onAction={() => void runJobAction("tailor")}
+        {identity ? (
+          <JobIdentityCard
+            company={displayCompany}
+            role={displayRole}
+            location={identity.location}
+            needsReview={identityNeedsReview}
+            editing={Boolean(identityEdit)}
+            draft={identityEdit ?? { company: displayCompany, role: displayRole }}
+            onEditStart={startIdentityEdit}
+            onDraftChange={setIdentityEdit}
+            onSave={saveIdentityEdit}
+            onCancel={() => setIdentityEdit(null)}
           />
-          <PanelCard
-            icon={<Mail aria-hidden="true" />}
-            title={profile?.documents.coverLetterName || "Cover letter"}
-            actionLabel="Generate Cover Letter"
-            busy={jobAction === "cover-letter"}
-            onAction={() => void runJobAction("cover-letter")}
-          />
+        ) : null}
 
-          <div className="jp-tailor-pill">
-            <Sparkles aria-hidden="true" />
-            <span>{jobActionMessage || "Match score / tailor"}</span>
-          </div>
-        </div>
-      )}
-
-      {status === "scanning" || status === "planning" ? (
-        <div className="jp-panel-body jp-fill-body">
-          <div className="jp-progress-head">
-            <strong>{fields.length > 0 ? `${fields.length} questions parsed` : "Parsing questions"}</strong>
-            <button type="button" className="jp-cancel" onClick={() => { cancelRef.current = true; updateStatus("idle"); }}>
-              Cancel
-            </button>
-          </div>
-          <div className="jp-progress"><div style={{ width: fields.length > 0 ? (status === "planning" ? "64%" : "34%") : "12%" }} /></div>
-          <div className="jp-parse-caption">{status === "planning" ? "Building answers from parsed questions" : "Reading the application frame"}</div>
-          {fields.length > 0 ? (
-            <div className="jp-checklist">
-              <ChecklistGroup title="Required" fields={groups.required} />
-              <ChecklistGroup title="Optional" fields={groups.optional} />
-            </div>
-          ) : (
-            <div className="jp-empty-state">Looking for application questions...</div>
-          )}
-        </div>
-      ) : null}
-
-      {status === "filling" || status === "done" || status === "error" ? (
-        <div className="jp-panel-body jp-fill-body">
-          <div className="jp-progress-head">
-            <strong>{status === "done" ? "Done" : status === "error" ? "Needs review" : `Autofilling ${progress}%`}</strong>
-            {filling ? (
-              <button type="button" className="jp-cancel" onClick={() => { cancelRef.current = true; }}>
-                Cancel
-              </button>
-            ) : (
-              <button type="button" className="jp-icon-action" title={listOpen ? "Collapse list" : "Expand list"} onClick={() => setListOpen((value) => !value)}>
-                {listOpen ? <ChevronRight aria-hidden="true" /> : <ChevronLeft aria-hidden="true" />}
-              </button>
-            )}
-          </div>
-          <div className="jp-progress"><div style={{ width: `${Math.max(4, progress || fillPercent)}%` }} /></div>
-          {lowConfidence && <div className="jp-review-pill">Review amber fields before submit</div>}
-          {resultError && (
-            <div className="jp-message jp-message-warn">
-              <AlertTriangle aria-hidden="true" />
-              <span>{resultError}</span>
-            </div>
-          )}
-          {!filling ? (
+        {status === "idle" && (
+          <div className="jp-panel-body">
             <button type="button" className="jp-autofill-button" disabled={Boolean(authError)} onClick={() => void runPanelAutofill()}>
               <Wand2 aria-hidden="true" />
               Autofill this page
             </button>
-          ) : null}
-          {listOpen && (
-            <div className="jp-checklist">
-              <ChecklistGroup title="Required" fields={groups.required} />
-              <ChecklistGroup title="Optional" fields={groups.optional} />
+
+            <button
+              type="button"
+              className={`jp-save-button${synced ? " jp-save-button-done" : ""}`}
+              disabled={Boolean(authError) || saving || synced}
+              onClick={() => void saveJobToTracker()}
+            >
+              {saving ? (
+                <Loader2 className="jp-spin" aria-hidden="true" />
+              ) : synced ? (
+                <BookmarkCheck aria-hidden="true" />
+              ) : (
+                <Bookmark aria-hidden="true" />
+              )}
+              {saving ? "Saving…" : synced ? "Saved to tracker" : "Save to tracker"}
+            </button>
+
+            {saveError ? (
+              <div className="jp-message jp-message-warn">
+                <AlertTriangle aria-hidden="true" />
+                <span>{saveError}</span>
+              </div>
+            ) : null}
+
+            <TrackerToggle checked={autoTrack} onChange={(next) => void toggleAutoTrack(next)} />
+
+            <PanelCard
+              icon={<FileText aria-hidden="true" />}
+              title={resumeName}
+              actionLabel="Generate Custom Resume"
+              busy={jobAction === "tailor"}
+              onAction={() => void runJobAction("tailor")}
+            />
+            <PanelCard
+              icon={<Mail aria-hidden="true" />}
+              title={profile?.documents.coverLetterName || "Cover letter"}
+              actionLabel="Generate Cover Letter"
+              busy={jobAction === "cover-letter"}
+              onAction={() => void runJobAction("cover-letter")}
+            />
+
+            <div className="jp-tailor-pill">
+              <Sparkles aria-hidden="true" />
+              <span>{jobActionMessage || "Match score / tailor"}</span>
             </div>
-          )}
-        </div>
-      ) : null}
+          </div>
+        )}
+
+        {status === "scanning" || status === "planning" ? (
+          <div className="jp-panel-body jp-fill-body">
+            <div className="jp-progress-head">
+              <strong>{fields.length > 0 ? `${fields.length} questions parsed` : "Parsing questions"}</strong>
+              <button type="button" className="jp-cancel" onClick={() => { cancelRef.current = true; updateStatus("idle"); }}>
+                Cancel
+              </button>
+            </div>
+            <div className="jp-progress jp-progress-live"><div style={{ width: fields.length > 0 ? (status === "planning" ? "64%" : "34%") : "12%" }} /></div>
+            <div className="jp-parse-caption">{status === "planning" ? "Building answers from parsed questions" : "Reading the application frame"}</div>
+            {fields.length > 0 ? (
+              <div className="jp-checklist">
+                <ChecklistGroup title="Required" fields={groups.required} />
+                <ChecklistGroup title="Optional" fields={groups.optional} />
+              </div>
+            ) : (
+              <div className="jp-empty-state">Looking for application questions…</div>
+            )}
+          </div>
+        ) : null}
+
+        {status === "filling" || status === "done" || status === "error" ? (
+          <div className="jp-panel-body jp-fill-body">
+            <div className="jp-progress-head">
+              <strong>{status === "done" ? "All set" : status === "error" ? "Needs review" : `Autofilling ${progress}%`}</strong>
+              {filling ? (
+                <button type="button" className="jp-cancel" onClick={() => { cancelRef.current = true; }}>
+                  Cancel
+                </button>
+              ) : (
+                <button type="button" className="jp-icon-action" title={listOpen ? "Collapse list" : "Expand list"} onClick={() => setListOpen((value) => !value)}>
+                  {listOpen ? <ChevronRight aria-hidden="true" /> : <ChevronLeft aria-hidden="true" />}
+                </button>
+              )}
+            </div>
+            <div className={`jp-progress${filling ? " jp-progress-live" : ""}`}><div style={{ width: `${Math.max(4, progress || fillPercent)}%` }} /></div>
+            {lowConfidence && (
+              <div className="jp-review-pill">
+                <AlertTriangle aria-hidden="true" />
+                <span>Review amber fields before submit</span>
+              </div>
+            )}
+            {resultError && (
+              <div className="jp-message jp-message-warn">
+                <AlertTriangle aria-hidden="true" />
+                <span>{resultError}</span>
+              </div>
+            )}
+            {!filling ? (
+              <button type="button" className="jp-autofill-button" disabled={Boolean(authError)} onClick={() => void runPanelAutofill()}>
+                <Wand2 aria-hidden="true" />
+                Autofill this page
+              </button>
+            ) : null}
+            {listOpen && (
+              <div className="jp-checklist">
+                <ChecklistGroup title="Required" fields={groups.required} />
+                <ChecklistGroup title="Optional" fields={groups.optional} />
+              </div>
+            )}
+          </div>
+        ) : null}
+      </div>
+
+      <footer className="jp-panel-footer">
+        {synced ? (
+          <div className="jp-synced jp-rise">
+            <ClipboardCheck aria-hidden="true" />
+            <span>
+              {alreadyPresent
+                ? "Already in your tracker"
+                : `Saved to tracker · ${savedStage === "applied" ? "Applied" : "To review"}`}
+            </span>
+            <button type="button" onClick={() => window.open(`${JOBPOSTED_WEB_ORIGIN}/dashboard/tracker`, "_blank")}>
+              View
+            </button>
+          </div>
+        ) : trackerQueued ? (
+          <div className="jp-foot-hint jp-rise">
+            <Loader2 className="jp-spin" aria-hidden="true" />
+            <span>Offline — queued, will sync to your tracker shortly.</span>
+          </div>
+        ) : resultError ? (
+          <div className="jp-synced jp-synced-error jp-rise">
+            <AlertTriangle aria-hidden="true" />
+            <span>Couldn’t save to tracker. {resultError}</span>
+          </div>
+        ) : (
+          <div className="jp-foot-hint">
+            <Check aria-hidden="true" />
+            <span>Fills locally — you stay in control and click submit.</span>
+          </div>
+        )}
+      </footer>
     </aside>
   );
 }
@@ -1470,13 +1716,133 @@ function PanelCard({
   );
 }
 
+const JP_MONO_HUES = [210, 248, 280, 330, 160, 190, 24, 132];
+function monogramFor(name: string): { letter: string; hue: number } {
+  const trimmed = name.trim();
+  const letter = trimmed ? trimmed[0].toUpperCase() : "";
+  let hash = 0;
+  for (let i = 0; i < trimmed.length; i += 1) hash = (hash * 31 + trimmed.charCodeAt(i)) >>> 0;
+  return { letter, hue: JP_MONO_HUES[hash % JP_MONO_HUES.length] };
+}
+
+function JobIdentityCard({
+  company,
+  role,
+  location,
+  needsReview,
+  editing,
+  draft,
+  onEditStart,
+  onDraftChange,
+  onSave,
+  onCancel,
+}: {
+  company: string;
+  role: string;
+  location: string;
+  needsReview: boolean;
+  editing: boolean;
+  draft: { company: string; role: string };
+  onEditStart: () => void;
+  onDraftChange: (next: { company: string; role: string }) => void;
+  onSave: () => void;
+  onCancel: () => void;
+}) {
+  if (editing) {
+    return (
+      <section className="jp-job-card jp-job-card-edit jp-rise">
+        <label className="jp-input-label">
+          Role
+          <input
+            className="jp-input"
+            value={draft.role}
+            placeholder="Role title"
+            onChange={(event) => onDraftChange({ ...draft, role: event.target.value })}
+          />
+        </label>
+        <label className="jp-input-label">
+          Company
+          <input
+            className="jp-input"
+            value={draft.company}
+            placeholder="Company"
+            onChange={(event) => onDraftChange({ ...draft, company: event.target.value })}
+          />
+        </label>
+        <div className="jp-job-card-actions">
+          <button type="button" className="jp-mini-ghost" onClick={onCancel}>Cancel</button>
+          <button type="button" className="jp-mini-solid" onClick={onSave}>
+            <Check aria-hidden="true" /> Save
+          </button>
+        </div>
+      </section>
+    );
+  }
+  const mono = monogramFor(company || role);
+  return (
+    <section className={`jp-job-card jp-rise${needsReview ? " jp-job-card-review" : ""}`}>
+      <span
+        className="jp-job-logo"
+        style={{ background: `hsl(${mono.hue} 82% 95%)`, color: `hsl(${mono.hue} 64% 40%)` }}
+      >
+        {mono.letter || <Building2 aria-hidden="true" />}
+      </span>
+      <div className="jp-job-meta">
+        <strong title={role}>{role || "Unknown role"}</strong>
+        <span title={company}>{company || "Unknown company"}</span>
+        {location ? (
+          <span className="jp-job-loc">
+            <MapPin aria-hidden="true" />
+            {location}
+          </span>
+        ) : null}
+        {needsReview ? (
+          <button type="button" className="jp-job-review" onClick={onEditStart}>
+            <AlertTriangle aria-hidden="true" /> Confirm details before saving
+          </button>
+        ) : null}
+      </div>
+      <button type="button" className="jp-icon-action jp-job-edit" title="Edit job details" onClick={onEditStart}>
+        <Pencil aria-hidden="true" />
+      </button>
+    </section>
+  );
+}
+
+function TrackerToggle({ checked, onChange }: { checked: boolean; onChange: (next: boolean) => void }) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      className={`jp-track-toggle${checked ? " jp-track-toggle-on" : ""}`}
+      onClick={() => onChange(!checked)}
+    >
+      <span className="jp-track-toggle-copy">
+        <ClipboardCheck aria-hidden="true" />
+        <span>
+          <strong>Add to job tracker</strong>
+          <em>{checked ? "Saved automatically when you autofill" : "Off — autofilled jobs won’t be tracked"}</em>
+        </span>
+      </span>
+      <span className="jp-switch" aria-hidden="true">
+        <span className="jp-switch-knob" />
+      </span>
+    </button>
+  );
+}
+
 function ChecklistGroup({ title, fields }: { title: string; fields: PanelField[] }) {
   if (fields.length === 0) return null;
   return (
     <section className="jp-checklist-group">
       <h3>{title}</h3>
-      {fields.map((field) => (
-        <div key={field.fieldId} className={`jp-field-row${field.confidence > 0 && field.confidence < 0.7 ? " jp-field-row-warn" : ""}`}>
+      {fields.map((field, index) => (
+        <div
+          key={field.fieldId}
+          className={`jp-field-row jp-row-in${field.confidence > 0 && field.confidence < 0.7 ? " jp-field-row-warn" : ""}`}
+          style={{ animationDelay: `${Math.min(index, 12) * 28}ms` }}
+        >
           {fieldStatusIcon(field)}
           <span>{field.label}</span>
         </div>
@@ -1491,111 +1857,412 @@ function PanelStyles() {
       :host {
         all: initial;
         color-scheme: light;
-        --jp-blue-50: #eff6ff;
-        --jp-blue-100: #dbeafe;
-        --jp-blue-600: #1f64e0;
-        --jp-blue-700: #174fb8;
+        --jp-blue-50: #eff5ff;
+        --jp-blue-100: #dce8fe;
+        --jp-blue-200: #bcd4fd;
+        --jp-blue-500: #2f6bf0;
+        --jp-blue-600: #1f5fe0;
+        --jp-blue-700: #1846b8;
         --jp-ink: #0b1220;
-        --jp-muted: #526173;
-        --jp-border: #d9e7fb;
-        --jp-warn-bg: #fffbeb;
+        --jp-ink-2: #33405a;
+        --jp-muted: #6a778c;
+        --jp-line: #e7eef9;
+        --jp-surface: #ffffff;
+        --jp-surface-2: #f5f9ff;
+        --jp-ok: #0f9d6e;
+        --jp-ok-bg: #e7f7f0;
         --jp-warn: #b45309;
+        --jp-warn-bg: #fff7ed;
         font-family: "Plus Jakarta Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
       }
       * { box-sizing: border-box; }
       button { font: inherit; }
+      img { display: block; }
+
+      /* ── Shell ─────────────────────────────────────────────────────────── */
       .jp-panel {
         position: fixed;
         z-index: 2147483646;
-        top: 16px;
+        top: 0;
         right: 0;
-        width: 292px;
-        height: min(720px, calc(100vh - 32px));
+        bottom: 0;
+        width: min(372px, 96vw);
+        height: 100vh;
         display: flex;
         flex-direction: column;
         overflow: hidden;
-        border: 1px solid var(--jp-border);
-        border-right: 0;
-        border-radius: 18px 0 0 18px;
-        background: #fff;
+        border-left: 1px solid var(--jp-line);
+        background: var(--jp-surface);
         color: var(--jp-ink);
-        box-shadow: 0 12px 28px rgba(16, 47, 102, 0.18);
+        box-shadow: -22px 0 60px -30px rgba(13, 40, 97, 0.5);
         font-size: 13px;
-        line-height: 1.35;
+        line-height: 1.4;
+        animation: jp-slide-in 440ms cubic-bezier(.16, 1, .3, 1);
       }
+      @keyframes jp-slide-in {
+        from { transform: translateX(100%); }
+        to { transform: translateX(0); }
+      }
+
       .jp-panel-header {
         display: flex;
         align-items: center;
         justify-content: space-between;
         gap: 8px;
-        padding: 12px;
-        border-bottom: 1px solid var(--jp-border);
+        padding: 13px 14px;
+        border-bottom: 1px solid var(--jp-line);
+        background: linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(245, 249, 255, 0.92));
+        backdrop-filter: blur(8px);
       }
-      .jp-brand { display: flex; min-width: 0; align-items: center; gap: 8px; }
-      .jp-brand img { width: 30px; height: 30px; object-fit: contain; }
-      .jp-brand strong, .jp-card-row strong { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 850; color: var(--jp-ink); }
-      .jp-brand span { display: block; overflow: hidden; max-width: 128px; color: var(--jp-muted); font-size: 11px; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
-      .jp-header-actions { display: flex; align-items: center; gap: 3px; }
+      .jp-brand { display: flex; min-width: 0; align-items: center; gap: 10px; }
+      .jp-brand > div { min-width: 0; }
+      .jp-brand-mark {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 34px;
+        height: 34px;
+        flex: 0 0 auto;
+        padding: 4px;
+        border-radius: 11px;
+        background: var(--jp-blue-50);
+        box-shadow: inset 0 0 0 1px var(--jp-blue-100), 0 6px 14px -8px rgba(31, 95, 224, 0.5);
+      }
+      .jp-brand-mark img { width: 100%; height: 100%; object-fit: contain; object-position: center; display: block; }
+      .jp-brand strong { display: block; font-weight: 900; color: var(--jp-ink); font-size: 14px; line-height: 1.15; }
+      .jp-brand span {
+        display: block;
+        max-width: 168px;
+        color: var(--jp-muted);
+        font-size: 11px;
+        font-weight: 700;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .jp-header-actions { display: flex; align-items: center; gap: 2px; }
       .jp-text-action, .jp-icon-action, .jp-cancel {
         border: 0;
         background: transparent;
         color: var(--jp-muted);
         cursor: pointer;
         font-weight: 800;
+        transition: background 150ms ease, color 150ms ease;
       }
-      .jp-text-action { padding: 6px 4px; font-size: 11px; }
-      .jp-icon-action {
-        display: grid;
-        width: 30px;
-        height: 30px;
-        place-items: center;
-        border-radius: 8px;
-      }
+      .jp-text-action { padding: 6px 8px; font-size: 11px; border-radius: 8px; }
+      .jp-icon-action { display: grid; width: 30px; height: 30px; place-items: center; border-radius: 9px; }
       .jp-icon-action svg { width: 16px; height: 16px; }
       .jp-icon-action:hover, .jp-text-action:hover { background: var(--jp-blue-50); color: var(--jp-blue-700); }
-      .jp-panel-body { display: grid; gap: 10px; padding: 12px; overflow: auto; }
+
+      .jp-panel-scroll {
+        flex: 1;
+        min-height: 0;
+        overflow-y: auto;
+        overflow-x: hidden;
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        padding: 13px;
+        scrollbar-width: thin;
+        scrollbar-color: var(--jp-blue-100) transparent;
+      }
+      .jp-panel-scroll::-webkit-scrollbar { width: 9px; }
+      .jp-panel-scroll::-webkit-scrollbar-thumb {
+        background: var(--jp-blue-100);
+        border-radius: 99px;
+        border: 2px solid transparent;
+        background-clip: padding-box;
+      }
+      .jp-panel-scroll::-webkit-scrollbar-thumb:hover { background: var(--jp-blue-200); }
+      .jp-panel-body { display: flex; flex-direction: column; gap: 12px; }
+      .jp-panel-body.jp-fill-body { gap: 11px; }
+
+      .jp-panel-footer {
+        padding: 10px 13px;
+        border-top: 1px solid var(--jp-line);
+        background: linear-gradient(0deg, rgba(255, 255, 255, 0.97), rgba(245, 249, 255, 0.9));
+        backdrop-filter: blur(8px);
+      }
+      .jp-foot-hint { display: flex; align-items: center; gap: 8px; color: var(--jp-muted); font-size: 11.5px; font-weight: 650; }
+      .jp-foot-hint svg { width: 14px; height: 14px; flex: 0 0 auto; color: var(--jp-ok); }
+      .jp-synced { display: flex; align-items: center; gap: 8px; color: var(--jp-ok); font-weight: 850; font-size: 12.5px; }
+      .jp-synced-error { color: var(--jp-warn); }
+      .jp-synced-error span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+      .jp-synced svg { width: 16px; height: 16px; flex: 0 0 auto; }
+      .jp-synced button {
+        margin-left: auto;
+        border: 0;
+        border-radius: 99px;
+        background: var(--jp-ok-bg);
+        color: var(--jp-ok);
+        padding: 5px 11px;
+        font-weight: 850;
+        font-size: 12px;
+        cursor: pointer;
+        transition: filter 150ms ease;
+      }
+      .jp-synced button:hover { filter: brightness(0.97); }
+
+      /* ── Job identity card ─────────────────────────────────────────────── */
+      .jp-job-card {
+        position: relative;
+        display: flex;
+        gap: 11px;
+        align-items: flex-start;
+        padding: 12px;
+        border: 1px solid var(--jp-line);
+        border-radius: 14px;
+        background: linear-gradient(180deg, #fff, var(--jp-surface-2));
+        box-shadow: 0 1px 0 rgba(13, 40, 97, 0.03);
+      }
+      .jp-job-card-review { border-color: #f3d8a6; background: linear-gradient(180deg, #fffdf7, #fff8ec); }
+      .jp-job-logo {
+        display: grid;
+        place-items: center;
+        width: 40px;
+        height: 40px;
+        flex: 0 0 auto;
+        border-radius: 11px;
+        font-weight: 900;
+        font-size: 17px;
+      }
+      .jp-job-logo svg { width: 20px; height: 20px; }
+      .jp-job-meta { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 2px; padding-right: 22px; }
+      .jp-job-meta strong {
+        font-size: 14px;
+        font-weight: 850;
+        color: var(--jp-ink);
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .jp-job-meta > span {
+        font-size: 12px;
+        font-weight: 700;
+        color: var(--jp-ink-2);
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .jp-job-loc { display: flex; align-items: center; gap: 4px; color: var(--jp-muted); font-size: 11.5px; font-weight: 650; }
+      .jp-job-loc svg { width: 12px; height: 12px; flex: 0 0 auto; }
+      .jp-job-review {
+        margin-top: 6px;
+        display: inline-flex;
+        align-self: flex-start;
+        align-items: center;
+        gap: 6px;
+        border: 0;
+        border-radius: 99px;
+        background: #fef0d8;
+        color: #b45309;
+        padding: 5px 10px;
+        font-size: 11px;
+        font-weight: 800;
+        cursor: pointer;
+      }
+      .jp-job-review svg { width: 13px; height: 13px; }
+      .jp-job-edit { position: absolute; top: 8px; right: 8px; width: 28px; height: 28px; }
+      .jp-job-card-edit { flex-direction: column; gap: 10px; }
+      .jp-input-label {
+        display: flex;
+        flex-direction: column;
+        gap: 5px;
+        font-size: 10.5px;
+        font-weight: 850;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        color: var(--jp-muted);
+      }
+      .jp-input {
+        width: 100%;
+        height: 38px;
+        border: 1px solid var(--jp-line);
+        border-radius: 10px;
+        padding: 0 11px;
+        background: #fff;
+        color: var(--jp-ink);
+        font-size: 13px;
+        font-weight: 600;
+        outline: none;
+        transition: border-color 150ms ease, box-shadow 150ms ease;
+      }
+      .jp-input:focus { border-color: var(--jp-blue-500); box-shadow: 0 0 0 3px var(--jp-blue-100); }
+      .jp-job-card-actions { display: flex; gap: 8px; justify-content: flex-end; }
+      .jp-mini-ghost, .jp-mini-solid {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        border: 0;
+        border-radius: 9px;
+        padding: 8px 13px;
+        font-weight: 850;
+        font-size: 12px;
+        cursor: pointer;
+        transition: background 150ms ease, color 150ms ease;
+      }
+      .jp-mini-ghost { background: transparent; color: var(--jp-muted); }
+      .jp-mini-ghost:hover { background: var(--jp-surface-2); color: var(--jp-ink); }
+      .jp-mini-solid { background: var(--jp-blue-600); color: #fff; }
+      .jp-mini-solid:hover { background: var(--jp-blue-700); }
+      .jp-mini-ghost svg, .jp-mini-solid svg { width: 14px; height: 14px; }
+
+      /* ── Primary action ────────────────────────────────────────────────── */
       .jp-autofill-button {
+        position: relative;
+        overflow: hidden;
         display: inline-flex;
         width: 100%;
-        height: 44px;
+        height: 46px;
         align-items: center;
         justify-content: center;
         gap: 8px;
         border: 0;
-        border-radius: 12px;
-        background: var(--jp-blue-600);
+        border-radius: 13px;
+        background: linear-gradient(135deg, var(--jp-blue-500), var(--jp-blue-700));
         color: #fff;
         cursor: pointer;
-        font-weight: 900;
+        font-weight: 850;
+        font-size: 13.5px;
+        box-shadow: 0 12px 24px -12px rgba(31, 95, 224, 0.85);
+        transition: transform 140ms ease, box-shadow 140ms ease, filter 140ms ease;
       }
-      .jp-autofill-button:hover:not(:disabled) { background: var(--jp-blue-700); }
-      .jp-autofill-button:disabled { cursor: not-allowed; opacity: .55; }
+      .jp-autofill-button:hover:not(:disabled) {
+        transform: translateY(-1px);
+        box-shadow: 0 16px 28px -12px rgba(31, 95, 224, 0.9);
+        filter: saturate(1.05);
+      }
+      .jp-autofill-button:active:not(:disabled) { transform: translateY(0) scale(0.99); }
+      .jp-autofill-button:disabled { cursor: not-allowed; opacity: 0.5; box-shadow: none; }
       .jp-autofill-button svg { width: 18px; height: 18px; }
-      .jp-card-row {
-        display: flex;
-        gap: 10px;
-        padding: 10px;
-        border: 1px solid var(--jp-border);
+      .jp-autofill-button::after {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background: linear-gradient(115deg, transparent 32%, rgba(255, 255, 255, 0.38) 50%, transparent 68%);
+        transform: translateX(-130%);
+      }
+      .jp-autofill-button:hover:not(:disabled)::after { animation: jp-shine 850ms ease; }
+      @keyframes jp-shine { to { transform: translateX(130%); } }
+
+      .jp-save-button {
+        display: inline-flex;
+        width: 100%;
+        height: 42px;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        border: 1px solid var(--jp-blue-200);
         border-radius: 12px;
         background: #fff;
+        color: var(--jp-blue-700);
+        cursor: pointer;
+        font-weight: 850;
+        font-size: 13px;
+        transition: background 150ms ease, border-color 150ms ease, transform 140ms ease;
       }
+      .jp-save-button:hover:not(:disabled) { background: var(--jp-blue-50); transform: translateY(-1px); }
+      .jp-save-button:active:not(:disabled) { transform: translateY(0); }
+      .jp-save-button svg { width: 17px; height: 17px; }
+      .jp-save-button:disabled { cursor: default; }
+      .jp-save-button:disabled:not(.jp-save-button-done) { opacity: 0.5; }
+      .jp-save-button-done {
+        border-color: transparent;
+        background: var(--jp-ok-bg);
+        color: var(--jp-ok);
+        opacity: 1;
+      }
+
+      /* ── Tracker toggle ────────────────────────────────────────────────── */
+      .jp-track-toggle {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        width: 100%;
+        text-align: left;
+        cursor: pointer;
+        border: 1px solid var(--jp-line);
+        border-radius: 13px;
+        padding: 11px 12px;
+        background: #fff;
+        transition: border-color 160ms ease, background 160ms ease;
+      }
+      .jp-track-toggle:hover { border-color: var(--jp-blue-200); }
+      .jp-track-toggle-on { background: linear-gradient(180deg, var(--jp-blue-50), #fff); border-color: var(--jp-blue-200); }
+      .jp-track-toggle-copy { display: flex; align-items: center; gap: 10px; min-width: 0; flex: 1; }
+      .jp-track-toggle-copy > svg { width: 18px; height: 18px; flex: 0 0 auto; color: var(--jp-muted); transition: color 160ms ease; }
+      .jp-track-toggle-on .jp-track-toggle-copy > svg { color: var(--jp-blue-600); }
+      .jp-track-toggle-copy > span { min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+      .jp-track-toggle-copy strong { font-size: 13px; font-weight: 850; color: var(--jp-ink); }
+      .jp-track-toggle-copy em {
+        font-style: normal;
+        font-size: 11px;
+        font-weight: 650;
+        color: var(--jp-muted);
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .jp-switch {
+        position: relative;
+        flex: 0 0 auto;
+        width: 40px;
+        height: 23px;
+        border-radius: 99px;
+        background: #ccd8ea;
+        transition: background 200ms ease;
+      }
+      .jp-track-toggle-on .jp-switch { background: var(--jp-blue-600); }
+      .jp-switch-knob {
+        position: absolute;
+        top: 2px;
+        left: 2px;
+        width: 19px;
+        height: 19px;
+        border-radius: 50%;
+        background: #fff;
+        box-shadow: 0 2px 5px rgba(13, 40, 97, 0.3);
+        transition: transform 230ms cubic-bezier(.16, 1, .3, 1);
+      }
+      .jp-track-toggle-on .jp-switch-knob { transform: translateX(17px); }
+
+      /* ── Document cards ────────────────────────────────────────────────── */
+      .jp-card-row {
+        display: flex;
+        gap: 11px;
+        padding: 11px;
+        border: 1px solid var(--jp-line);
+        border-radius: 13px;
+        background: #fff;
+        transition: border-color 160ms ease, box-shadow 160ms ease;
+      }
+      .jp-card-row:hover { border-color: var(--jp-blue-200); box-shadow: 0 8px 18px -14px rgba(13, 40, 97, 0.55); }
       .jp-card-icon {
         display: grid;
-        width: 32px;
-        height: 32px;
+        width: 34px;
+        height: 34px;
         flex: 0 0 auto;
         place-items: center;
-        border-radius: 9px;
+        border-radius: 10px;
         background: var(--jp-blue-50);
         color: var(--jp-blue-700);
       }
       .jp-card-icon svg { width: 17px; height: 17px; }
-      .jp-card-row div { min-width: 0; flex: 1; }
+      .jp-card-row > div { min-width: 0; flex: 1; }
+      .jp-card-row strong {
+        display: block;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        font-weight: 800;
+        font-size: 12.5px;
+        color: var(--jp-ink);
+      }
       .jp-card-row button {
         display: inline-flex;
         align-items: center;
         gap: 6px;
-        margin-top: 6px;
+        margin-top: 7px;
         border: 0;
         background: transparent;
         color: var(--jp-blue-700);
@@ -1603,151 +2270,167 @@ function PanelStyles() {
         padding: 0;
         font-size: 12px;
         font-weight: 850;
+        transition: color 150ms ease;
       }
+      .jp-card-row button:hover:not(:disabled) { color: var(--jp-blue-600); }
+      .jp-card-row button:disabled { color: var(--jp-muted); cursor: default; }
       .jp-card-row button svg { width: 14px; height: 14px; }
+
       .jp-tailor-pill, .jp-review-pill {
         display: inline-flex;
         align-items: center;
         gap: 7px;
         width: fit-content;
         max-width: 100%;
-        border-radius: 999px;
-        background: var(--jp-blue-50);
-        color: var(--jp-blue-700);
-        padding: 7px 9px;
+        border-radius: 99px;
+        padding: 7px 11px;
         font-size: 12px;
-        font-weight: 850;
+        font-weight: 800;
       }
-      .jp-tailor-pill svg, .jp-review-pill svg { width: 14px; height: 14px; }
-      .jp-scan-state {
-        display: grid;
-        flex: 1;
-        place-items: center;
-        align-content: center;
-        gap: 10px;
-        padding: 28px;
-        text-align: center;
-      }
-      .jp-scan-state strong { font-size: 15px; font-weight: 900; }
-      .jp-scan-state span { color: var(--jp-muted); font-size: 12px; font-weight: 700; }
-      .jp-sparkle {
-        display: grid;
-        width: 48px;
-        height: 48px;
-        place-items: center;
-        border-radius: 14px;
-        background: var(--jp-blue-50);
-        color: var(--jp-blue-700);
-        animation: jp-pulse 1.25s ease-in-out infinite;
-      }
-      .jp-sparkle svg { width: 22px; height: 22px; }
-      .jp-cancel { padding: 4px; color: var(--jp-blue-700); font-size: 12px; }
+      .jp-tailor-pill { background: var(--jp-blue-50); color: var(--jp-blue-700); }
+      .jp-tailor-pill svg, .jp-review-pill svg { width: 14px; height: 14px; flex: 0 0 auto; }
+      .jp-tailor-pill span, .jp-review-pill span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .jp-review-pill { background: var(--jp-warn-bg); color: var(--jp-warn); }
+
+      /* ── Progress + lists ──────────────────────────────────────────────── */
+      .jp-cancel { padding: 5px 9px; color: var(--jp-blue-700); font-size: 12px; border-radius: 8px; }
+      .jp-cancel:hover { background: var(--jp-blue-50); }
       .jp-progress-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-      .jp-progress-head strong { font-size: 14px; font-weight: 900; }
+      .jp-progress-head strong { font-size: 13.5px; font-weight: 900; color: var(--jp-ink); }
       .jp-progress {
-        height: 7px;
+        position: relative;
+        height: 8px;
         overflow: hidden;
-        border-radius: 999px;
+        border-radius: 99px;
         background: var(--jp-blue-100);
       }
-      .jp-progress div {
+      .jp-progress > div {
         height: 100%;
         border-radius: inherit;
-        background: var(--jp-blue-600);
-        transition: width 220ms cubic-bezier(.16, 1, .3, 1);
+        background: linear-gradient(90deg, var(--jp-blue-500), var(--jp-blue-600));
+        transition: width 380ms cubic-bezier(.16, 1, .3, 1);
       }
-      .jp-review-pill { background: var(--jp-warn-bg); color: var(--jp-warn); }
-      .jp-parse-caption {
-        color: var(--jp-muted);
-        font-size: 12px;
-        font-weight: 750;
+      .jp-progress-live::after {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.55), transparent);
+        transform: translateX(-100%);
+        animation: jp-shimmer 1.2s ease-in-out infinite;
       }
+      @keyframes jp-shimmer { to { transform: translateX(100%); } }
+      .jp-parse-caption { color: var(--jp-muted); font-size: 12px; font-weight: 650; }
       .jp-empty-state {
-        border: 1px dashed var(--jp-border);
-        border-radius: 10px;
-        padding: 12px;
+        border: 1px dashed var(--jp-blue-200);
+        border-radius: 12px;
+        padding: 14px;
         color: var(--jp-muted);
         font-size: 12px;
-        font-weight: 750;
+        font-weight: 650;
+        text-align: center;
+        background: var(--jp-surface-2);
       }
-      .jp-checklist { display: grid; gap: 12px; }
-      .jp-checklist-group { display: grid; gap: 6px; }
+      .jp-checklist { display: flex; flex-direction: column; gap: 13px; }
+      .jp-checklist-group { display: flex; flex-direction: column; gap: 5px; }
       .jp-checklist-group h3 {
         margin: 0;
         color: var(--jp-muted);
-        font-size: 11px;
+        font-size: 10.5px;
         font-weight: 900;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
       }
       .jp-field-row {
         display: grid;
-        min-height: 30px;
+        min-height: 32px;
         grid-template-columns: 18px minmax(0, 1fr);
         align-items: center;
-        gap: 8px;
-        border-radius: 8px;
-        padding: 5px 6px;
-        color: var(--jp-ink);
+        gap: 9px;
+        border-radius: 9px;
+        padding: 6px 8px;
+        color: var(--jp-ink-2);
         font-size: 12px;
-        font-weight: 750;
+        font-weight: 650;
+        transition: background 150ms ease;
       }
+      .jp-field-row:hover { background: var(--jp-surface-2); }
       .jp-field-row span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
       .jp-field-row-warn { background: var(--jp-warn-bg); color: #7c2d12; }
-      .jp-row-icon { width: 16px; height: 16px; color: #94a3b8; }
-      .jp-ok { color: #047857; }
+      .jp-field-row-warn:hover { background: #fdeccf; }
+      .jp-row-icon { width: 16px; height: 16px; color: #9fb0c7; }
+      .jp-ok { color: var(--jp-ok); }
       .jp-warn { color: var(--jp-warn); }
       .jp-message {
         display: grid;
         grid-template-columns: 18px minmax(0, 1fr) auto;
         align-items: center;
-        gap: 8px;
-        border-radius: 10px;
-        padding: 9px;
+        gap: 9px;
+        border-radius: 11px;
+        padding: 10px 11px;
         font-size: 12px;
-        font-weight: 800;
+        font-weight: 750;
       }
       .jp-message svg { width: 16px; height: 16px; }
-      .jp-message button {
-        border: 0;
-        background: transparent;
-        color: inherit;
-        cursor: pointer;
-        font-weight: 900;
-      }
+      .jp-message button { border: 0; background: transparent; color: inherit; cursor: pointer; font-weight: 900; }
       .jp-message-warn { background: var(--jp-warn-bg); color: var(--jp-warn); }
+
+      /* ── Collapsed handle ──────────────────────────────────────────────── */
       .jp-tab-handle {
         position: fixed;
         z-index: 2147483646;
-        top: 44%;
+        top: 50%;
         right: 0;
+        transform: translateY(-50%);
+        animation: jp-tab-in 380ms cubic-bezier(.16, 1, .3, 1);
       }
       .jp-collapse-tab {
-        display: grid;
-        gap: 8px;
-        place-items: center;
-        width: 44px;
-        min-height: 116px;
-        border: 1px solid var(--jp-border);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 10px;
+        width: 46px;
+        padding: 14px 7px;
+        border: 1px solid var(--jp-line);
         border-right: 0;
-        border-radius: 14px 0 0 14px;
-        background: #fff;
+        border-radius: 15px 0 0 15px;
+        background: linear-gradient(180deg, #fff, var(--jp-surface-2));
         color: var(--jp-blue-700);
-        box-shadow: 0 12px 24px rgba(16, 47, 102, 0.16);
+        box-shadow: -12px 0 30px -16px rgba(13, 40, 97, 0.55);
         cursor: pointer;
+        transition: width 160ms ease, box-shadow 160ms ease;
       }
-      .jp-collapse-tab img { width: 26px; height: 26px; object-fit: contain; }
-      .jp-collapse-tab svg { width: 16px; height: 16px; }
-      .jp-spin { animation: jp-spin 900ms linear infinite; }
+      .jp-collapse-tab:hover { width: 50px; box-shadow: -14px 0 32px -16px rgba(13, 40, 97, 0.6); }
+      .jp-collapse-tab img { width: 24px; height: 24px; object-fit: contain; }
+      .jp-collapse-label {
+        writing-mode: vertical-rl;
+        transform: rotate(180deg);
+        font-size: 11px;
+        font-weight: 850;
+        letter-spacing: 0.05em;
+        color: var(--jp-ink-2);
+      }
+      .jp-collapse-tab svg { width: 15px; height: 15px; }
+      @keyframes jp-tab-in {
+        from { transform: translate(46px, -50%); opacity: 0; }
+        to { transform: translate(0, -50%); opacity: 1; }
+      }
+
+      /* ── Motion utilities ──────────────────────────────────────────────── */
+      .jp-rise { animation: jp-rise 320ms cubic-bezier(.16, 1, .3, 1) both; }
+      @keyframes jp-rise { from { opacity: 0; transform: translateY(7px); } to { opacity: 1; transform: none; } }
+      .jp-row-in { animation: jp-row-in 320ms cubic-bezier(.16, 1, .3, 1) both; }
+      @keyframes jp-row-in { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: none; } }
+      .jp-spin { animation: jp-spin 850ms linear infinite; }
       @keyframes jp-spin { to { transform: rotate(360deg); } }
-      @keyframes jp-pulse {
-        0%, 100% { transform: translateY(0); box-shadow: 0 0 0 rgba(31, 100, 224, 0); }
-        50% { transform: translateY(-2px); box-shadow: 0 8px 16px rgba(31, 100, 224, .12); }
-      }
+
       @media (prefers-reduced-motion: reduce) {
-        .jp-spin, .jp-sparkle { animation: none; }
-        .jp-progress div { transition: none; }
+        .jp-panel, .jp-tab-handle, .jp-rise, .jp-row-in { animation: none !important; }
+        .jp-progress > div { transition: none; }
+        .jp-progress-live::after, .jp-autofill-button::after { display: none; }
+        .jp-switch-knob { transition: none; }
       }
-      @media (max-width: 520px) {
-        .jp-panel { top: 10px; width: min(292px, calc(100vw - 20px)); height: min(680px, calc(100vh - 20px)); }
+      @media (max-width: 440px) {
+        .jp-panel { width: 100vw; border-left: 0; }
       }
     `}</style>
   );

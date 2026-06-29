@@ -240,13 +240,22 @@ function isVisible(element: HTMLElement) {
   // widget (select2/chosen/react-select). Keep it: we read its options and fill it by
   // value + change event, which those widgets mirror back into their visible UI.
   if (element instanceof HTMLSelectElement && element.options.length > 1) return true;
+  // Custom-styled radio/checkbox: the real <input> is frequently rendered opacity:0 with a drawn
+  // proxy (a label[for]/sibling circle, e.g. Ashby's radios). It is still the value model we set +
+  // fire change on, so keep it as long as it stays in layout. Excludes tabindex=-1 value mirrors
+  // (e.g. the hidden checkbox behind a Yes/No button group), which are represented by their buttons.
+  const styledChoiceProxy =
+    element instanceof HTMLInputElement &&
+    (element.type === "radio" || element.type === "checkbox") &&
+    element.getAttribute("tabindex") !== "-1";
   const view = element.ownerDocument.defaultView;
   for (let node: HTMLElement | null = element; node; node = node.parentElement) {
     if (node.hasAttribute("hidden") || node.getAttribute("aria-hidden") === "true") return false;
     const style = view?.getComputedStyle?.(node);
-    if (style && (style.display === "none" || style.visibility === "hidden" || style.visibility === "collapse" || style.opacity === "0")) {
+    if (style && (style.display === "none" || style.visibility === "hidden" || style.visibility === "collapse")) {
       return false;
     }
+    if (style && style.opacity === "0" && !(styledChoiceProxy && node === element)) return false;
   }
   if (hasBrowserLayout(element) && !hasRenderedBox(element)) return false;
   return true;
@@ -792,6 +801,27 @@ function fieldId(element: HTMLElement, index: number, label: string, type: Exten
   return `jp-${slug(base)}-${type}-${index}`;
 }
 
+function fieldEntryQuestionLabel(start: HTMLElement, anchor: HTMLElement): string {
+  // The question for a custom choice group is a heading/legend in the field-entry wrapper (e.g.
+  // Ashby's <label class="_heading">…?</label>), distinct from the per-option labels. Key on the
+  // heading/legend marker — NOT the absence of `for`, since the question label is often
+  // for-associated with the field's hidden value input.
+  for (let node = start, hops = 0; node && hops < 5 && node !== node.ownerDocument.body; node = node.parentElement!, hops++) {
+    const candidate = Array.from(
+      node.querySelectorAll<HTMLElement>("legend, [class*='heading' i], [class*='question' i]"),
+    ).find(
+      (element) =>
+        !element.contains(anchor) &&
+        !element.querySelector("input, button, [role='button'], [role='radio']") &&
+        Boolean(visibleText(element.textContent)),
+    );
+    const text = visibleText(candidate?.textContent);
+    if (text) return text.slice(0, 220);
+    if (node.tagName === "FIELDSET" || /field|question|form-group/i.test(node.className || "")) break;
+  }
+  return "";
+}
+
 function radioGroupLabel(element: HTMLElement): string {
   // A radio group's meaning is the question (fieldset legend / radiogroup label),
   // not the first option's text ("Yes"). Prefer the group label, fall back to nearby.
@@ -802,6 +832,8 @@ function radioGroupLabel(element: HTMLElement): string {
   if (aria) return aria;
   const labelledby = textById(element.ownerDocument, group?.getAttribute("aria-labelledby") ?? null);
   if (labelledby) return labelledby;
+  const question = fieldEntryQuestionLabel(element.parentElement ?? element, element);
+  if (question) return question;
   const section = sectionFor(element);
   if (section) return section;
   return labelFor(element);
@@ -959,11 +991,19 @@ function isChoiceButtonCandidate(element: HTMLElement) {
   return !looksLikeActionControl(text);
 }
 
+function realChoiceControlCount(node: HTMLElement) {
+  // Ignore tabindex=-1 value mirrors — hidden inputs that back a custom control (e.g. the
+  // checkbox behind an Ashby Yes/No button pair) — so they don't disqualify a button group.
+  return Array.from(node.querySelectorAll<HTMLElement>(CONTROL_SELECTOR)).filter(
+    (control) => control.getAttribute("tabindex") !== "-1",
+  ).length;
+}
+
 function buttonChoiceGroupContainer(button: HTMLElement, candidates: ReadonlySet<HTMLElement>) {
   for (let node = button.parentElement; node && node !== button.ownerDocument.body; node = node.parentElement) {
     const within = Array.from(node.querySelectorAll<HTMLElement>("button, [role='button']")).filter((candidate) => candidates.has(candidate));
-    if (within.length >= 2) return node.querySelectorAll(CONTROL_SELECTOR).length === 0 ? node : null;
-    if (node.querySelectorAll(CONTROL_SELECTOR).length > 0) return null;
+    if (within.length >= 2) return realChoiceControlCount(node) === 0 ? node : null;
+    if (realChoiceControlCount(node) > 0) return null;
   }
   return null;
 }
@@ -978,6 +1018,16 @@ function buttonChoiceGroupLabel(container: HTMLElement) {
   );
   const explicitText = visibleText(explicit?.textContent);
   if (explicitText && !explicit?.querySelector("button, [role='button']")) return explicitText.slice(0, 220);
+  // The question is usually a sibling label in the surrounding field-entry wrapper, not inside the
+  // tight button container (e.g. Ashby renders <label>…?</label> beside the Yes/No buttons).
+  for (let node = container.parentElement, hops = 0; node && hops < 5 && node !== node.ownerDocument.body; node = node.parentElement, hops++) {
+    const candidate = Array.from(
+      node.querySelectorAll<HTMLElement>("label, legend, [class*='heading' i], [class*='question' i], [class*='label' i]"),
+    ).find((element) => !element.contains(container) && !element.querySelector("button, [role='button']"));
+    const text = visibleText(candidate?.textContent);
+    if (text) return text.slice(0, 220);
+    if (node.tagName === "FIELDSET" || /field|question|form-group/i.test(node.className || "")) break;
+  }
   return textWithoutControls(container).slice(0, 220);
 }
 
@@ -987,7 +1037,9 @@ function choiceButtonSelected(element: HTMLElement) {
   }
   const state = normalize(`${element.getAttribute("data-state") ?? ""} ${element.getAttribute("data-selected") ?? ""}`);
   if (/^(active|checked|on|selected|true)$/.test(state)) return true;
-  return Array.from(element.classList).some((token) => /^(active|checked|selected)$/.test(normalize(token)));
+  // CSS-module hashed classes mark selection as a delimited segment, e.g. "_active_1svni_57".
+  // Match active/checked/selected/pressed as a whole segment (so "inactive" never counts).
+  return Array.from(element.classList).some((token) => /(?:^|_|-)(active|checked|selected|pressed)(?:$|_|-)/i.test(token));
 }
 
 function discoverButtonChoiceGroups(doc: Document) {
@@ -1939,9 +1991,17 @@ function searchInputForChoice(element: HTMLElement) {
 }
 
 function setChoiceSearchText(input: HTMLInputElement, value: string) {
-  nativeValueSetter(input, value);
+  nativeValueSetter(input, "");
   const InputEventCtor = input.ownerDocument.defaultView?.InputEvent ?? InputEvent;
-  input.dispatchEvent(new InputEventCtor("input", { bubbles: true, inputType: "insertText", data: value }));
+  input.dispatchEvent(new InputEventCtor("input", { bubbles: true, inputType: "deleteContentBackward", data: null }));
+  const KeyboardEventCtor = input.ownerDocument.defaultView?.KeyboardEvent ?? KeyboardEvent;
+  for (const char of value) {
+    input.dispatchEvent(new KeyboardEventCtor("keydown", { key: char, bubbles: true, cancelable: true }));
+    input.dispatchEvent(new KeyboardEventCtor("keypress", { key: char, bubbles: true, cancelable: true }));
+    nativeValueSetter(input, input.value + char);
+    input.dispatchEvent(new InputEventCtor("input", { bubbles: true, inputType: "insertText", data: char }));
+    input.dispatchEvent(new KeyboardEventCtor("keyup", { key: char, bubbles: true, cancelable: true }));
+  }
   input.dispatchEvent(new Event("change", { bubbles: true }));
 }
 
@@ -2115,29 +2175,56 @@ async function waitForDynamicChoiceOptions(
   return options;
 }
 
-function fillRadio(field: PageField, label: string) {
+function clickChoiceElement(element: HTMLElement) {
+  element.scrollIntoView?.({ block: "nearest", inline: "nearest" });
+  element.focus?.();
+  dispatchMouseLike(element, "pointerdown");
+  dispatchMouseLike(element, "mousedown");
+  dispatchMouseLike(element, "pointerup");
+  dispatchMouseLike(element, "mouseup");
+  element.click();
+}
+
+async function fillRadio(field: PageField, label: string) {
   const match = bestOption(label, field.elements, optionTextForElement);
   if (!match) return false;
+
+  // Native radio input (often opacity:0 behind a styled proxy): set it, then click its
+  // label[for] so React's onChange actually fires, and verify .checked took.
   if (match instanceof HTMLInputElement) {
+    if (match.checked) return true;
     nativeCheckedSetter(match, true);
+    const id = match.getAttribute("id");
+    const proxy = id ? match.ownerDocument.querySelector<HTMLElement>(`label[for="${cssEscape(id)}"]`) : null;
+    (proxy ?? match).click();
     dispatchFieldEvents(match);
+    await sleep(40);
+    if (!match.checked) {
+      nativeCheckedSetter(match, true);
+      dispatchFieldEvents(match);
+    }
     return match.checked;
   }
-  for (const element of field.elements) {
-    if (element === match || element instanceof HTMLInputElement) continue;
-    element.setAttribute("aria-checked", "false");
-    if (element.tagName === "BUTTON" || element.getAttribute("role") === "button") element.setAttribute("aria-pressed", "false");
+
+  // Custom button choice (e.g. Ashby Yes/No): clicking the *active* option toggles it OFF, so
+  // never re-click an already-selected target. Click once, verify the page reflects it (the
+  // selected class / aria), and retry only while it is still unselected.
+  if (choiceButtonSelected(match)) return true;
+  clickChoiceElement(match);
+  await sleep(40);
+  if (!choiceButtonSelected(match)) {
+    clickChoiceElement(match);
+    await sleep(60);
   }
-  match.focus?.();
-  dispatchMouseLike(match, "pointerdown");
-  dispatchMouseLike(match, "mousedown");
-  dispatchMouseLike(match, "pointerup");
-  dispatchMouseLike(match, "mouseup");
-  match.click();
-  match.setAttribute("aria-checked", "true");
-  if (match.tagName === "BUTTON" || match.getAttribute("role") === "button") match.setAttribute("aria-pressed", "true");
-  dispatchFieldEvents(match);
-  return true;
+  const selected = choiceButtonSelected(match);
+  if (selected) {
+    for (const element of field.elements) {
+      if (element === match) continue;
+      if (element.getAttribute("aria-checked")) element.setAttribute("aria-checked", "false");
+      if (element.getAttribute("aria-pressed")) element.setAttribute("aria-pressed", "false");
+    }
+  }
+  return selected;
 }
 
 function fillCheckbox(field: PageField, checked: boolean) {
@@ -2475,7 +2562,7 @@ async function fillPlanItem(field: PageField, item: ExtensionAutofillPlanItem, g
       field.type === "select"
         ? fillSelect(field, label)
         : field.type === "radio"
-          ? fillRadio(field, label)
+          ? await fillRadio(field, label)
           : await fillCombobox(field, label);
     return recordFor(field, item, ok ? "filled" : "needs_user", ok ? undefined : `Could not select ${label}.`);
   }

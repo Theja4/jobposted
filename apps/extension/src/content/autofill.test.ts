@@ -292,6 +292,74 @@ describe("content autofill extraction", () => {
     expect((doc.querySelector("input[name='auth'][value='yes']") as HTMLInputElement).checked).toBe(true);
   });
 
+  it("extracts and selects an Ashby-style Yes/No button group backed by a hidden checkbox", async () => {
+    const doc = installDom(
+      `<form>
+        <div class="_fieldEntry_1e3gg_28 ashby-application-form-field-entry">
+          <label class="_heading_f7cvd_52 _required_f7cvd_91 _label_x">Would you be able to be in office 5 days a week?</label>
+          <div class="_container_1svni_28 _yesno_1e3gg_148">
+            <button type="button" class="_container_pjyt6_1 _option_1svni_32">Yes</button>
+            <button type="button" class="_container_pjyt6_1 _option_1svni_32">No</button>
+            <input type="checkbox" class="_input_1svni_78" tabindex="-1" name="office-uuid">
+          </div>
+        </div>
+      </form>`,
+      "https://jobs.ashbyhq.com/acme/uuid/application",
+    );
+    // Simulate Ashby: clicking an option toggles a hashed "_active" class and clears its sibling.
+    const buttons = Array.from(doc.querySelectorAll("button"));
+    for (const button of buttons) {
+      button.addEventListener("click", () => {
+        const wasActive = button.classList.contains("_active_1svni_57");
+        for (const sibling of buttons) sibling.classList.remove("_active_1svni_57");
+        if (!wasActive) button.classList.add("_active_1svni_57");
+      });
+    }
+
+    const fields = extractPageFields(doc);
+    const office = fields.find((item) => /office 5 days/i.test(item.label));
+    expect(office, "Yes/No group should be extracted despite the hidden value checkbox").toBeTruthy();
+    expect(office!.type).toBe("radio");
+    expect(office!.label).toMatch(/office 5 days a week/i); // the question, not "YesNo"
+    expect(office!.options).toEqual(expect.arrayContaining(["Yes", "No"]));
+
+    const plan: ExtensionAutofillPlanItem[] = [
+      { fieldId: office!.fieldId, action: "select", value: true, optionLabel: "Yes", confidence: 0.9, note: "office" },
+    ];
+    const records = await applyAutofillPlan({ fields, plan, getResume: async () => null });
+    expect(records[0]?.status).toBe("filled");
+    const yes = buttons.find((button) => button.textContent === "Yes")!;
+    expect(yes.classList.contains("_active_1svni_57"), "Yes should be selected (and not toggled back off)").toBe(true);
+  });
+
+  it("extracts and selects Ashby-style opacity:0 radios with label[for] options", async () => {
+    const doc = installDom(
+      `<form>
+        <div class="_fieldEntry_1e3gg_28 ashby-application-form-field-entry">
+          <label class="_heading_f7cvd_52 _required_f7cvd_91 _label_x">If you are not currently based in San Francisco, are you willing to relocate?</label>
+          <div class="_radioGroup_x">
+            <span><input type="radio" id="r0" name="relocate-uuid" style="opacity:0"><label for="r0">Yes</label></span>
+            <span><input type="radio" id="r1" name="relocate-uuid" style="opacity:0"><label for="r1">No</label></span>
+            <span><input type="radio" id="r2" name="relocate-uuid" style="opacity:0"><label for="r2">I am already based in San Francisco</label></span>
+          </div>
+        </div>
+      </form>`,
+      "https://jobs.ashbyhq.com/acme/uuid/application",
+    );
+    const fields = extractPageFields(doc);
+    const relocate = fields.find((item) => /willing to relocate/i.test(item.label));
+    expect(relocate, "opacity:0 radio group should still be extracted").toBeTruthy();
+    expect(relocate!.type).toBe("radio");
+    expect(relocate!.options).toEqual(expect.arrayContaining(["Yes", "No", "I am already based in San Francisco"]));
+
+    const plan: ExtensionAutofillPlanItem[] = [
+      { fieldId: relocate!.fieldId, action: "select", value: "Yes", optionLabel: "Yes", confidence: 0.9, note: "relocate" },
+    ];
+    const records = await applyAutofillPlan({ fields, plan, getResume: async () => null });
+    expect(records[0]?.status).toBe("filled");
+    expect((doc.querySelector("#r0") as HTMLInputElement).checked).toBe(true);
+  });
+
   it("groups 'select all that apply' checkboxes into one multi-select question", () => {
     installDom(fixtures["../fixtures/greenhouse.html"]);
     const fields = extractPageFields(document);
@@ -858,6 +926,79 @@ describe("content autofill extraction", () => {
       doc.getElementById("location-listbox")?.remove();
     };
     input.addEventListener("input", () => {
+      doc.getElementById("location-listbox")?.remove();
+      if (input.value !== "Hyderabad") return;
+      const list = doc.createElement("div");
+      list.id = "location-listbox";
+      list.setAttribute("role", "listbox");
+      input.setAttribute("aria-controls", "location-listbox");
+      for (const choice of ["Hyderabad, Andhra Pradesh, India", "Hyderabad, Telangana, India"]) {
+        const option = doc.createElement("div");
+        option.className = "select__option";
+        option.setAttribute("role", "option");
+        option.textContent = choice;
+        option.addEventListener("mousedown", () => commitChoice(choice));
+        list.append(option);
+      }
+      doc.getElementById("portal-root")?.append(list);
+    });
+
+    const fields = extractPageFields(doc);
+    const location = fields.find((item) => /location/i.test(item.label));
+    expect(location).toBeTruthy();
+
+    const records = await applyAutofillPlan({
+      fields,
+      plan: [
+        {
+          fieldId: location!.fieldId,
+          action: "select",
+          value: "Hyderabad, Telangana, India",
+          optionLabel: null,
+          confidence: 0.9,
+          note: "Profile city with state and country.",
+        },
+      ],
+      getResume: async () => null,
+    });
+
+    expect(records[0]?.status).toBe("filled");
+    expect(input.value).toBe("Hyderabad");
+    expect(root.querySelector(".select__single-value")?.textContent).toBe("Hyderabad, Telangana, India");
+    expect(root.querySelector("input[required]")).toBeNull();
+  });
+
+  it("types Greenhouse city autocomplete searches with keyboard events and ignores stale phone options", async () => {
+    const doc = installDom(`<!doctype html>
+      <form>
+        <div id="phone-country-menu" role="listbox">
+          <div role="option">Afghanistan +93</div>
+          <div role="option">India +91</div>
+        </div>
+        <div id="location-select" class="select">
+          <label id="candidate-location-label">Location (City)*</label>
+          <div class="select-shell">
+            <div class="select__control">
+              <div class="select__placeholder">Select...</div>
+              <input id="candidate-location" class="select__input" role="combobox" aria-autocomplete="list" aria-labelledby="candidate-location-label" />
+            </div>
+            <input required tabindex="-1" aria-hidden="true" class="requiredInput" value="" />
+          </div>
+        </div>
+        <div id="portal-root"></div>
+      </form>`);
+    const root = doc.getElementById("location-select") as HTMLElement;
+    const input = doc.getElementById("candidate-location") as HTMLInputElement;
+    const commitChoice = (choice: string) => {
+      root.querySelector("input[required]")?.remove();
+      root.querySelector(".select__single-value")?.remove();
+      const selected = doc.createElement("div");
+      selected.className = "select__single-value";
+      selected.textContent = choice;
+      root.append(selected);
+      doc.getElementById("location-listbox")?.remove();
+    };
+    input.addEventListener("keyup", () => {
       doc.getElementById("location-listbox")?.remove();
       if (input.value !== "Hyderabad") return;
       const list = doc.createElement("div");

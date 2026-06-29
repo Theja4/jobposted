@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { motion, useReducedMotion } from "framer-motion";
 import { Check, FileText, MousePointer2, MousePointerClick, ShieldCheck } from "lucide-react";
@@ -29,57 +30,58 @@ export function Extension() {
 
   return (
     <section id="extension" className="scroll-mt-24 px-3 py-10 sm:px-5 sm:py-14">
-      <div className="relative overflow-hidden rounded-[2.5rem] bg-navy px-4 py-16 text-white shadow-[0_36px_90px_rgba(7,26,51,0.35)] sm:px-12 sm:py-20">
-        <span
-          aria-hidden
-          className="pointer-events-none absolute inset-x-0 top-0 h-px bg-[linear-gradient(90deg,transparent,rgba(255,255,255,0.4),transparent)]"
-        />
+      <div className="relative overflow-hidden rounded-[2.5rem] bg-[linear-gradient(160deg,#ffffff_0%,#f3faff_55%,#eaf4ff_100%)] px-4 py-16 ring-1 ring-brand-100 ring-inset shadow-[0_30px_70px_rgba(20,63,145,0.10)] sm:px-12 sm:py-20">
         <div
           aria-hidden
-          className="pointer-events-none absolute inset-0 bg-[radial-gradient(42rem_26rem_at_88%_-14%,rgba(47,125,244,0.32),transparent_60%),radial-gradient(34rem_22rem_at_6%_114%,rgba(22,199,212,0.18),transparent_60%)]"
+          className="pointer-events-none absolute inset-0 bg-[radial-gradient(34rem_22rem_at_92%_-10%,rgba(47,125,244,0.10),transparent_60%)]"
         />
 
         <div className="relative z-10 mx-auto grid w-full max-w-6xl items-center gap-12 lg:grid-cols-2 lg:gap-16">
-          <Reveal>
-            <div className="flex items-center gap-2.5">
-              <p className="text-sm font-extrabold tracking-[0.2em] text-brand-200 uppercase">
+          <div>
+            <Reveal className="flex items-center gap-2.5">
+              <p className="text-sm font-bold tracking-[0.16em] text-brand-700 uppercase">
                 Chrome extension
               </p>
-              <span className="rounded-full bg-[linear-gradient(135deg,#5ee4ff,#1f64e0)] px-2.5 py-0.5 text-[11px] font-black tracking-wide text-white uppercase shadow-[0_8px_20px_rgba(31,100,224,0.45)]">
+              <span className="rounded-full bg-brand-50 px-2.5 py-0.5 text-[11px] font-bold tracking-wide text-brand-700 uppercase ring-1 ring-brand-200 ring-inset">
                 New
               </span>
-            </div>
+            </Reveal>
 
-            <h2 className="mt-5 text-5xl font-extrabold tracking-[-0.04em] text-balance sm:text-6xl">
-              Apply in one click.
-            </h2>
+            <Reveal className="mt-5" delay={0.06}>
+              <h2 className="text-4xl font-extrabold tracking-[-0.035em] text-balance text-ink sm:text-5xl">
+                Apply in one click.
+              </h2>
+            </Reveal>
 
-            <p className="mt-5 max-w-sm text-lg leading-7 text-white/65">
-              It fills the whole application with your tailored resume. You just hit submit.
-            </p>
+            <Reveal className="mt-5 max-w-sm" delay={0.12}>
+              <p className="text-lg leading-7 text-muted">
+                It fills the whole application with your tailored resume. You just hit submit.
+              </p>
+            </Reveal>
 
             <div className="mt-7 flex flex-wrap gap-2.5">
-              {CHIPS.map((chip) => (
-                <span
-                  key={chip.label}
-                  className="inline-flex items-center gap-1.5 rounded-full bg-white/[0.08] py-1.5 pr-3.5 pl-2.5 text-[13px] font-bold text-white/85 ring-1 ring-white/12 ring-inset"
-                >
-                  <chip.icon className="size-3.5 text-aqua" aria-hidden />
-                  {chip.label}
-                </span>
+              {CHIPS.map((chip, i) => (
+                <Reveal key={chip.label} delay={0.2 + i * 0.08}>
+                  <span className="inline-flex items-center gap-1.5 rounded-full bg-white py-1.5 pr-3.5 pl-2.5 text-[13px] font-bold text-ink/80 ring-1 ring-brand-100 ring-inset">
+                    <chip.icon className="size-3.5 text-brand-600" aria-hidden />
+                    {chip.label}
+                  </span>
+                </Reveal>
               ))}
             </div>
 
-            <Link
-              href={{ pathname: "/get-started" }}
-              className="group mt-9 inline-flex h-14 items-center justify-center gap-3 rounded-full bg-white px-7 text-base font-bold text-navy shadow-[0_18px_40px_rgba(4,16,42,0.45)] transition-[transform,box-shadow] duration-150 ease-out hover:-translate-y-0.5 hover:shadow-[0_24px_50px_rgba(4,16,42,0.55)]"
-            >
-              <ChromeLogo className="size-6" />
-              Add to Chrome
-            </Link>
-          </Reveal>
+            <Reveal className="mt-9" delay={0.44}>
+              <Link
+                href={{ pathname: "/get-started" }}
+                className="group inline-flex h-14 items-center justify-center gap-3 rounded-full bg-brand-600 px-7 text-base font-bold text-white shadow-[0_16px_36px_rgba(31,100,224,0.28)] transition-[transform,box-shadow] duration-150 ease-out hover:-translate-y-0.5 hover:bg-brand-700 hover:shadow-[0_22px_46px_rgba(31,100,224,0.34)]"
+              >
+                <ChromeLogo className="size-6" />
+                Add to Chrome
+              </Link>
+            </Reveal>
+          </div>
 
-          <Reveal delay={0.1}>
+          <Reveal className="mt-2 lg:mt-0" delay={0.16}>
             <BrowserMock reduce={Boolean(reduce)} />
           </Reveal>
         </div>
@@ -111,10 +113,10 @@ function BrowserMock({ reduce }: { reduce: boolean }) {
     <div className="relative mx-auto w-full max-w-md">
       <div
         aria-hidden
-        className="absolute -inset-8 -z-10 rounded-[3rem] bg-[radial-gradient(60%_60%_at_70%_30%,rgba(47,125,244,0.45),transparent_70%)] blur-2xl"
+        className="absolute -inset-6 -z-10 rounded-[3rem] bg-[radial-gradient(60%_60%_at_70%_30%,rgba(31,100,224,0.16),transparent_70%)] blur-2xl"
       />
 
-      <div className="overflow-hidden rounded-[1.5rem] bg-[#0c2147] shadow-[0_44px_90px_rgba(2,10,28,0.6)] ring-1 ring-white/12">
+      <div className="overflow-hidden rounded-[1.5rem] bg-[#0c2147] text-white shadow-[0_30px_70px_rgba(12,33,71,0.28)] ring-1 ring-black/5">
         {/* title bar */}
         <div className="flex items-center gap-3 border-b border-white/8 bg-white/[0.03] px-4 py-3">
           <div className="flex gap-1.5">
@@ -152,9 +154,14 @@ function BrowserMock({ reduce }: { reduce: boolean }) {
           {/* docked JobPosted panel */}
           <div className="relative w-full shrink-0 border-white/8 bg-[#0a1c3d]/85 p-4 sm:w-[14.5rem] sm:border-l">
             <div className="flex items-center gap-2">
-              <span className="grid size-7 place-items-center rounded-lg bg-[linear-gradient(150deg,#5ee4ff,#1f64e0)] text-[13px] font-black text-white">
-                J
-              </span>
+              <Image
+                src="/brand/jobposted-mark.png"
+                alt=""
+                width={640}
+                height={602}
+                aria-hidden
+                className="size-7 shrink-0 object-contain"
+              />
               <p className="text-[13px] font-extrabold tracking-tight">JobPosted</p>
               <span className="ml-auto rounded-full bg-mint/20 px-2 py-0.5 text-[9px] font-black tracking-wide text-mint">
                 96% fit

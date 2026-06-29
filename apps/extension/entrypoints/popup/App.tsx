@@ -1,107 +1,47 @@
-import { useEffect, useState } from "react";
-import type { ExtensionMessageResponse } from "@jobposted/shared";
-import { AlertTriangle, CheckCircle2, Loader2, Settings, Wand2 } from "lucide-react";
+import { Settings } from "lucide-react";
 
-type LauncherState =
-  | { status: "opening" }
-  | { status: "opened" }
-  | { status: "failed"; error: string };
-
-function send<T extends ExtensionMessageResponse>(payload: unknown): Promise<T> {
-  return chrome.runtime.sendMessage(payload) as Promise<T>;
-}
-
-async function openPanel() {
-  return send<ExtensionMessageResponse>({ type: "PANEL_OPEN_ACTIVE_TAB" });
-}
+const SUPPORTED = [
+  "LinkedIn",
+  "Greenhouse",
+  "Workday",
+  "Lever",
+  "Ashby",
+  "iCIMS",
+  "Workable",
+];
 
 export function PopupApp() {
-  const [state, setState] = useState<LauncherState>({ status: "opening" });
-
-  async function tryOpen() {
-    setState({ status: "opening" });
-    try {
-      const response = await openPanel();
-      if (response.ok && response.type === "PANEL_OPEN_ACTIVE_TAB") {
-        setState({ status: "opened" });
-        return;
-      }
-      setState({ status: "failed", error: response.ok ? "JobPosted did not return an open-panel response." : response.error });
-    } catch (error) {
-      setState({
-        status: "failed",
-        error: error instanceof Error ? error.message : "JobPosted could not open on this tab.",
-      });
-    }
-  }
-
-  useEffect(() => {
-    void tryOpen();
-  }, []);
-
   return (
     <main className="jp-popup">
-      <header>
+      <span className="jp-mark">
         <img src={chrome.runtime.getURL("brand/jobposted-mark.png")} alt="" />
-        <div>
-          <strong>JobPosted</strong>
-          <span>Autofill launcher</span>
-        </div>
-      </header>
+      </span>
 
-      {state.status === "opening" ? (
-        <section className="jp-state">
-          <Loader2 className="jp-spin" aria-hidden="true" />
-          <div>
-            <strong>Opening panel</strong>
-            <span>Attaching JobPosted to this page.</span>
-          </div>
-        </section>
-      ) : null}
+      <div className="jp-copy">
+        <h1>Open a job application</h1>
+        <p>
+          JobPosted runs on job application forms. This page isn’t one yet — open
+          a posting and click the JobPosted icon to autofill it.
+        </p>
+      </div>
 
-      {state.status === "opened" ? (
-        <>
-          <section className="jp-state jp-ok">
-            <CheckCircle2 aria-hidden="true" />
-            <div>
-              <strong>Panel opened</strong>
-              <span>Look for the JobPosted dock on the right edge of the page.</span>
-            </div>
-          </section>
-          <div className="jp-actions">
-            <button type="button" className="jp-primary" onClick={() => void tryOpen()}>
-              <Wand2 aria-hidden="true" />
-              Open again
-            </button>
-            <button type="button" onClick={() => chrome.runtime.openOptionsPage()}>
-              <Settings aria-hidden="true" />
-              Options
-            </button>
-          </div>
-        </>
-      ) : null}
+      <div className="jp-chips" aria-label="Supported job sites">
+        {SUPPORTED.map((name) => (
+          <span key={name} className="jp-chip">
+            {name}
+          </span>
+        ))}
+        <span className="jp-chip jp-chip-more">+ more</span>
+      </div>
 
-      {state.status === "failed" ? (
-        <>
-          <section className="jp-state jp-warn">
-            <AlertTriangle aria-hidden="true" />
-            <div>
-              <strong>Could not open here</strong>
-              <span>{state.error}</span>
-            </div>
-          </section>
-          <div className="jp-actions">
-            <button type="button" className="jp-primary" onClick={() => void tryOpen()}>
-              <Wand2 aria-hidden="true" />
-              Try again
-            </button>
-            <button type="button" onClick={() => chrome.runtime.openOptionsPage()}>
-              <Settings aria-hidden="true" />
-              Options
-            </button>
-          </div>
-        </>
-      ) : null}
+      <button
+        type="button"
+        className="jp-settings"
+        onClick={() => chrome.runtime.openOptionsPage()}
+      >
+        <Settings aria-hidden="true" />
+        Settings
+      </button>
     </main>
   );
 }

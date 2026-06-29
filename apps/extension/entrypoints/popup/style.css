@@ -2,13 +2,12 @@
   color-scheme: light;
   --jp-blue-50: #eff6ff;
   --jp-blue-100: #dbeafe;
+  --jp-blue-200: #bfdbfe;
   --jp-blue-600: #1f64e0;
   --jp-blue-700: #174fb8;
   --jp-ink: #0b1220;
   --jp-muted: #526173;
   --jp-border: #d9e7fb;
-  --jp-warn-bg: #fffbeb;
-  --jp-warn: #b45309;
   font-family: "Plus Jakarta Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
   color: var(--jp-ink);
 }
@@ -18,7 +17,7 @@
 }
 
 body {
-  width: 300px;
+  width: 296px;
   margin: 0;
   background: #ffffff;
 }
@@ -29,114 +28,98 @@ button {
 
 .jp-popup {
   display: grid;
+  justify-items: center;
   gap: 12px;
-  padding: 14px;
+  padding: 22px 20px 18px;
+  text-align: center;
 }
 
-header {
+.jp-mark {
   display: flex;
   align-items: center;
-  gap: 10px;
-}
-
-header img {
-  width: 34px;
-  height: 34px;
-  object-fit: contain;
-}
-
-header strong,
-.jp-state strong {
-  display: block;
-  font-size: 13px;
-  font-weight: 900;
-}
-
-header span,
-.jp-state span {
-  display: block;
-  margin-top: 1px;
-  color: var(--jp-muted);
-  font-size: 12px;
-  font-weight: 700;
-  line-height: 1.45;
-}
-
-.jp-state {
-  display: grid;
-  grid-template-columns: 22px minmax(0, 1fr);
-  align-items: start;
-  gap: 10px;
-  border: 1px solid var(--jp-border);
-  border-radius: 12px;
-  background: var(--jp-blue-50);
-  padding: 11px;
-}
-
-.jp-state svg {
-  width: 18px;
-  height: 18px;
-  margin-top: 1px;
-  color: var(--jp-blue-700);
-}
-
-.jp-ok {
-  background: #ecfdf5;
-  border-color: #bbf7d0;
-}
-
-.jp-ok svg {
-  color: #047857;
-}
-
-.jp-warn {
-  background: var(--jp-warn-bg);
-  border-color: #fde68a;
-}
-
-.jp-warn svg,
-.jp-warn strong {
-  color: var(--jp-warn);
-}
-
-.jp-actions {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 8px;
-}
-
-.jp-actions button {
-  display: inline-flex;
-  min-height: 36px;
-  align-items: center;
   justify-content: center;
-  gap: 7px;
+  width: 52px;
+  height: 52px;
+  padding: 9px;
+  border-radius: 16px;
+  background: var(--jp-blue-50);
+  box-shadow: inset 0 0 0 1px var(--jp-blue-100), 0 10px 22px -12px rgba(31, 95, 224, 0.5);
+}
+
+.jp-mark img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  object-position: center;
+  display: block;
+}
+
+.jp-copy {
+  display: grid;
+  gap: 6px;
+}
+
+.jp-copy h1 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 900;
+  letter-spacing: -0.01em;
+}
+
+.jp-copy p {
+  margin: 0;
+  color: var(--jp-muted);
+  font-size: 12.5px;
+  font-weight: 600;
+  line-height: 1.5;
+}
+
+.jp-chips {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px;
+  margin-top: 2px;
+}
+
+.jp-chip {
   border: 1px solid var(--jp-border);
-  border-radius: 10px;
+  border-radius: 999px;
+  background: var(--jp-blue-50);
+  color: var(--jp-blue-700);
+  padding: 4px 10px;
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.jp-chip-more {
   background: #ffffff;
-  color: var(--jp-ink);
+  color: var(--jp-muted);
+  border-style: dashed;
+}
+
+.jp-settings {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 4px;
+  border: none;
+  background: transparent;
+  color: var(--jp-muted);
   cursor: pointer;
   font-size: 12px;
-  font-weight: 900;
+  font-weight: 800;
+  padding: 6px 8px;
+  border-radius: 8px;
 }
 
-.jp-actions .jp-primary {
-  border-color: var(--jp-blue-600);
-  background: var(--jp-blue-600);
-  color: #ffffff;
+.jp-settings:hover {
+  color: var(--jp-blue-700);
+  background: var(--jp-blue-50);
 }
 
-.jp-actions svg {
+.jp-settings svg {
   width: 15px;
   height: 15px;
-}
-
-.jp-spin {
-  animation: jp-spin 900ms linear infinite;
-}
-
-@keyframes jp-spin {
-  to {
-    transform: rotate(360deg);
-  }
 }

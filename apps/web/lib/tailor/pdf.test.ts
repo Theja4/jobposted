@@ -204,7 +204,8 @@ describe("renderResumePdf", () => {
       const { pages, lastFill } = await measureResumePdf(sample(bigResume(jobs, bullets)));
       expect(pages, `jobs=${jobs} bullets=${bullets}`).toBeGreaterThanOrEqual(1);
       if (pages > 1) {
-        expect(lastFill, `jobs=${jobs} bullets=${bullets} pages=${pages}`).toBeGreaterThan(0.25);
+        // A trailing page must be meaningfully filled — no 1–2 line orphan, no big blank bottom.
+        expect(lastFill, `jobs=${jobs} bullets=${bullets} pages=${pages}`).toBeGreaterThan(0.6);
       }
     }
   });
@@ -212,7 +213,7 @@ describe("renderResumePdf", () => {
   it("fills both pages of a genuine two-page resume", async () => {
     const { pages, lastFill } = await measureResumePdf(sample(bigResume(8, 6)));
     expect(pages).toBeGreaterThanOrEqual(2);
-    expect(lastFill).toBeGreaterThan(0.25);
+    expect(lastFill).toBeGreaterThan(0.6);
   });
 });
 

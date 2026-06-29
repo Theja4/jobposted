@@ -4,11 +4,11 @@ import {
   resolveCompanyAssetsFromJobUrl,
   type ExtensionApplicationUpsert,
 } from "@jobposted/shared";
-import { getUsageStatus, usageLimitMessage } from "@/lib/billing/limits";
 import { getServiceRoleClient } from "@/lib/supabase/service-role";
 import { authErrorResponse, extensionError, getExtensionAuthContext } from "@/lib/extension/auth";
 import {
   buildExtensionApplicationRow,
+  canonicalizeJobUrl,
   type ExistingExtensionApplicationRow,
 } from "@/lib/extension/application-sync";
 
@@ -18,24 +18,12 @@ function asString(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
 }
 
-function normalizeJobUrl(value: string) {
-  const trimmed = value.trim();
-  if (!trimmed) return "";
-  try {
-    const url = new URL(trimmed);
-    url.hash = "";
-    return url.toString();
-  } catch {
-    return trimmed;
-  }
-}
-
 function uniqueStrings(values: string[]) {
   return Array.from(new Set(values.map((value) => value.trim()).filter(Boolean)));
 }
 
 function jobUrlCandidates(jobUrl: string) {
-  return uniqueStrings([normalizeJobUrl(jobUrl), jobUrl]);
+  return uniqueStrings([canonicalizeJobUrl(jobUrl), jobUrl]);
 }
 
 function sourceJobId(jobUrl: string, fallback: string) {
@@ -130,7 +118,7 @@ export async function POST(request: Request) {
 
     const writeClient = getServiceRoleClient();
     const supabase = writeClient ?? auth.supabase;
-    const jobUrl = normalizeJobUrl(asString(payload.jobUrl));
+    const jobUrl = canonicalizeJobUrl(asString(payload.jobUrl));
     const company = asString(payload.company) || "Unknown company";
     const role = asString(payload.role) || "Unknown role";
     const companyAssets = jobUrl
@@ -145,12 +133,9 @@ export async function POST(request: Request) {
     const activeResumeVersionId =
       typeof profile?.active_resume_version_id === "string" ? profile.active_resume_version_id : null;
 
-    if (payload.status === "submitted") {
-      const usage = await getUsageStatus(auth.supabase, auth.user.id);
-      if (!usage.canSubmit) {
-        return extensionError(usageLimitMessage(usage), 402);
-      }
-    }
+    // Autofill records land here as "submitted" so the job shows in the tracker's "Applied"
+    // column. We intentionally do NOT gate this on submission usage limits — capturing what the
+    // user autofilled should always succeed.
 
     if (!jobId) {
       jobId = await findExistingJobId(supabase, auth.user.id, jobUrl);
@@ -209,6 +194,9 @@ export async function POST(request: Request) {
     }
 
     const existingApplication = jobId ? await findExistingApplication(supabase, auth.user.id, jobId) : null;
+    // The canonicalized link is the dedup key: if this user already logged an
+    // application for the same job URL, it's a duplicate. Company/title are scraped
+    // from the page and too noisy to gate on without risking duplicate rows.
     const duplicate = Boolean(existingApplication?.id);
     const applicationRow = buildExtensionApplicationRow({
       userId: auth.user.id,

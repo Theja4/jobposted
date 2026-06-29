@@ -252,6 +252,27 @@ function panelOpenErrorMessage(error: unknown) {
   return message || "JobPosted could not open on this tab.";
 }
 
+// Browser-internal pages (chrome://, the new-tab page, the Web Store, etc.) block
+// content-script injection, so the in-page dock can never mount there. On those
+// tabs we fall back to the popup; everywhere else the toolbar click opens the
+// dock directly (no popup) via chrome.action.onClicked.
+function isRestrictedPage(url?: string): boolean {
+  if (!url) return false;
+  return (
+    /^(chrome|edge|brave|opera|vivaldi|about|chrome-extension|chrome-search|chrome-untrusted|devtools|view-source|moz-extension|data):/i.test(url) ||
+    /^https?:\/\/chromewebstore\.google\.com/i.test(url) ||
+    /^https?:\/\/chrome\.google\.com\/webstore/i.test(url)
+  );
+}
+
+async function syncActionPopup(tabId: number, url?: string) {
+  try {
+    await chrome.action.setPopup({ tabId, popup: isRestrictedPage(url) ? "popup.html" : "" });
+  } catch {
+    // Tab may have closed before we could update it.
+  }
+}
+
 async function openPanelActiveTab(): Promise<ExtensionMessageResponse> {
   try {
     await toggleInPagePanel();
@@ -416,7 +437,8 @@ async function syncAutofillResult(result: ExtensionAutofillRunResult): Promise<E
     company: result.company,
     role: result.role,
     jobUrl: result.jobUrl,
-    status: "filled",
+    // Autofilling a page = the user is applying → land it in the tracker's "Applied" column.
+    status: "submitted",
     appliedAt: new Date().toISOString(),
     fieldsFilled: result.fields,
   });
@@ -645,6 +667,28 @@ async function handleMessage(message: ExtensionMessage): Promise<ExtensionMessag
 
 export default defineBackground(() => {
   void scheduleNextApplicationSyncRetry();
+
+  // Default the toolbar button to "no popup" so a click opens the in-page dock
+  // directly. The popup is re-enabled per-tab only on restricted pages below.
+  void chrome.action.setPopup({ popup: "" }).catch(() => undefined);
+  chrome.tabs.query({}).then((tabs) => {
+    for (const tab of tabs) {
+      if (typeof tab.id === "number") void syncActionPopup(tab.id, tab.url);
+    }
+  }).catch(() => undefined);
+
+  chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+    if (changeInfo.status === "loading" || typeof changeInfo.url === "string") {
+      void syncActionPopup(tabId, tab.url);
+    }
+  });
+
+  chrome.tabs.onActivated.addListener(({ tabId }) => {
+    chrome.tabs
+      .get(tabId)
+      .then((tab) => syncActionPopup(tabId, tab.url))
+      .catch(() => undefined);
+  });
 
   chrome.action.onClicked.addListener((tab) => {
     void toggleInPagePanel(tab).catch((error) => {
