@@ -65,6 +65,14 @@ export interface MasterProfileEducation {
   gpa?: string | null;
 }
 
+export interface MasterProfileProject {
+  name: string;
+  description?: string | null;
+  bullets?: string[];
+  technologies?: string[];
+  url?: string | null;
+}
+
 export interface ReusableAnswer {
   key: string;
   prompt: string;
@@ -85,8 +93,10 @@ export interface MasterProfile {
   workAuth: MasterProfileWorkAuth;
   compensation?: MasterProfileCompensation;
   demographics?: MasterProfileDemographics;
+  summary?: string | null;
   experience: MasterProfileExperience[];
   education: MasterProfileEducation[];
+  projects?: MasterProfileProject[];
   skills: string[];
   answers: ReusableAnswer[];
   documents: MasterProfileDocuments;
@@ -284,6 +294,8 @@ export interface ExtensionTailorResponse {
   kind: "tailor";
   jobId: string | null;
   applicationId?: string | null;
+  /** `documents` row id for the tailored resume — the handoff key for "Edit in Rezoomed". */
+  docId?: string | null;
   resumeUrl: string | null;
   resumeDocxUrl?: string | null;
   matchScore?: number | null;
@@ -348,7 +360,9 @@ export const DEFAULT_EXTENSION_SETTINGS: ExtensionSettings = {
   submissionPolicy: "review",
   autoAdvance: true,
   overwriteFilledFields: false,
-  enableGenericFallback: false,
+  // On by default so universal autofill keeps working out of the box; the options
+  // toggle is now a real opt-out (the fill paths no longer force this on).
+  enableGenericFallback: true,
   autoTrackAutofill: true,
   enabledPlatforms: {},
   demographicsEnabled: false,
@@ -363,6 +377,53 @@ export interface ExtensionAuthSession {
     id: string;
     email?: string | null;
   } | null;
+}
+
+export type ExtensionJobKind = "tailor" | "cover-letter";
+
+/**
+ * A tailor/cover-letter run, persisted by the background worker so the in-page panel
+ * can recover it after a tab switch, panel reopen, or reload — the request itself runs
+ * in the (tab-agnostic) service worker, so the result outlives the content script.
+ */
+export interface ExtensionJobState {
+  kind: ExtensionJobKind;
+  status: "running" | "done" | "error";
+  startedAt: number;
+  updatedAt: number;
+  tailor?: ExtensionTailorResponse | null;
+  coverLetter?: ExtensionCoverLetterResponse | null;
+  error?: string | null;
+}
+
+/** A tracked application, slimmed for the extension's in-panel tracker. */
+export interface ExtensionTrackerItem {
+  id: string;
+  jobId: string | null;
+  company: string;
+  role: string;
+  companyLogoUrl: string | null;
+  /** Raw application status (submitted, saved, interview, …). */
+  status: string;
+  /** Built-in tracker stage: inbox | applied | interview | offer | closed | custom:*. */
+  stage: string;
+  matchScore: number;
+  resumeName: string;
+  resumeUrl: string;
+  /** `documents` row id of the attached resume, if any. */
+  resumeDocId: string | null;
+  jobUrl: string | null;
+  appliedOn: string;
+  updatedAt: string;
+  notes: string | null;
+}
+
+/** A resume the user can attach to a tracked application. */
+export interface ExtensionResumeOption {
+  id: string;
+  name: string;
+  createdAt: string | null;
+  url: string | null;
 }
 
 export type ExtensionMessage =
@@ -380,6 +441,12 @@ export type ExtensionMessage =
   | { type: "TRACKER_ADD_ACTIVE_TAB" }
   | { type: "TAILOR_ACTIVE_TAB" }
   | { type: "COVER_LETTER_ACTIVE_TAB" }
+  | { type: "JOB_STATE_QUERY" }
+  | { type: "JOB_STATE_CLEAR" }
+  | { type: "TRACKER_LIST" }
+  | { type: "TRACKER_UPDATE"; id: string; stage?: string; notes?: string | null; resumeDocId?: string | null }
+  | { type: "RESUME_LIST" }
+  | { type: "RESUME_UPLOAD"; name: string; dataBase64: string }
   | { type: "OPEN_TAB"; url: string }
   | { type: "APPLICATION_SYNC"; payload: ExtensionApplicationUpsert }
   | { type: "APPLICATION_SYNC_RETRY" }
@@ -403,6 +470,12 @@ export type ExtensionMessageResponse =
   | { ok: true; type: "TRACKER_ADD_ACTIVE_TAB"; result: ExtensionApplicationResponse }
   | { ok: true; type: "TAILOR_ACTIVE_TAB"; result: ExtensionTailorResponse }
   | { ok: true; type: "COVER_LETTER_ACTIVE_TAB"; result: ExtensionCoverLetterResponse }
+  | { ok: true; type: "JOB_STATE_QUERY"; state: ExtensionJobState | null }
+  | { ok: true; type: "JOB_STATE_CLEAR" }
+  | { ok: true; type: "TRACKER_LIST"; items: ExtensionTrackerItem[] }
+  | { ok: true; type: "TRACKER_UPDATE"; item: ExtensionTrackerItem | null }
+  | { ok: true; type: "RESUME_LIST"; resumes: ExtensionResumeOption[] }
+  | { ok: true; type: "RESUME_UPLOAD"; resume: ExtensionResumeOption | null }
   | { ok: true; type: "OPEN_TAB" }
   | { ok: true; type: "APPLICATION_SYNC"; result: ExtensionApplicationResponse }
   | { ok: true; type: "APPLICATION_SYNC_RETRY"; status: ExtensionSyncQueueStatus }

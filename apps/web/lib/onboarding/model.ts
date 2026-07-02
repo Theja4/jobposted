@@ -527,13 +527,11 @@ export function reusableAnswersFromOnboarding(config: OnboardingConfig): Reusabl
 
 export function onboardingCompletion(config: OnboardingConfig) {
   const checks = [
-    config.search.workLocations.length > 0,
-    config.search.jobTypes.length > 0,
-    config.search.titles.length > 0,
     config.profile.basics.fullName,
     config.profile.basics.email,
     config.profile.resumeName || config.profile.summary || config.profile.experience.length > 0,
-    config.final.applicationMode,
+    config.profile.experience.some((item) => item.company && item.title) ||
+      config.profile.education.some((item) => item.school && item.degree),
   ];
   return Math.round((checks.filter(Boolean).length / checks.length) * 100);
 }

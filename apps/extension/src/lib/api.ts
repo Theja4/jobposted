@@ -7,14 +7,17 @@ import type {
   ExtensionFieldContext,
   ExtensionFieldMapping,
   ExtensionJobContext,
+  ExtensionResumeOption,
   ExtensionResumeResponse,
   ExtensionTailorResponse,
+  ExtensionTrackerItem,
   MasterProfile,
   ReusableAnswer,
 } from "@jobposted/shared";
 import {
   API_ANSWERS_PATH,
   API_APPLICATIONS_PATH,
+  API_RESUMES_PATH,
   API_COVER_LETTER_PATH,
   API_AUTOFILL_PLAN_PATH,
   API_FIELD_MAP_PATH,
@@ -196,6 +199,37 @@ export async function generateCoverLetterForJob(
     method: "POST",
     body: JSON.stringify(payload),
   });
+}
+
+export async function fetchTrackerItems(): Promise<ExtensionTrackerItem[]> {
+  const response = await authedFetch<{ ok: true; items: ExtensionTrackerItem[] }>(API_APPLICATIONS_PATH);
+  return response.items ?? [];
+}
+
+export async function updateTrackerItem(payload: {
+  id: string;
+  stage?: string;
+  notes?: string | null;
+  resumeDocId?: string | null;
+}): Promise<ExtensionTrackerItem | null> {
+  const response = await authedFetch<{ ok: true; item: ExtensionTrackerItem | null }>(API_APPLICATIONS_PATH, {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
+  return response.item ?? null;
+}
+
+export async function fetchResumeOptions(): Promise<ExtensionResumeOption[]> {
+  const response = await authedFetch<{ ok: true; resumes: ExtensionResumeOption[] }>(API_RESUMES_PATH);
+  return response.resumes ?? [];
+}
+
+export async function uploadResume(payload: { name: string; dataBase64: string }): Promise<ExtensionResumeOption | null> {
+  const response = await authedFetch<{ ok: true; resume: ExtensionResumeOption | null }>(API_RESUMES_PATH, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+  return response.resume ?? null;
 }
 
 export async function saveAnswer(answer: ReusableAnswer): Promise<void> {

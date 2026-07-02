@@ -141,9 +141,6 @@ export default defineConfig({
       page: "options.html",
       open_in_tab: true,
     },
-    externally_connectable: {
-      matches: JOBPOSTED_HOSTS,
-    },
     web_accessible_resources: [
       {
         resources: ["brand/*", "icon/*"],

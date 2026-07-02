@@ -76,6 +76,20 @@ export async function POST(request: Request) {
       return extensionError("Could not save the tailored resume.", 500);
     }
 
+    // Persist the structured resume alongside the PDF so Rezoomed's "Edit" handoff can
+    // rebuild it in the builder (both apps share this Supabase project + bucket). Best
+    // effort — a failure here only disables Edit, not the PDF/DOCX the user still gets.
+    const jsonPath = `${auth.user.id}/tailored/${storageKey}.json`;
+    const { error: jsonError } = await auth.supabase.storage
+      .from("resumes")
+      .upload(jsonPath, new Blob([JSON.stringify(result.resume)], { type: "application/json" }), {
+        upsert: true,
+        contentType: "application/json",
+      });
+    if (jsonError) {
+      await reportError("extension tailored resume json upload failed", jsonError, { userId: auth.user.id, jobId });
+    }
+
     const { data: existingDoc } = await (jobId
       ? auth.supabase
           .from("documents")
@@ -152,6 +166,7 @@ export async function POST(request: Request) {
       kind: "tailor",
       jobId,
       applicationId,
+      docId: doc?.id ?? null,
       resumeUrl: signed?.signedUrl ?? null,
       resumeDocxUrl,
       matchScore: result.analysis.matchScore,

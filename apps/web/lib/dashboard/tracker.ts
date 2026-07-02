@@ -35,11 +35,12 @@ export type TrackerApplicationRow = {
   rendered_pdf_path: string | null;
   field_map: unknown;
   failure_reason: string | null;
+  notes?: string | null;
   jobs: TrackerJobJoin | TrackerJobJoin[] | null;
 };
 
 export const TRACKER_APPLICATION_SELECT =
-  "id,status,apply_path,submitted_at,created_at,rendered_pdf_path,field_map,failure_reason,jobs:job_id(id,company,company_domain,company_logo_url,title,location,apply_url,ats_type,source)";
+  "id,status,apply_path,submitted_at,created_at,rendered_pdf_path,field_map,failure_reason,notes,jobs:job_id(id,company,company_domain,company_logo_url,title,location,apply_url,ats_type,source)";
 
 export type TrackerSort = "recent" | "fit" | "company" | "role" | "source";
 export type TrackerSourceFilter = "all" | TrackerSource;
@@ -78,6 +79,7 @@ type TrackerPageRpcRow = {
   rendered_pdf_path: string | null;
   field_map: unknown;
   failure_reason: string | null;
+  notes: string | null;
   job_id: string | null;
   job_company: string | null;
   job_company_domain: string | null;
@@ -207,6 +209,7 @@ function rowFromRpc(row: TrackerPageRpcRow): TrackerApplicationRow {
     rendered_pdf_path: row.rendered_pdf_path,
     field_map: row.field_map,
     failure_reason: row.failure_reason,
+    notes: row.notes,
     jobs: job,
   };
 }
@@ -257,7 +260,7 @@ export function mapTrackerApplicationRow(row: TrackerApplicationRow): TrackerIte
     resumeUrl: resumePath || "#",
     fieldsFilled: counts.filled,
     totalFields: counts.total,
-    notes: asString(manual.notes) || row.failure_reason || null,
+    notes: asString(row.notes) || asString(manual.notes) || row.failure_reason || null,
   };
 }
 

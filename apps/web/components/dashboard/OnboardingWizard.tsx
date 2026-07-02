@@ -7,19 +7,12 @@ import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import {
   ArrowLeft,
   ArrowRight,
-  BriefcaseBusiness,
   CheckCircle2,
   ChevronDown,
-  FileText,
   FileSearch,
   FileUp,
   Info,
   Loader2,
-  MapPin,
-  SearchCheck,
-  Settings2,
-  ShieldCheck,
-  Sparkles,
   Trash2,
   UploadCloud,
   UserRound,
@@ -32,20 +25,15 @@ import {
   genderIdentityFieldsFrom,
   onboardingCompletion,
   sanitizeOnboardingConfig,
-  type ApplicationModePreference,
-  type JobTypePreference,
-  type MatchPreference,
   type OnboardingConfig,
   type OnboardingEducation,
   type OnboardingExperience,
-  type WorkLocationPreference,
 } from "@/lib/onboarding/model";
-import { POPULAR_JOB_TITLE_QUICK_PICKS, POPULAR_JOB_TITLES } from "@/lib/onboarding/job-titles";
 import { LANGUAGE_QUICK_PICKS, TOP_SPOKEN_LANGUAGES } from "@/lib/onboarding/languages";
 import { ONBOARDING_LOCATION_OPTIONS } from "@/lib/onboarding/locations";
 import type { SourceDocument } from "@/lib/profile/resume-version";
 
-type WizardStep = 0 | 1 | 2 | 3;
+type WizardStep = 0 | 1;
 type SaveIntent = "save";
 type ReviewPrompt = {
   step: WizardStep;
@@ -54,8 +42,6 @@ type ReviewPrompt = {
 };
 
 type ParsedResumeProfile = {
-  search?: Partial<OnboardingConfig["search"]>;
-  filters?: Partial<OnboardingConfig["filters"]>;
   basics?: Partial<OnboardingConfig["profile"]["basics"]>;
   links?: Partial<OnboardingConfig["profile"]["links"]>;
   workAuth?: Partial<OnboardingConfig["profile"]["workAuth"]>;
@@ -68,41 +54,21 @@ type ParsedResumeProfile = {
 };
 
 const STEPS = [
-  { label: "Search", hint: "Location and roles", Icon: SearchCheck },
-  { label: "Filters", hint: "Optional narrowing", Icon: Settings2 },
-  { label: "Profile", hint: "Resume and answers", Icon: UserRound },
-  { label: "Launch", hint: "Mode and voice", Icon: ShieldCheck },
+  { label: "Resume", hint: "Upload and parse", Icon: FileUp },
+  { label: "Profile", hint: "Review and answers", Icon: UserRound },
 ] as const;
 
 const STEP_COPY = [
   {
-    title: "Choose the jobs worth finding",
-    description: "Tell JobPosted where to search and the titles that should make it into your queue.",
+    title: "Start with your resume",
+    description: "Upload your resume and JobPosted will pull in your experience, education, and contact details automatically.",
   },
   {
-    title: "Narrow only where it helps",
-    description: "These filters are optional. Keep them broad unless you know a filter improves quality.",
-  },
-  {
-    title: "Build your application profile",
-    description: "Upload a resume to prefill the profile, then answer the screening questions you want JobPosted to reuse.",
-  },
-  {
-    title: "Choose how JobPosted works",
-    description: "Review mode is best while your profile is new. You can change it later from the dashboard.",
+    title: "Review your profile",
+    description: "Confirm what we found, fill in anything missing, and answer the screening questions JobPosted will reuse when autofilling applications.",
   },
 ] as const;
 
-const JOB_TYPES: Array<{ value: JobTypePreference; label: string }> = [
-  { value: "fulltime", label: "Full-time" },
-  { value: "part_time", label: "Part-time" },
-  { value: "contract", label: "Contractor / Temp" },
-  { value: "internship", label: "Internship" },
-];
-
-const SENIORITY = ["Entry Level", "Associate Level", "Mid-to-Senior Level", "Director Level and above"];
-const TIME_ZONES = ["US overlap", "Europe overlap", "India", "APAC", "Fully async"];
-const INDUSTRIES = ["SaaS", "Fintech", "Healthcare", "Consumer", "AI", "Developer tools", "E-commerce"];
 const REMOTE_PREFERENCES = ["Full remote", "Hybrid", "5 day WFO"];
 const CURRENCIES = [
   "USD",
@@ -231,31 +197,6 @@ function mergeParsed(config: OnboardingConfig, parsed: ParsedResumeProfile): Onb
 
   return sanitizeOnboardingConfig({
     ...config,
-    search: {
-      ...config.search,
-      workLocations: parsed.search?.workLocations?.length ? parsed.search.workLocations : config.search.workLocations,
-      remoteScope: parsed.search?.remoteScope || config.search.remoteScope,
-      onsiteLocation: parsed.search?.onsiteLocation || config.search.onsiteLocation,
-      jobTypes: parsed.search?.jobTypes?.length ? parsed.search.jobTypes : config.search.jobTypes,
-      titles: parsed.search?.titles?.length ? parsed.search.titles : config.search.titles,
-    },
-    filters: {
-      ...config.filters,
-      match: parsed.filters?.match || config.filters.match,
-      seniority: parsed.filters?.seniority?.length ? parsed.filters.seniority : config.filters.seniority,
-      timeZones: parsed.filters?.timeZones?.length ? parsed.filters.timeZones : config.filters.timeZones,
-      industries: parsed.filters?.industries?.length ? parsed.filters.industries : config.filters.industries,
-      languages: parsed.filters?.languages?.length ? parsed.filters.languages : config.filters.languages,
-      includeKeywords: parsed.filters?.includeKeywords?.length
-        ? parsed.filters.includeKeywords
-        : config.filters.includeKeywords,
-      excludeKeywords: parsed.filters?.excludeKeywords?.length
-        ? parsed.filters.excludeKeywords
-        : config.filters.excludeKeywords,
-      excludeCompanies: parsed.filters?.excludeCompanies?.length
-        ? parsed.filters.excludeCompanies
-        : config.filters.excludeCompanies,
-    },
     profile: {
       ...config.profile,
       basics: {
@@ -346,50 +287,19 @@ function mergeParsed(config: OnboardingConfig, parsed: ParsedResumeProfile): Onb
 
 function completionForStep(config: OnboardingConfig, step: WizardStep) {
   if (step === 0) {
-    const checks = [
-      config.search.workLocations.length > 0,
-      config.search.jobTypes.length > 0,
-      config.search.titles.length > 0,
-    ];
-    return Math.round((checks.filter(Boolean).length / checks.length) * 100);
+    return isMasterResumeComplete(config) ? 100 : 0;
   }
-  if (step === 1) return config.filters.match === "high" ? 35 : config.filters.match === "higher" ? 65 : 100;
-  if (step === 2) {
-    const checks = [
-      isMasterResumeComplete(config),
-      isProfileInformationComplete(config),
-      isExperienceEducationComplete(config),
-      isCommonScreeningComplete(config),
-      hasLessCommonScreening(config),
-    ];
-    return Math.round((checks.filter(Boolean).length / checks.length) * 100);
-  }
-  return config.final.applicationMode ? 100 : 0;
+  const checks = [
+    isProfileInformationComplete(config),
+    isExperienceEducationComplete(config),
+    isCommonScreeningComplete(config),
+    hasLessCommonScreening(config),
+  ];
+  return Math.round((checks.filter(Boolean).length / checks.length) * 100);
 }
 
 function reviewPromptForStep(config: OnboardingConfig, step: WizardStep): ReviewPrompt | null {
   if (step === 1) {
-    const hasExpandedFilters = [
-      config.filters.seniority,
-      config.filters.timeZones,
-      config.filters.industries,
-      config.filters.languages,
-      config.filters.includeKeywords,
-      config.filters.excludeKeywords,
-      config.filters.excludeCompanies,
-    ].some((items) => items.length > 0);
-
-    if (!hasExpandedFilters) {
-      return {
-        step,
-        title: "Review the extra filters before moving on",
-        message:
-          "I opened seniority, time zone, and advanced filters. Add anything that is a real requirement, then click Next again.",
-      };
-    }
-  }
-
-  if (step === 2) {
     const profileReady = isProfileInformationComplete(config);
     const commonScreeningReady = isCommonScreeningComplete(config);
     const hasExperienceOrEducation = isExperienceEducationComplete(config);
@@ -477,14 +387,6 @@ export function OnboardingWizard({
   const overall = onboardingCompletion(config);
   const canContinue = true;
 
-  function patchSearch(patch: Partial<OnboardingConfig["search"]>) {
-    setConfig((current) => ({ ...current, search: { ...current.search, ...patch } }));
-  }
-
-  function patchFilters(patch: Partial<OnboardingConfig["filters"]>) {
-    setConfig((current) => ({ ...current, filters: { ...current.filters, ...patch } }));
-  }
-
   function patchProfile(patch: Partial<OnboardingConfig["profile"]>) {
     setConfig((current) => ({ ...current, profile: { ...current.profile, ...patch } }));
   }
@@ -515,14 +417,6 @@ export function OnboardingWizard({
       ...current,
       profile: { ...current.profile, screening: { ...current.profile.screening, ...patch } },
     }));
-  }
-
-  function patchFinal(patch: Partial<OnboardingConfig["final"]>) {
-    setConfig((current) => ({ ...current, final: { ...current.final, ...patch } }));
-  }
-
-  function toggleArray<T extends string>(values: T[], value: T, max = 99) {
-    return values.includes(value) ? values.filter((item) => item !== value) : [...values, value].slice(0, max);
   }
 
   async function uploadResume(file: File) {
@@ -594,7 +488,7 @@ export function OnboardingWizard({
   }
 
   function next() {
-    if (step >= 3) return;
+    if (step >= 1) return;
 
     const prompt = reviewPromptForStep(config, step);
     if (prompt && !promptedSteps.includes(step)) {
@@ -645,7 +539,7 @@ export function OnboardingWizard({
             type="button"
             onClick={() => {
               setReviewPrompt(null);
-              setStep(2);
+              setStep(0);
             }}
             className="mt-4 flex w-full min-w-0 items-center gap-3 rounded-xl bg-white/12 p-3 text-left ring-1 ring-inset ring-white/16 transition-colors hover:bg-white/18"
           >
@@ -750,7 +644,7 @@ export function OnboardingWizard({
               {saving === "save" ? <Loader2 className="mr-2 size-4 animate-spin" /> : null}
               Save
             </button>
-            {step < 3 ? (
+            {step < 1 ? (
               <button
                 type="button"
                 onClick={next}
@@ -779,7 +673,7 @@ export function OnboardingWizard({
               <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="rounded-full bg-brand-50 px-2.5 py-1 text-xs font-black text-brand-700 ring-1 ring-inset ring-brand-100">
-                    Step {step + 1} of 4
+                    Step {step + 1} of 2
                   </span>
                   <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-black text-emerald-700 ring-1 ring-inset ring-emerald-100">
                     Most fields optional
@@ -802,7 +696,7 @@ export function OnboardingWizard({
                   {saving === "save" ? <Loader2 className="mr-2 size-4 animate-spin" /> : null}
                   Save
                 </button>
-                {step < 3 ? (
+                {step < 1 ? (
                   <button
                     type="button"
                     onClick={next}
@@ -852,39 +746,25 @@ export function OnboardingWizard({
               className="px-4 py-4 sm:px-5"
             >
               {step === 0 && (
-                <StepSearch
-                  config={config}
-                  patchSearch={patchSearch}
-                  toggleArray={toggleArray}
-                />
-              )}
-              {step === 1 && (
-                <StepFilters
-                  config={config}
-                  patchFilters={patchFilters}
-                  toggleArray={toggleArray}
-                  reviewPromptActive={reviewPrompt?.step === 1}
-                />
-              )}
-              {step === 2 && (
-                <StepProfile
+                <StepResume
                   config={config}
                   fileRef={fileRef}
                   parseStatus={parseStatus}
                   parseMessage={parseMessage}
+                  uploadResume={uploadResume}
+                />
+              )}
+              {step === 1 && (
+                <StepProfileDetails
+                  config={config}
                   patchBasics={patchBasics}
                   patchLinks={patchLinks}
                   patchProfile={patchProfile}
                   patchScreening={patchScreening}
                   patchWorkAuth={patchWorkAuth}
                   setConfig={setConfig}
-                  toggleArray={toggleArray}
-                  uploadResume={uploadResume}
-                  reviewPromptActive={reviewPrompt?.step === 2}
+                  reviewPromptActive={reviewPrompt?.step === 1}
                 />
-              )}
-              {step === 3 && (
-                <StepFinal config={config} patchFinal={patchFinal} setConfig={setConfig} />
               )}
             </motion.div>
           </AnimatePresence>
@@ -894,255 +774,84 @@ export function OnboardingWizard({
   );
 }
 
-function StepSearch({
+function StepResume({
   config,
-  patchSearch,
-  toggleArray,
+  fileRef,
+  parseStatus,
+  parseMessage,
+  uploadResume,
 }: {
   config: OnboardingConfig;
-  patchSearch: (patch: Partial<OnboardingConfig["search"]>) => void;
-  toggleArray: <T extends string>(values: T[], value: T, max?: number) => T[];
+  fileRef: React.RefObject<HTMLInputElement | null>;
+  parseStatus: "idle" | "uploading" | "parsed" | "error";
+  parseMessage: string;
+  uploadResume: (file: File) => Promise<void>;
 }) {
+  const masterResumeComplete = isMasterResumeComplete(config);
+
   return (
     <div className="grid gap-3">
-      <Panel title="Work location" hint="Choose remote, on-site / hybrid, or both.">
-        <div className="grid gap-3 md:grid-cols-2">
-          <OptionCard
-            active={config.search.workLocations.includes("remote")}
-            icon={<MapPin className="size-4" />}
-            title="Remote Jobs"
-            hint={config.search.remoteScope || "Worldwide"}
-            onClick={() =>
-              patchSearch({
-                workLocations: toggleArray<WorkLocationPreference>(
-                  config.search.workLocations,
-                  "remote",
-                  2,
-                ),
-              })
-            }
-          />
-          <OptionCard
-            active={config.search.workLocations.includes("onsite_hybrid")}
-            icon={<BriefcaseBusiness className="size-4" />}
-            title="On-site Jobs / Hybrid"
-            hint={config.search.onsiteLocation || "Anywhere in India"}
-            onClick={() =>
-              patchSearch({
-                workLocations: toggleArray<WorkLocationPreference>(
-                  config.search.workLocations,
-                  "onsite_hybrid",
-                  2,
-                ),
-              })
-            }
-          />
+      <div className="flex flex-col items-center gap-4 rounded-2xl bg-brand-50/70 p-8 text-center ring-1 ring-inset ring-brand-100 sm:p-10">
+        <span className="grid size-14 shrink-0 place-items-center rounded-2xl bg-white text-brand-700 ring-1 ring-inset ring-brand-100">
+          {parseStatus === "uploading" ? <Loader2 className="size-6 animate-spin" /> : <FileSearch className="size-6" />}
+        </span>
+        <div>
+          <p className="text-base font-black text-ink">
+            {config.profile.resumeName || "No resume uploaded yet"}
+          </p>
+          <p className="mx-auto mt-1 max-w-md text-sm font-semibold leading-6 text-muted">
+            {parseMessage || "PDF, DOCX, or text, up to 6 MB. We'll pull your experience, education, and contact details straight from it."}
+          </p>
         </div>
-        <div className="mt-3 grid gap-3 sm:grid-cols-2">
-          <Field
-            label="Remote scope"
-            value={config.search.remoteScope}
-            onChange={(value) => patchSearch({ remoteScope: value })}
-          />
-          <LocationField
-            label="On-site / hybrid location"
-            value={config.search.onsiteLocation}
-            onChange={(value) => patchSearch({ onsiteLocation: value })}
-            placeholder="City, state, region, or country"
-          />
-        </div>
-      </Panel>
-
-      <div className="grid gap-3 lg:grid-cols-[0.9fr_1.1fr]">
-        <Panel title="Job types" optional hint="Full-time is selected by default.">
-          <div className="flex flex-wrap gap-2">
-            {JOB_TYPES.map((type) => (
-              <Chip
-                key={type.value}
-                selected={config.search.jobTypes.includes(type.value)}
-                onClick={() =>
-                  patchSearch({ jobTypes: toggleArray<JobTypePreference>(config.search.jobTypes, type.value, 4) })
-                }
-              >
-                {type.label}
-              </Chip>
-            ))}
-          </div>
-        </Panel>
-
-        <Panel title="Job title keywords" optional hint="Helps a lot. Add up to 5.">
-          <TagInput
-            value={config.search.titles}
-            max={5}
-            placeholder="Product Manager"
-            suggestions={[...POPULAR_JOB_TITLE_QUICK_PICKS]}
-            autocompleteSuggestions={POPULAR_JOB_TITLES}
-            onChange={(titles) => patchSearch({ titles })}
-          />
-        </Panel>
+        <button
+          type="button"
+          onClick={() => fileRef.current?.click()}
+          disabled={parseStatus === "uploading"}
+          className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-brand-600 px-5 text-sm font-black text-white transition-colors hover:bg-brand-700 disabled:pointer-events-none disabled:opacity-60"
+        >
+          <UploadCloud className="size-4" />
+          {config.profile.resumeName ? "Replace resume" : "Upload resume"}
+        </button>
+        <input
+          ref={fileRef}
+          type="file"
+          accept=".pdf,.docx,.txt"
+          className="hidden"
+          onChange={(event) => {
+            const file = event.target.files?.[0];
+            if (file) void uploadResume(file);
+          }}
+        />
+        {masterResumeComplete && (
+          <p className="flex items-center gap-1.5 text-xs font-bold text-brand-700">
+            <CheckCircle2 className="size-3.5" />
+            Saved — click Next to review and complete your profile.
+          </p>
+        )}
       </div>
     </div>
   );
 }
 
-function StepFilters({
+function StepProfileDetails({
   config,
-  patchFilters,
-  reviewPromptActive,
-  toggleArray,
-}: {
-  config: OnboardingConfig;
-  patchFilters: (patch: Partial<OnboardingConfig["filters"]>) => void;
-  reviewPromptActive: boolean;
-  toggleArray: <T extends string>(values: T[], value: T, max?: number) => T[];
-}) {
-  return (
-    <div className="grid gap-3">
-      <Panel
-        title="Job match"
-        hint="Controls how close a role must be to your background."
-      >
-        <Segmented
-          value={config.filters.match}
-          options={[
-            { value: "highest", label: "Narrow", hint: "Direct matches only" },
-            { value: "higher", label: "Default", hint: "Related roles" },
-            { value: "high", label: "Broad", hint: "Adjacent fields OK" },
-          ]}
-          onChange={(value) => patchFilters({ match: value as MatchPreference })}
-        />
-        <p className="mt-2 flex items-center gap-1.5 text-xs font-semibold leading-5 text-muted">
-          <Info className="size-3.5 shrink-0 text-brand-600" />
-          Narrow means direct matches. Broad allows adjacent roles when the queue is light.
-        </p>
-      </Panel>
-
-      <Expandable
-        title="Seniority and time zones"
-        hint="Worth checking before Next; keeps the queue closer to your target roles."
-        forceOpen={reviewPromptActive}
-        status={config.filters.seniority.length + config.filters.timeZones.length > 0 ? "Filled" : "Review"}
-        attention={reviewPromptActive}
-      >
-        <SectionLabel>Seniority</SectionLabel>
-        <div className="mb-4 flex flex-wrap gap-2">
-          {SENIORITY.map((item) => (
-            <Chip
-              key={item}
-              selected={config.filters.seniority.includes(item)}
-              onClick={() => patchFilters({ seniority: toggleArray(config.filters.seniority, item) })}
-            >
-              {item}
-            </Chip>
-          ))}
-        </div>
-        <SectionLabel>Remote time zones</SectionLabel>
-        <div className="flex flex-wrap gap-2">
-          {TIME_ZONES.map((item) => (
-            <Chip
-              key={item}
-              selected={config.filters.timeZones.includes(item)}
-              onClick={() => patchFilters({ timeZones: toggleArray(config.filters.timeZones, item) })}
-            >
-              {item}
-            </Chip>
-          ))}
-        </div>
-      </Expandable>
-
-      <Expandable
-        title="Advanced filters"
-        hint="Add hard requirements and exclusions so weak roles stay out."
-        forceOpen={reviewPromptActive}
-        status={
-          config.filters.industries.length +
-            config.filters.languages.length +
-            config.filters.includeKeywords.length +
-            config.filters.excludeKeywords.length +
-            config.filters.excludeCompanies.length >
-          0
-            ? "Filled"
-            : "Review"
-        }
-        attention={reviewPromptActive}
-      >
-        <div className="grid gap-4">
-          <div>
-            <SectionLabel>Industry</SectionLabel>
-            <div className="flex flex-wrap gap-2">
-              {INDUSTRIES.map((item) => (
-                <Chip
-                  key={item}
-                  selected={config.filters.industries.includes(item)}
-                  onClick={() => patchFilters({ industries: toggleArray(config.filters.industries, item) })}
-                >
-                  {item}
-                </Chip>
-              ))}
-            </div>
-          </div>
-          <TagInput
-            label="Job description language"
-            value={config.filters.languages}
-            placeholder="English"
-            suggestions={[...LANGUAGE_QUICK_PICKS]}
-            autocompleteSuggestions={[...TOP_SPOKEN_LANGUAGES]}
-            onChange={(languages) => patchFilters({ languages })}
-          />
-          <TagInput
-            label="Include keywords"
-            value={config.filters.includeKeywords}
-            placeholder="B2B, AI, platform"
-            onChange={(includeKeywords) => patchFilters({ includeKeywords })}
-          />
-          <TagInput
-            label="Exclude keywords"
-            value={config.filters.excludeKeywords}
-            placeholder="commission only, unpaid"
-            onChange={(excludeKeywords) => patchFilters({ excludeKeywords })}
-          />
-          <TagInput
-            label="Exclude companies"
-            value={config.filters.excludeCompanies}
-            placeholder="Company name"
-            onChange={(excludeCompanies) => patchFilters({ excludeCompanies })}
-          />
-        </div>
-      </Expandable>
-    </div>
-  );
-}
-
-function StepProfile({
-  config,
-  fileRef,
-  parseStatus,
-  parseMessage,
   patchBasics,
   patchLinks,
   patchProfile,
   patchScreening,
   patchWorkAuth,
   setConfig,
-  toggleArray,
-  uploadResume,
   reviewPromptActive,
 }: {
   config: OnboardingConfig;
-  fileRef: React.RefObject<HTMLInputElement | null>;
-  parseStatus: "idle" | "uploading" | "parsed" | "error";
-  parseMessage: string;
   patchBasics: (patch: Partial<OnboardingConfig["profile"]["basics"]>) => void;
   patchLinks: (patch: Partial<OnboardingConfig["profile"]["links"]>) => void;
   patchProfile: (patch: Partial<OnboardingConfig["profile"]>) => void;
   patchScreening: (patch: Partial<OnboardingConfig["profile"]["screening"]>) => void;
   patchWorkAuth: (patch: Partial<OnboardingConfig["profile"]["workAuth"]>) => void;
   setConfig: React.Dispatch<React.SetStateAction<OnboardingConfig>>;
-  toggleArray: <T extends string>(values: T[], value: T, max?: number) => T[];
-  uploadResume: (file: File) => Promise<void>;
   reviewPromptActive: boolean;
 }) {
-  const masterResumeComplete = isMasterResumeComplete(config);
   const profileInformationComplete = isProfileInformationComplete(config);
   const experienceEducationComplete = isExperienceEducationComplete(config);
   const commonScreeningComplete = isCommonScreeningComplete(config);
@@ -1151,50 +860,6 @@ function StepProfile({
 
   return (
     <div className="grid gap-3">
-      <Expandable
-        title="Master resume"
-        hint="Upload the base resume JobPosted and Rezoomed should tailor for each role."
-        forceOpen={reviewPromptActive && !masterResumeComplete}
-        status={masterResumeComplete ? "Done" : "Required"}
-        done={masterResumeComplete}
-        attention={reviewPromptActive && !masterResumeComplete}
-      >
-        <div className="flex flex-col gap-3 rounded-xl bg-brand-50/70 p-3 ring-1 ring-inset ring-brand-100 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-start gap-3">
-            <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-white text-brand-700 ring-1 ring-inset ring-brand-100">
-              {parseStatus === "uploading" ? <Loader2 className="size-5 animate-spin" /> : <FileSearch className="size-5" />}
-            </span>
-            <div>
-              <p className="text-sm font-black text-ink">
-                {config.profile.resumeName || "No resume uploaded yet"}
-              </p>
-              <p className="mt-1 text-sm font-semibold leading-6 text-muted">
-                {parseMessage || "PDF, DOCX, or text, up to 6 MB. Review all filled fields before launch."}
-              </p>
-            </div>
-          </div>
-          <button
-            type="button"
-            onClick={() => fileRef.current?.click()}
-            disabled={parseStatus === "uploading"}
-            className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-brand-600 px-4 text-sm font-black text-white transition-colors hover:bg-brand-700 disabled:pointer-events-none disabled:opacity-60"
-          >
-            <UploadCloud className="size-4" />
-            {config.profile.resumeName ? "Replace resume" : "Upload resume"}
-          </button>
-          <input
-            ref={fileRef}
-            type="file"
-            accept=".pdf,.docx,.txt"
-            className="hidden"
-            onChange={(event) => {
-              const file = event.target.files?.[0];
-              if (file) void uploadResume(file);
-            }}
-          />
-        </div>
-      </Expandable>
-
       <Expandable
         title="Profile information"
         hint="Most of this can be filled from your resume."
@@ -1515,207 +1180,6 @@ function StepProfile({
   );
 }
 
-function StepFinal({
-  config,
-  patchFinal,
-  setConfig,
-}: {
-  config: OnboardingConfig;
-  patchFinal: (patch: Partial<OnboardingConfig["final"]>) => void;
-  setConfig: React.Dispatch<React.SetStateAction<OnboardingConfig>>;
-}) {
-  const preview = writingStylePreview(config.final.writingStyle);
-
-  return (
-    <div className="grid gap-3">
-      <Panel title="The Process" hint="Choose the workflow you want to start with.">
-        <div className="grid gap-3 md:grid-cols-2">
-          <OptionCard
-            active={config.final.applicationMode === "auto"}
-            icon={<BriefcaseBusiness className="size-4" />}
-            title="Full Auto-Apply"
-            hint="Fills and submits matched applications automatically."
-            onClick={() => patchFinal({ applicationMode: "auto" })}
-          />
-          <OptionCard
-            active={config.final.applicationMode === "review"}
-            icon={<ShieldCheck className="size-4" />}
-            title="Auto-Save & Manual Review"
-            hint="Auto-fills forms, then waits for you to review and submit."
-            onClick={() => patchFinal({ applicationMode: "review" })}
-          />
-        </div>
-      </Panel>
-
-      <Panel title="Resume tailoring" hint="Choose how JobPosted prepares the resume attached to each application.">
-        <div className="grid gap-3 md:grid-cols-2">
-          <OptionCard
-            active={!config.final.tailorResume}
-            icon={<FileText className="size-4" />}
-            title="Use my master resume"
-            hint="Attach the active resume without per-job rewriting."
-            onClick={() => patchFinal({ tailorResume: false })}
-          />
-          <OptionCard
-            active={config.final.tailorResume}
-            icon={<Sparkles className="size-4" />}
-            title="Tailor each resume"
-            hint="Rewrite supported bullets and skills for the specific role."
-            onClick={() => patchFinal({ tailorResume: true })}
-          />
-        </div>
-      </Panel>
-
-      <Panel title="Writing style" optional hint="Personalize how JobPosted answers application questions.">
-        <div className="grid gap-4 md:grid-cols-3">
-          <SelectField
-            label="Sentence length"
-            value={config.final.writingStyle.sentenceLength}
-            options={["Short and direct", "Balanced mix", "Detailed when useful"]}
-            onChange={(sentenceLength) =>
-              setConfig((current) => ({
-                ...current,
-                final: {
-                  ...current.final,
-                  writingStyle: { ...current.final.writingStyle, sentenceLength },
-                },
-              }))
-            }
-          />
-          <SelectField
-            label="Tone"
-            value={config.final.writingStyle.tone}
-            options={["Formal", "Neutral-casual", "Warm and confident"]}
-            onChange={(tone) =>
-              setConfig((current) => ({
-                ...current,
-                final: { ...current.final, writingStyle: { ...current.final.writingStyle, tone } },
-              }))
-            }
-          />
-          <SelectField
-            label="Vocabulary"
-            value={config.final.writingStyle.vocabulary}
-            options={["Simple, everyday words", "Balanced professional", "More technical"]}
-            onChange={(vocabulary) =>
-              setConfig((current) => ({
-                ...current,
-                final: { ...current.final, writingStyle: { ...current.final.writingStyle, vocabulary } },
-              }))
-            }
-          />
-        </div>
-        <div className="mt-3 rounded-xl bg-brand-50 p-3 ring-1 ring-inset ring-brand-100">
-          <p className="text-xs font-black text-brand-700">Preview</p>
-          <p className="mt-2 text-sm font-semibold leading-6 text-brand-950">{preview}</p>
-        </div>
-      </Panel>
-
-    </div>
-  );
-}
-
-function writingStylePreview(style: OnboardingConfig["final"]["writingStyle"]) {
-  const sentenceLength = style.sentenceLength;
-  const tone = style.tone;
-  const vocabulary = style.vocabulary;
-
-  if (sentenceLength === "Short and direct") {
-    if (tone === "Formal") {
-      if (vocabulary === "More technical") return "I align stakeholders, resolve ambiguity, and keep execution on track.";
-      if (vocabulary === "Balanced professional") return "I coordinate well, clarify priorities, and deliver reliably.";
-      return "I work well with teams, make things clear, and get work done.";
-    }
-    if (tone === "Warm and confident") {
-      if (vocabulary === "More technical") return "I bring teams together, clarify tradeoffs, and drive steady delivery.";
-      if (vocabulary === "Balanced professional") return "I help teams stay aligned, focused, and moving forward.";
-      return "I keep people aligned and make progress easy to follow.";
-    }
-    if (vocabulary === "More technical") return "I clarify requirements, unblock teams, and support fast execution.";
-    if (vocabulary === "Balanced professional") return "I clarify priorities, work across teams, and keep delivery moving.";
-    return "I work across teams, clear up confusion, and keep things moving.";
-  }
-
-  if (sentenceLength === "Detailed when useful") {
-    if (tone === "Formal") {
-      if (vocabulary === "More technical") {
-        return "I collaborate across product, design, and engineering to translate ambiguous requirements into executable plans, then track risks, tradeoffs, and delivery milestones.";
-      }
-      if (vocabulary === "Balanced professional") {
-        return "I work across teams to clarify goals, organize priorities, and make sure stakeholders have the context they need to move decisions forward.";
-      }
-      return "I work with different teams to understand what matters, explain next steps clearly, and help everyone stay focused on delivery.";
-    }
-    if (tone === "Warm and confident") {
-      if (vocabulary === "More technical") {
-        return "I enjoy partnering across functions, turning open-ended requirements into practical plans, and helping teams move through tradeoffs with confidence.";
-      }
-      if (vocabulary === "Balanced professional") {
-        return "I like bringing people together, making priorities clear, and helping teams move quickly without losing sight of quality or stakeholder needs.";
-      }
-      return "I like working with people across teams, making confusing problems easier to understand, and helping everyone keep momentum.";
-    }
-    if (vocabulary === "More technical") {
-      return "I work cross-functionally to clarify requirements, evaluate tradeoffs, and support delivery through clear planning, execution, and stakeholder communication.";
-    }
-    if (vocabulary === "Balanced professional") {
-      return "I work cross-functionally to clarify priorities, keep stakeholders aligned, and help teams move from ambiguity to clear execution.";
-    }
-    return "I work with different teams to make unclear problems easier, keep everyone on the same page, and help work move forward smoothly.";
-  }
-
-  if (tone === "Formal") {
-    if (vocabulary === "More technical") {
-      return "I collaborate across functions to clarify requirements, manage tradeoffs, and maintain execution momentum.";
-    }
-    if (vocabulary === "Balanced professional") {
-      return "I work across teams to clarify priorities, align stakeholders, and support reliable delivery.";
-    }
-    return "I work well across teams, make priorities clear, and help deliver work reliably.";
-  }
-  if (tone === "Warm and confident") {
-    if (vocabulary === "More technical") {
-      return "I bring teams together, turn ambiguity into clear requirements, and keep delivery moving with practical tradeoffs.";
-    }
-    if (vocabulary === "Balanced professional") {
-      return "I bring people together, clarify what matters, and help teams move quickly with confidence.";
-    }
-    return "I help teams work together, make confusing things clear, and keep progress moving.";
-  }
-  if (vocabulary === "More technical") {
-    return "I work cross-functionally, clarify requirements, evaluate tradeoffs, and keep delivery aligned with stakeholder goals.";
-  }
-  if (vocabulary === "Balanced professional") {
-    return "I work cross-functionally, clarify priorities, and keep teams aligned while moving delivery forward.";
-  }
-  return "I'm comfortable working across teams, making unclear requirements easier to understand, and keeping people aligned.";
-}
-
-function Panel({
-  title,
-  hint,
-  optional = false,
-  children,
-}: {
-  title: string;
-  hint?: string;
-  optional?: boolean;
-  children: React.ReactNode;
-}) {
-  return (
-    <section className="rounded-2xl bg-white/60 p-4 ring-1 ring-inset ring-zinc-200/70 sm:p-5">
-      <div className="mb-3.5">
-        <h3 className="flex items-center gap-2 text-sm font-extrabold text-ink">
-          {title}
-          {optional && <OptionalBadge />}
-        </h3>
-        {hint && <p className="mt-0.5 text-xs font-semibold leading-5 text-muted">{hint}</p>}
-      </div>
-      {children}
-    </section>
-  );
-}
-
 function Expandable({
   title,
   hint,
@@ -1819,49 +1283,6 @@ function Expandable({
         )}
       </AnimatePresence>
     </motion.section>
-  );
-}
-
-function OptionCard({
-  active,
-  icon,
-  title,
-  hint,
-  badge,
-  onClick,
-}: {
-  active: boolean;
-  icon: React.ReactNode;
-  title: string;
-  hint: string;
-  badge?: string;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-pressed={active}
-      className={cn(
-        "relative min-h-20 rounded-xl p-3 text-left ring-1 ring-inset transition-colors",
-        active
-          ? "bg-brand-600 text-white ring-brand-600"
-          : "bg-white text-ink ring-zinc-200 hover:bg-brand-50",
-      )}
-    >
-      <span className={cn("grid size-8 place-items-center rounded-lg", active ? "bg-white/15" : "bg-brand-50 text-brand-700")}>
-        {icon}
-      </span>
-      <span className="mt-2 block text-sm font-black">{title}</span>
-      <span className={cn("mt-0.5 block text-xs font-semibold leading-5", active ? "text-white/75" : "text-muted")}>
-        {hint}
-      </span>
-      {badge && (
-        <span className={cn("absolute top-2.5 right-2.5 rounded-full px-2 py-0.5 text-[10px] font-black", active ? "bg-white/15 text-white" : "bg-brand-50 text-brand-700")}>
-          {badge}
-        </span>
-      )}
-    </button>
   );
 }
 
@@ -2297,38 +1718,6 @@ function SelectField({
 
 function SectionLabel({ children }: { children: React.ReactNode }) {
   return <p className="mb-1.5 text-[11px] font-black text-muted">{children}</p>;
-}
-
-function Segmented({
-  value,
-  options,
-  onChange,
-}: {
-  value: string;
-  options: Array<{ value: string; label: string; hint: string }>;
-  onChange: (value: string) => void;
-}) {
-  return (
-    <div className="grid gap-1.5 rounded-xl bg-brand-50 p-1.5 sm:grid-cols-3">
-      {options.map((option) => (
-        <button
-          key={option.value}
-          type="button"
-          onClick={() => onChange(option.value)}
-          aria-pressed={value === option.value}
-          className={cn(
-            "rounded-lg px-3 py-2 text-left transition-colors",
-            value === option.value ? "bg-brand-600 text-white" : "bg-white/72 text-ink hover:bg-white",
-          )}
-        >
-          <span className="block text-sm font-black">{option.label}</span>
-          <span className={cn("mt-0.5 block text-xs font-semibold", value === option.value ? "text-white/75" : "text-muted")}>
-            {option.hint}
-          </span>
-        </button>
-      ))}
-    </div>
-  );
 }
 
 function normalizeTitleQuery(value: string) {

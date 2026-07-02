@@ -416,6 +416,11 @@ export async function PATCH(request: Request) {
   nextFieldMap.manual = manual;
 
   const applicationUpdate: Record<string, unknown> = { field_map: nextFieldMap };
+  // Mirror the note into the first-class column (0036) — the shared source of truth the
+  // extension reads/writes; the field_map copy stays for backwards compatibility.
+  if (payload.notes !== undefined) {
+    applicationUpdate.notes = payload.notes ? String(payload.notes).slice(0, 300) : null;
+  }
   if (payload.stage) {
     applicationUpdate.status = statusForTrackerStage(payload.stage);
     applicationUpdate.submitted_at =

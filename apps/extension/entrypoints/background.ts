@@ -6,6 +6,8 @@ import {
   type ExtensionAutofillRunResult,
   type ExtensionCoverLetterResponse,
   type ExtensionJobContext,
+  type ExtensionJobKind,
+  type ExtensionJobState,
   type ExtensionMessage,
   type ExtensionMessageResponse,
   type ExtensionTailorResponse,
@@ -16,11 +18,15 @@ import {
   ExtensionHttpError,
   fetchProfile,
   fetchResume,
+  fetchResumeOptions,
+  fetchTrackerItems,
   generateCoverLetterForJob,
   mapField,
   saveAnswer,
   syncApplication,
   tailorResumeForJob,
+  updateTrackerItem,
+  uploadResume,
 } from "../src/lib/api";
 import {
   clearCachedProfile,
@@ -82,6 +88,37 @@ function bridgeUrl(requestId: string) {
   const url = new URL(EXTENSION_BRIDGE_PATH, JOBPOSTED_WEB_ORIGIN);
   url.searchParams.set("requestId", requestId);
   return url.toString();
+}
+
+function configuredWebHostname() {
+  try {
+    return new URL(JOBPOSTED_WEB_ORIGIN).hostname.toLowerCase();
+  } catch {
+    return "jobposted.app";
+  }
+}
+
+const JOBPOSTED_WEB_HOSTNAMES = new Set(
+  [configuredWebHostname(), "jobposted.app", "www.jobposted.app", "jobposted.ai", "www.jobposted.ai"].filter(Boolean),
+);
+
+const ALLOW_LOCALHOST_SENDER =
+  import.meta.env.MODE !== "production" ||
+  import.meta.env.WXT_INCLUDE_LOCALHOST === "1" ||
+  /^http:\/\/(localhost|127\.0\.0\.1)(?::\d+)?$/i.test(JOBPOSTED_WEB_ORIGIN);
+
+// A delivered Supabase session must come from a JobPosted web-app frame. Without this
+// check, any script on an allowlisted ATS origin could reach the content-script bridge
+// and post a forged session that we'd then store as the signed-in account.
+function senderIsJobPostedWebApp(sender: chrome.runtime.MessageSender): boolean {
+  let host = "";
+  try {
+    host = new URL(sender.origin || sender.url || "").hostname.toLowerCase();
+  } catch {
+    return false;
+  }
+  if (JOBPOSTED_WEB_HOSTNAMES.has(host)) return true;
+  return ALLOW_LOCALHOST_SENDER && (host === "localhost" || host === "127.0.0.1");
 }
 
 function transientSyncError(error: unknown) {
@@ -292,7 +329,9 @@ async function requestFrameAutofill(
     {
       type: CONTENT_AUTOFILL_MESSAGE,
       continueSteps: Boolean(args.continueSteps),
-      forceGenericFallback: true,
+      // Honor the user's "Generic fallback" setting instead of forcing it on. The
+      // content script only blocks on truly unknown (platform === "generic") hosts.
+      forceGenericFallback: false,
       suppressAutoTrack: true,
     },
     { frameId },
@@ -581,7 +620,80 @@ async function startAuth(): Promise<ExtensionMessageResponse> {
   return { ok: true, type: "AUTH_START", requestId };
 }
 
-async function handleMessage(message: ExtensionMessage): Promise<ExtensionMessageResponse> {
+// ── Long-job resilience ──────────────────────────────────────────────────────
+// A tailor/cover run is a 1–2 min fetch in this (tab-agnostic) service worker.
+// Two safeguards: a keepalive ping so Chrome doesn't tear the worker down mid-request,
+// and per-tab persisted state so the in-page panel can recover the result after a tab
+// switch, panel reopen, or reload (the request outlives the content script).
+let keepAliveTimer: ReturnType<typeof setInterval> | null = null;
+let activeJobCount = 0;
+
+function startJobKeepAlive() {
+  activeJobCount += 1;
+  if (keepAliveTimer) return;
+  keepAliveTimer = setInterval(() => {
+    // Any trivial async call resets the worker's ~30s idle timer so it stays alive.
+    void chrome.runtime.getPlatformInfo().catch(() => undefined);
+  }, 20_000);
+}
+
+function stopJobKeepAlive() {
+  activeJobCount = Math.max(0, activeJobCount - 1);
+  if (activeJobCount === 0 && keepAliveTimer) {
+    clearInterval(keepAliveTimer);
+    keepAliveTimer = null;
+  }
+}
+
+async function writeJobState(tabId: number | undefined, state: ExtensionJobState | null) {
+  if (tabId == null) return;
+  const key = `job:${tabId}`;
+  if (state) await chrome.storage.session.set({ [key]: state });
+  else await chrome.storage.session.remove(key);
+}
+
+async function readJobState(tabId: number | undefined): Promise<ExtensionJobState | null> {
+  if (tabId == null) return null;
+  const key = `job:${tabId}`;
+  const stored = await chrome.storage.session.get(key);
+  return (stored[key] as ExtensionJobState | undefined) ?? null;
+}
+
+// Runs a tailor/cover job while persisting its lifecycle so the panel can recover it.
+async function runTrackedJob<T extends ExtensionTailorResponse | ExtensionCoverLetterResponse>(
+  tabId: number | undefined,
+  kind: ExtensionJobKind,
+  run: () => Promise<T>,
+): Promise<T> {
+  const startedAt = Date.now();
+  await writeJobState(tabId, { kind, status: "running", startedAt, updatedAt: startedAt });
+  startJobKeepAlive();
+  try {
+    const result = await run();
+    await writeJobState(tabId, {
+      kind,
+      status: "done",
+      startedAt,
+      updatedAt: Date.now(),
+      tailor: kind === "tailor" ? (result as ExtensionTailorResponse) : null,
+      coverLetter: kind === "cover-letter" ? (result as ExtensionCoverLetterResponse) : null,
+    });
+    return result;
+  } catch (error) {
+    await writeJobState(tabId, {
+      kind,
+      status: "error",
+      startedAt,
+      updatedAt: Date.now(),
+      error: error instanceof Error ? error.message : "Action failed.",
+    });
+    throw error;
+  } finally {
+    stopJobKeepAlive();
+  }
+}
+
+async function handleMessage(message: ExtensionMessage, tabId?: number): Promise<ExtensionMessageResponse> {
   switch (message.type) {
     case "AUTH_START":
       return startAuth();
@@ -640,9 +752,43 @@ async function handleMessage(message: ExtensionMessage): Promise<ExtensionMessag
     case "TRACKER_ADD_ACTIVE_TAB":
       return { ok: true, type: "TRACKER_ADD_ACTIVE_TAB", result: await addActiveTabToTracker() };
     case "TAILOR_ACTIVE_TAB":
-      return { ok: true, type: "TAILOR_ACTIVE_TAB", result: await tailorActiveTab() };
+      return {
+        ok: true,
+        type: "TAILOR_ACTIVE_TAB",
+        result: await runTrackedJob(tabId, "tailor", tailorActiveTab),
+      };
     case "COVER_LETTER_ACTIVE_TAB":
-      return { ok: true, type: "COVER_LETTER_ACTIVE_TAB", result: await coverLetterActiveTab() };
+      return {
+        ok: true,
+        type: "COVER_LETTER_ACTIVE_TAB",
+        result: await runTrackedJob(tabId, "cover-letter", coverLetterActiveTab),
+      };
+    case "JOB_STATE_QUERY":
+      return { ok: true, type: "JOB_STATE_QUERY", state: await readJobState(tabId) };
+    case "JOB_STATE_CLEAR":
+      await writeJobState(tabId, null);
+      return { ok: true, type: "JOB_STATE_CLEAR" };
+    case "TRACKER_LIST":
+      return { ok: true, type: "TRACKER_LIST", items: await fetchTrackerItems() };
+    case "TRACKER_UPDATE":
+      return {
+        ok: true,
+        type: "TRACKER_UPDATE",
+        item: await updateTrackerItem({
+          id: message.id,
+          stage: message.stage,
+          notes: message.notes,
+          resumeDocId: message.resumeDocId,
+        }),
+      };
+    case "RESUME_LIST":
+      return { ok: true, type: "RESUME_LIST", resumes: await fetchResumeOptions() };
+    case "RESUME_UPLOAD":
+      return {
+        ok: true,
+        type: "RESUME_UPLOAD",
+        resume: await uploadResume({ name: message.name, dataBase64: message.dataBase64 }),
+      };
     case "OPEN_TAB":
       // Content scripts can't touch chrome.tabs; they delegate tab creation here.
       await chrome.tabs.create({ url: message.url, active: true });
@@ -719,9 +865,13 @@ export default defineBackground(() => {
     }
   });
 
-  chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+  chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (!isExtensionMessage(message)) return false;
-    void handleMessage(message)
+    if (message.type === "AUTH_SESSION_DELIVERY" && !senderIsJobPostedWebApp(sender)) {
+      sendResponse({ ok: false, error: "untrusted_sender" });
+      return true;
+    }
+    void handleMessage(message, sender.tab?.id)
       .then(sendResponse)
       .catch((error: unknown) => {
         sendResponse({

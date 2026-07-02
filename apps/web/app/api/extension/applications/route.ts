@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import {
   resolveCompanyAssetsFromJobUrl,
   type ExtensionApplicationUpsert,
+  type ExtensionTrackerItem,
 } from "@jobposted/shared";
 import { getServiceRoleClient } from "@/lib/supabase/service-role";
 import { authErrorResponse, extensionError, getExtensionAuthContext } from "@/lib/extension/auth";
@@ -11,6 +12,56 @@ import {
   canonicalizeJobUrl,
   type ExistingExtensionApplicationRow,
 } from "@/lib/extension/application-sync";
+import { mapTrackerApplicationRow } from "@/lib/dashboard/tracker";
+import { statusForTrackerStage, trackerStageFromInput } from "@/lib/dashboard/tracker-model";
+
+// Columns the tracker mapper needs, plus the notes column, the joined job, and the
+// attached resume document (so its name/id resolve without a field_map round-trip).
+const TRACKER_SELECT =
+  "id,status,apply_path,submitted_at,created_at,rendered_pdf_path,field_map,failure_reason,notes,resume_doc_id," +
+  "jobs:job_id(id,company,company_domain,company_logo_url,title,location,apply_url,ats_type,source)," +
+  "resume:resume_doc_id(id,storage_path,created_at)";
+
+function fileNameFromPath(path: string | null | undefined): string {
+  if (!path) return "";
+  try {
+    return decodeURIComponent(path.split("/").pop() || "");
+  } catch {
+    return path.split("/").pop() || "";
+  }
+}
+
+function firstOf<T>(value: T | T[] | null | undefined): T | null {
+  if (Array.isArray(value)) return value[0] ?? null;
+  return value ?? null;
+}
+
+function toExtensionTrackerItem(row: Record<string, unknown>): ExtensionTrackerItem {
+  const item = mapTrackerApplicationRow(row as unknown as Parameters<typeof mapTrackerApplicationRow>[0]);
+  const notesColumn = typeof row.notes === "string" && row.notes.trim() ? row.notes.trim() : null;
+  const resumeDoc = firstOf(row.resume as { id?: string; storage_path?: string } | Array<{ id?: string; storage_path?: string }> | null);
+  const resumeDocId =
+    (resumeDoc && typeof resumeDoc.id === "string" ? resumeDoc.id : null) ??
+    (typeof row.resume_doc_id === "string" ? row.resume_doc_id : null);
+  const resumeName = resumeDoc?.storage_path ? fileNameFromPath(resumeDoc.storage_path) || item.resumeName : item.resumeName;
+  return {
+    id: item.id,
+    jobId: item.jobId,
+    company: item.company,
+    role: item.role,
+    companyLogoUrl: item.companyLogoUrl,
+    status: item.status,
+    stage: item.stage,
+    matchScore: item.matchScore,
+    resumeName,
+    resumeUrl: item.resumeUrl,
+    resumeDocId,
+    jobUrl: item.jobUrl,
+    appliedOn: item.appliedOn,
+    updatedAt: item.updatedAt,
+    notes: notesColumn ?? item.notes,
+  };
+}
 
 export const runtime = "nodejs";
 
@@ -240,6 +291,70 @@ export async function POST(request: Request) {
       jobId: savedApplication?.job_id ?? jobId,
       duplicate,
     });
+  } catch (error) {
+    return authErrorResponse(error);
+  }
+}
+
+// The extension's in-panel tracker: list the user's tracked applications.
+export async function GET(request: Request) {
+  try {
+    const auth = await getExtensionAuthContext(request);
+    const { data, error } = await auth.supabase
+      .from("applications")
+      .select(TRACKER_SELECT)
+      .eq("user_id", auth.user.id)
+      .order("created_at", { ascending: false })
+      .limit(200);
+    if (error) {
+      console.error("extension tracker list failed", error);
+      return extensionError("Could not load your tracker.", 500);
+    }
+    const rows = Array.isArray(data) ? data : [];
+    const items = rows.map((row) => toExtensionTrackerItem(row as Record<string, unknown>));
+    return NextResponse.json({ ok: true, items });
+  } catch (error) {
+    return authErrorResponse(error);
+  }
+}
+
+// Change an application's stage ("Mark as") and/or its note (max 300 chars).
+export async function PATCH(request: Request) {
+  try {
+    const auth = await getExtensionAuthContext(request);
+    const body = (await request.json().catch(() => null)) as Record<string, unknown> | null;
+    const id = asString(body?.id);
+    if (!id) return extensionError("Missing application id.", 400);
+
+    const patch: Record<string, unknown> = {};
+    if (typeof body?.stage === "string") {
+      patch.status = statusForTrackerStage(trackerStageFromInput(body.stage, "inbox"));
+    }
+    if (body && "notes" in body) {
+      const trimmed = typeof body.notes === "string" ? body.notes.slice(0, 300).trim() : "";
+      patch.notes = trimmed ? trimmed : null;
+    }
+    if (body && "resumeDocId" in body) {
+      const resumeDocId = asString(body.resumeDocId);
+      patch.resume_doc_id = resumeDocId ? resumeDocId : null;
+    }
+    if (Object.keys(patch).length === 0) {
+      return extensionError("Nothing to update.", 400);
+    }
+
+    const { data, error } = await auth.supabase
+      .from("applications")
+      .update(patch)
+      .eq("id", id)
+      .eq("user_id", auth.user.id)
+      .select(TRACKER_SELECT)
+      .maybeSingle();
+    if (error) {
+      console.error("extension tracker update failed", error);
+      return extensionError(`Could not update the application: ${errorMessage(error)}`, 500);
+    }
+    const item = data ? toExtensionTrackerItem(data as Record<string, unknown>) : null;
+    return NextResponse.json({ ok: true, item });
   } catch (error) {
     return authErrorResponse(error);
   }

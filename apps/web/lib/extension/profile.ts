@@ -3,6 +3,7 @@ import type {
   MasterProfileDemographics,
   MasterProfileEducation,
   MasterProfileExperience,
+  MasterProfileProject,
   ReusableAnswer,
 } from "@jobposted/shared";
 import { onboardingCompletion, sanitizeOnboardingConfig } from "@/lib/onboarding/model";
@@ -100,6 +101,24 @@ function normalizeEducation(value: unknown): MasterProfileEducation[] {
       startDate: asString(record.startDate ?? record.start_date) || null,
       endDate: asString(record.endDate ?? record.end_date) || null,
       gpa: asString(record.gpa) || null,
+    });
+  }
+  return normalized;
+}
+
+function normalizeProjects(value: unknown): MasterProfileProject[] {
+  if (!Array.isArray(value)) return [];
+  const normalized: MasterProfileProject[] = [];
+  for (const item of value) {
+    const record = asRecord(item);
+    const name = asString(record.name ?? record.title);
+    if (!name) continue;
+    normalized.push({
+      name,
+      description: asString(record.description ?? record.summary) || null,
+      bullets: asStringArray(record.bullets ?? record.highlights),
+      technologies: asStringArray(record.technologies ?? record.tech ?? record.stack),
+      url: asString(record.url ?? record.link) || null,
     });
   }
   return normalized;
@@ -224,8 +243,10 @@ export function buildMasterProfile(args: {
       currency: onboardingWorkAuth?.salaryCurrency || asString(row.salary_currency) || null,
     },
     demographics: demographicsFromOnboarding(args.onboardingData, email),
+    summary: asString(content.summary ?? content.headline) || null,
     experience: onboardingExperience.length > 0 ? onboardingExperience : resumeExperience,
     education: onboardingEducation.length > 0 ? onboardingEducation : resumeEducation,
+    projects: normalizeProjects(content.projects),
     skills: onboardingSkills.length > 0 ? onboardingSkills : resumeSkills,
     answers: args.answers ?? [],
     documents: {
