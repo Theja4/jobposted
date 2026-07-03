@@ -47,7 +47,8 @@ packages/
 - ✅ `apps/web` — operating mode selection for **Fully automatic** and **Review queue**. The
   UI stores the selected mode and the queue is filtered so manual/extension rows are not counted
   as JobPosted worker applications
-- ✅ `apps/web` — **resume tailoring** implemented natively in `lib/tailor` (OpenRouter-first AI client),
+- ✅ `apps/web` — **resume tailoring** implemented natively in `lib/tailor` (Foundry-first AI client,
+  OpenRouter fallback),
   exposed at `POST /api/tailor`; stores per-job tailored resumes in `documents`
 - ✅ `apps/extension` — MV3 autofill engine (Workday + open-ATS + generic adapters), AI-assisted
   field mapping with a learning cache, web↔extension session bridge, local-first localhost
@@ -136,9 +137,9 @@ embedding key. Copy into `apps/web/.env.local` / `apps/ingest/.env` as needed.
 - **Supabase** — shares the Rezoomed project. JobPosted tables live in a dedicated
   `jobposted` Postgres schema to avoid colliding with Rezoomed's `public.profiles` /
   `public.jobs` / `public.referrals`. See [`packages/db/README.md`](./packages/db/README.md).
-- **Tailoring** — implemented **natively in JobPosted** (`apps/web/lib/tailor`, via OpenRouter
-  with a legacy Vercel AI Gateway fallback), adapted from Rezoomed's tailoring approach rather
-  than calling a Rezoomed API.
+- **Tailoring** — implemented **natively in JobPosted** (`apps/web/lib/tailor`, via Microsoft
+  Foundry with OpenRouter fallback), adapted from Rezoomed's tailoring approach rather than
+  calling a Rezoomed API.
 - **Payments** — uses Creem-hosted checkout links, Creem webhooks, and the Creem customer portal.
 - **Extension** — built on the WXT/MV3 pattern from Rezoomed's LinkedIn extension.
 

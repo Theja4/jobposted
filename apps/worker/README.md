@@ -197,9 +197,9 @@ src/
 ### The loop (§11.1)
 
 1. Claim a `ready` application; set `tailoring`.
-2. Call **Rezoomed tailoring** on `(base_resume, job.description_md)` → per-job resume + cover
-   letter; store in `documents` (§11.3). This is the moat — wire it as an internal service
-   call (`REZOOMED_API_URL`), not a copy of the logic.
+2. Ask the web app's queue-render route to tailor `(base_resume, job.description_md)` through
+   the server-side AI gateway (Foundry first, OpenRouter fallback) and store the artifact in
+   `documents` (§11.3).
 3. Launch a Playwright context (optional per-user proxy via `BROWSER_PROXY_URL`), stealth + human pacing.
 4. Read the page (accessibility tree + screenshot) → ask the field-matching service for a
    **field map (data)**; the code does the filling. Cache per `(ats_type, company)`.
@@ -218,5 +218,5 @@ src/
 
 ## Env
 
-`REZOOMED_API_URL`, `REZOOMED_API_KEY`, `ANTHROPIC_API_KEY`, `OPENROUTER_API_KEY`,
-`SUPABASE_SERVICE_ROLE_KEY`, `BROWSER_PROXY_URL`, `SENTRY_DSN` (see repo-root `.env.example`).
+`JOBPOSTED_WEB_URL`, `WORKER_CRON_SECRET`, `SUPABASE_SERVICE_ROLE_KEY`, `BROWSER_PROXY_URL`,
+`SENTRY_DSN` (see repo-root `.env.example`). AI/model keys live on `apps/web`, not in the worker.

@@ -31,9 +31,15 @@ The web app routes use:
 NEXT_PUBLIC_SUPABASE_URL=...
 NEXT_PUBLIC_SUPABASE_ANON_KEY=...
 SUPABASE_SERVICE_ROLE_KEY=...
-OPENROUTER_API_KEY=...        # required for Mercury 2 autofill planning
+
+# Required for AI autofill planning: configure Foundry, OpenRouter, or both.
+AZURE_AI_FOUNDRY_ENDPOINT=...
+AZURE_AI_FOUNDRY_API_KEY=...
+AZURE_AI_FOUNDRY_MODELS=gpt-5.4-mini,DeepSeek-V4-Flash
+OPENROUTER_API_KEY=...        # secondary fallback
 OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
-OPENROUTER_TIMEOUT_MS=18000
+AUTOFILL_MODEL=inception/mercury-2
+AUTOFILL_PLAN_TIMEOUT_MS=9000
 ```
 
 ## Run
@@ -110,8 +116,8 @@ Planning order:
 1. Content script extracts compact field descriptors: handle, label, type, options, required state,
    current value, and local section/repeater context.
 2. Background proxies the descriptors to `/api/extension/autofill-plan`.
-3. The web route authenticates the extension, loads the server-side master profile, calls Mercury 2
-   through OpenRouter when configured, and returns one page-level plan.
+3. The web route authenticates the extension, loads the server-side master profile, calls the
+   server-side AI gateway (Foundry first, OpenRouter fallback), and returns one page-level plan.
 4. The content script applies that plan with native setters, bubbling events, combobox selection,
    radio/checkbox handling, file attachment, and dynamic "Other" free-text reveal handling.
 

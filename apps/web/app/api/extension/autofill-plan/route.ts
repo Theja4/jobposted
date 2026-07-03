@@ -8,6 +8,7 @@ import type {
 import { authErrorResponse, extensionError, getExtensionAuthContext } from "@/lib/extension/auth";
 import { buildMasterProfile } from "@/lib/extension/profile";
 import { findResumeDocuments, signedResumeUrl } from "@/lib/extension/resume";
+import { callGatewayJSON, gatewayConfigured } from "@/lib/ai/gateway";
 import { reportError } from "@/lib/observability/report";
 import { checkRateLimit, RATE_LIMITS, rateLimitResponse } from "@/lib/rate-limit";
 import {
@@ -30,8 +31,7 @@ export const runtime = "nodejs";
 // the extension sees a 504/abort instead of the plan or its fallback.
 export const maxDuration = 30;
 
-const MERCURY_MODEL = "inception/mercury-2";
-const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
+const DEFAULT_AUTOFILL_MODEL = "inception/mercury-2";
 
 const SYSTEM_PROMPT = `You are JobPosted's application-form autofill planner.
 Return only JSON matching the schema. Plan one action per supplied fieldId.
@@ -80,20 +80,15 @@ function optionDictionary(value: unknown): ExtensionAutofillPageField["optionDic
 }
 
 function timeoutMs() {
-  // Keep the model budget short so the route always returns (Mercury plan or the
+  // Keep the model budget short so the route always returns (AI plan or the
   // deterministic fallback) well inside the extension's client timeout. A slow or
   // unsupported structured-output response must never make the whole request fail.
-  const value = Number(process.env.OPENROUTER_TIMEOUT_MS ?? 9_000);
+  const value = Number(process.env.AUTOFILL_PLAN_TIMEOUT_MS ?? process.env.OPENROUTER_TIMEOUT_MS ?? 9_000);
   return Number.isFinite(value) && value > 0 ? Math.min(20_000, Math.floor(value)) : 9_000;
 }
 
-function parsePlanContent(content: string): unknown {
-  const trimmed = content
-    .trim()
-    .replace(/^```(?:json)?/i, "")
-    .replace(/```$/, "")
-    .trim();
-  return JSON.parse(trimmed);
+function autofillModel() {
+  return process.env.AUTOFILL_MODEL ?? process.env.OPENROUTER_AUTOFILL_MODEL ?? DEFAULT_AUTOFILL_MODEL;
 }
 
 function isField(value: unknown): value is ExtensionAutofillPageField {
@@ -255,7 +250,7 @@ async function loadCachedPlanItems(args: {
   return items;
 }
 
-/** Persist Mercury-planned answers that are safe to replay on future applications. */
+/** Persist AI-planned answers that are safe to replay on future applications. */
 async function savePlanAnswers(args: {
   supabase: SupabaseClient;
   userId: string;
@@ -303,70 +298,36 @@ async function savePlanAnswers(args: {
   }
 }
 
-function mercuryMaxTokens(fieldCount: number) {
+function planMaxTokens(fieldCount: number) {
   // ~140 output tokens per planned field (id, action, value, optionLabel, short note)
   // plus headroom for the summary. Far cheaper than a flat 6000 on small remainders.
   return Math.max(1200, Math.min(6000, 350 + fieldCount * 140));
 }
 
-async function callMercuryPlan(args: {
+async function callAiPlan(args: {
   payload: ExtensionAutofillPlanRequest;
   fields: ExtensionAutofillPageField[];
   profile: MasterProfile;
 }) {
-  const apiKey = process.env.OPENROUTER_API_KEY;
-  if (!apiKey) return null;
+  if (!gatewayConfigured()) return null;
 
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), timeoutMs());
-  try {
-    const response = await fetch(`${(process.env.OPENROUTER_BASE_URL || OPENROUTER_BASE_URL).replace(/\/$/, "")}/chat/completions`, {
-      method: "POST",
-      signal: controller.signal,
-      headers: {
-        authorization: `Bearer ${apiKey}`,
-        "content-type": "application/json",
-        "HTTP-Referer": process.env.NEXT_PUBLIC_SITE_URL || "https://jobposted.app",
-        "X-OpenRouter-Title": "JobPosted",
+  return callGatewayJSON<Record<string, unknown>>({
+    model: autofillModel(),
+    timeoutMs: timeoutMs(),
+    maxTokens: planMaxTokens(args.fields.length),
+    temperature: 0.1,
+    system: SYSTEM_PROMPT,
+    user: JSON.stringify({
+      profile: profileForPrompt(args.profile, args.fields),
+      page: {
+        platform: args.payload.platform,
+        url: args.payload.url,
+        title: args.payload.title,
+        stepName: args.payload.stepName,
       },
-      body: JSON.stringify({
-        model: MERCURY_MODEL,
-        stream: false,
-        temperature: 0.1,
-        max_tokens: mercuryMaxTokens(args.fields.length),
-        // json_object is universally + quickly supported across OpenRouter models;
-        // strict json_schema is not, and was a likely source of the long hang.
-        // normalizeAutofillPlan re-validates the shape regardless.
-        response_format: { type: "json_object" },
-        messages: [
-          { role: "system", content: SYSTEM_PROMPT },
-          {
-            role: "user",
-            content: JSON.stringify({
-              profile: profileForPrompt(args.profile, args.fields),
-              page: {
-                platform: args.payload.platform,
-                url: args.payload.url,
-                title: args.payload.title,
-                stepName: args.payload.stepName,
-              },
-              fields: args.fields,
-            }),
-          },
-        ],
-      }),
-    });
-
-    if (!response.ok) {
-      throw new Error(`OpenRouter responded ${response.status}: ${await response.text()}`);
-    }
-    const json = (await response.json()) as { choices?: Array<{ message?: { content?: string } }> };
-    const content = json.choices?.[0]?.message?.content;
-    if (!content) throw new Error("OpenRouter returned an empty autofill plan.");
-    return parsePlanContent(content);
-  } finally {
-    clearTimeout(timeout);
-  }
+      fields: args.fields,
+    }),
+  });
 }
 
 export async function POST(request: Request) {
@@ -426,9 +387,9 @@ export async function POST(request: Request) {
     let rawPlan: unknown = null;
     const { shortFields, toOriginal } = withShortFieldIds(unresolved);
     try {
-      rawPlan = restorePlanFieldIds(await callMercuryPlan({ payload, fields: shortFields, profile }), toOriginal);
+      rawPlan = restorePlanFieldIds(await callAiPlan({ payload, fields: shortFields, profile }), toOriginal);
     } catch (error) {
-      await reportError("Mercury autofill plan failed", error, {
+      await reportError("AI autofill plan failed", error, {
         userId: user.id,
         platform: payload.platform,
         fieldCount: unresolved.length,

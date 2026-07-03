@@ -14,7 +14,7 @@ import { checkRateLimit, RATE_LIMITS, rateLimitResponse } from "@/lib/rate-limit
 export const runtime = "nodejs";
 
 function gatewayTimeoutMs() {
-  const value = Number(process.env.OPENROUTER_TIMEOUT_MS ?? process.env.AI_GATEWAY_TIMEOUT_MS ?? 12_000);
+  const value = Number(process.env.FIELD_MAP_TIMEOUT_MS ?? process.env.OPENROUTER_TIMEOUT_MS ?? 12_000);
   return Number.isFinite(value) && value > 0 ? Math.min(30_000, Math.floor(value)) : 12_000;
 }
 
