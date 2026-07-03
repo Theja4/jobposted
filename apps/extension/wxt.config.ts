@@ -37,6 +37,9 @@ const configuredWebOrigin = cleanOrigin(
 );
 const configuredSupabaseUrl = env("WXT_SUPABASE_URL", "NEXT_PUBLIC_SUPABASE_URL");
 const configuredSupabaseAnonKey = env("WXT_SUPABASE_ANON_KEY", "NEXT_PUBLIC_SUPABASE_ANON_KEY");
+// Publishable logo.dev key — client-safe (it ships in <img src=img.logo.dev?token=…>),
+// baked in so the panel can render real company logos without a round-trip.
+const configuredLogoDevToken = env("WXT_LOGO_DEV_TOKEN", "LOGO_DEV_PUBLISHABLE_KEY");
 
 const includeLocalhost =
   process.env.WXT_INCLUDE_LOCALHOST === "1" ||
@@ -110,6 +113,7 @@ export default defineConfig({
       "import.meta.env.WXT_JOBPOSTED_WEB_ORIGIN": JSON.stringify(configuredWebOrigin),
       "import.meta.env.WXT_SUPABASE_URL": JSON.stringify(configuredSupabaseUrl),
       "import.meta.env.WXT_SUPABASE_ANON_KEY": JSON.stringify(configuredSupabaseAnonKey),
+      "import.meta.env.WXT_LOGO_DEV_TOKEN": JSON.stringify(configuredLogoDevToken),
       "import.meta.env.WXT_INCLUDE_LOCALHOST": JSON.stringify(includeLocalhost ? "1" : ""),
     },
   }),
@@ -143,7 +147,7 @@ export default defineConfig({
     },
     web_accessible_resources: [
       {
-        resources: ["brand/*", "icon/*"],
+        resources: ["brand/*", "icon/*", "fonts/*"],
         matches: UNIVERSAL_AUTOFILL_HOSTS,
       },
     ],

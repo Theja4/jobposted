@@ -103,6 +103,23 @@ describe("job-context resolver", () => {
     expect(companyFromUrl("https://jobs.ashbyhq.com/ramp/uuid/application")).toBe("Ramp");
   });
 
+  it("prefers the ATS board slug over a region qualifier in the title", () => {
+    // Regression: Airtable's Greenhouse posting "Program Manager, Professional
+    // Services - East" was scraped with company "East" (the trailing dash
+    // segment) instead of "Airtable". og:site_name is absent, so the board slug
+    // must win over any title-derived company.
+    const doc = documentFrom(
+      `<meta property="og:title" content="Program Manager, Professional Services - East" />
+       <h1>Program Manager, Professional Services - East</h1>`,
+    );
+    const resolved = resolveJobContext({
+      doc,
+      url: "https://job-boards.greenhouse.io/airtable/jobs/8586863002",
+    });
+    expect(resolved.company).toBe("Airtable");
+    expect(resolved.role).toBe("Program Manager, Professional Services");
+  });
+
   it("splits common title separators", () => {
     expect(splitRoleAndCompany("Engineer - Acme")).toEqual({ role: "Engineer", company: "Acme" });
     expect(splitRoleAndCompany("Engineer | Acme")).toEqual({ role: "Engineer", company: "Acme" });

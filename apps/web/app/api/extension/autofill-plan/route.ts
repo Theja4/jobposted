@@ -1,5 +1,10 @@
 import { NextResponse } from "next/server";
-import type { ExtensionAutofillPageField, ExtensionAutofillPlanRequest, MasterProfile } from "@jobposted/shared";
+import type {
+  ExtensionAutofillPageField,
+  ExtensionAutofillPlan,
+  ExtensionAutofillPlanRequest,
+  MasterProfile,
+} from "@jobposted/shared";
 import { authErrorResponse, extensionError, getExtensionAuthContext } from "@/lib/extension/auth";
 import { buildMasterProfile } from "@/lib/extension/profile";
 import { findResumeDocuments, signedResumeUrl } from "@/lib/extension/resume";
@@ -7,9 +12,17 @@ import { reportError } from "@/lib/observability/report";
 import { checkRateLimit, RATE_LIMITS, rateLimitResponse } from "@/lib/rate-limit";
 import {
   buildFallbackAutofillPlan,
-  canSkipMercuryForPlan,
+  cacheablePlanAnswer,
+  isConfidentPlanItem,
   normalizeAutofillPlan,
+  partitionPlanFields,
+  PLAN_ANSWER_KEY,
+  PLAN_ANSWER_PLATFORM,
+  planAnswerSignature,
+  planItemFromCachedAnswer,
   profileForPrompt,
+  restorePlanFieldIds,
+  withShortFieldIds,
 } from "./planner";
 
 export const runtime = "nodejs";
@@ -29,6 +42,7 @@ When a form has a separate phone country/calling-code dropdown and a Phone input
 For Yes/No questions (work authorization, sponsorship, "have you worked here before", age eligibility) answer exactly "Yes" or "No" to match the options — never a country or other text.
 For multiselect "select all that apply" fields, set "value" to an array of the applicable option texts; for sanctions, export-control, or citizenship questions default to ["None of the above"] (or ["Not applicable"]) unless the profile clearly indicates otherwise.
 Use closest-option matching when exact select/radio/combobox choices are absent.
+Keep every note under 12 words, or null.
 For school/university/institution fields, do NOT use closest-option matching to choose a different institution. Select the exact profile school only when it is present. If the profile school is absent, select an Other, Not listed, Not available, or equivalent option when available and keep the real school in value; otherwise skip.
 If nothing matches and an Other, Prefer not to say, Decline, Choose not to answer, Not applicable, or similar option exists, select that option.
 When selecting Other for a real profile value, keep the real value in value so the extension can fill a revealed free-text input.
@@ -203,8 +217,101 @@ async function loadMasterProfile(args: {
   });
 }
 
+/**
+ * Load this user's reusable answers for the current page's questions. Rows live in
+ * extension_field_mappings under the "*" platform / plan_answer key namespace, so they
+ * are shared across every ATS. Returns live plan items keyed by fieldId.
+ */
+async function loadCachedPlanItems(args: {
+  supabase: SupabaseClient;
+  userId: string;
+  fields: ExtensionAutofillPageField[];
+}) {
+  const items = new Map<string, ReturnType<typeof planItemFromCachedAnswer>>();
+  const signatureToFields = new Map<string, ExtensionAutofillPageField[]>();
+  for (const field of args.fields) {
+    const signature = planAnswerSignature(field);
+    if (!signature) continue;
+    signatureToFields.set(signature, [...(signatureToFields.get(signature) ?? []), field]);
+  }
+  if (signatureToFields.size === 0) return items;
+
+  const { data, error } = await args.supabase
+    .from("extension_field_mappings")
+    .select("field_signature,value")
+    .eq("user_id", args.userId)
+    .eq("platform", PLAN_ANSWER_PLATFORM)
+    .eq("canonical_key", PLAN_ANSWER_KEY)
+    .in("field_signature", Array.from(signatureToFields.keys()));
+  if (error || !Array.isArray(data)) return items;
+
+  for (const row of data) {
+    const fields = signatureToFields.get(row.field_signature) ?? [];
+    for (const field of fields) {
+      const item = planItemFromCachedAnswer(field, row.value);
+      if (item) items.set(field.fieldId, item);
+    }
+  }
+  return items;
+}
+
+/** Persist Mercury-planned answers that are safe to replay on future applications. */
+async function savePlanAnswers(args: {
+  supabase: SupabaseClient;
+  userId: string;
+  unresolved: ExtensionAutofillPageField[];
+  rawPlan: unknown;
+  plan: ExtensionAutofillPlan;
+}) {
+  try {
+    const raw = asRecord(args.rawPlan);
+    const modelFieldIds = new Set(
+      (Array.isArray(raw.fields) ? raw.fields : [])
+        .map((item) => asString(asRecord(item).fieldId))
+        .filter(Boolean),
+    );
+    const planById = new Map(args.plan.fields.map((item) => [item.fieldId, item]));
+    const now = new Date().toISOString();
+    const rows = args.unresolved.flatMap((field) => {
+      if (!modelFieldIds.has(field.fieldId)) return [];
+      const item = planById.get(field.fieldId);
+      if (!item) return [];
+      const cacheable = cacheablePlanAnswer(field, item);
+      if (!cacheable) return [];
+      return [
+        {
+          user_id: args.userId,
+          platform: PLAN_ANSWER_PLATFORM,
+          field_signature: cacheable.signature,
+          label: field.label.slice(0, 240),
+          canonical_key: PLAN_ANSWER_KEY,
+          value: cacheable.answer,
+          confidence: cacheable.answer.confidence,
+          source: "llm",
+          updated_at: now,
+        },
+      ];
+    });
+    // Two page fields can share one signature (repeated question on the page); keep the last.
+    const bySignature = new Map(rows.map((row) => [row.field_signature, row]));
+    if (bySignature.size === 0) return;
+    await args.supabase
+      .from("extension_field_mappings")
+      .upsert(Array.from(bySignature.values()), { onConflict: "user_id,platform,field_signature" });
+  } catch (error) {
+    await reportError("autofill plan answer cache write failed", error, { userId: args.userId });
+  }
+}
+
+function mercuryMaxTokens(fieldCount: number) {
+  // ~140 output tokens per planned field (id, action, value, optionLabel, short note)
+  // plus headroom for the summary. Far cheaper than a flat 6000 on small remainders.
+  return Math.max(1200, Math.min(6000, 350 + fieldCount * 140));
+}
+
 async function callMercuryPlan(args: {
   payload: ExtensionAutofillPlanRequest;
+  fields: ExtensionAutofillPageField[];
   profile: MasterProfile;
 }) {
   const apiKey = process.env.OPENROUTER_API_KEY;
@@ -226,7 +333,7 @@ async function callMercuryPlan(args: {
         model: MERCURY_MODEL,
         stream: false,
         temperature: 0.1,
-        max_tokens: 6000,
+        max_tokens: mercuryMaxTokens(args.fields.length),
         // json_object is universally + quickly supported across OpenRouter models;
         // strict json_schema is not, and was a likely source of the long hang.
         // normalizeAutofillPlan re-validates the shape regardless.
@@ -236,14 +343,14 @@ async function callMercuryPlan(args: {
           {
             role: "user",
             content: JSON.stringify({
-              profile: profileForPrompt(args.profile),
+              profile: profileForPrompt(args.profile, args.fields),
               page: {
                 platform: args.payload.platform,
                 url: args.payload.url,
                 title: args.payload.title,
                 stepName: args.payload.stepName,
               },
-              fields: args.payload.fields,
+              fields: args.fields,
             }),
           },
         ],
@@ -285,30 +392,56 @@ export async function POST(request: Request) {
       stepName: payload.stepName,
     });
 
-    if (canSkipMercuryForPlan({ fields: payload.fields, plan: fallback })) {
+    // Replay cached answers for questions this user has answered on earlier
+    // applications, but never let a stale cache override a confident profile-derived
+    // plan item — the profile is the fresher source.
+    const fieldById = new Map(payload.fields.map((field) => [field.fieldId, field]));
+    const cachedItems = await loadCachedPlanItems({ supabase, userId: user.id, fields: payload.fields });
+    const cachedIds = new Set<string>();
+    const baseFields = fallback.fields.map((item) => {
+      const field = fieldById.get(item.fieldId);
+      const cached = field ? cachedItems.get(field.fieldId) : null;
+      if (!field || !cached) return item;
+      if (item.action !== "skip" && isConfidentPlanItem(field, item)) return item;
+      cachedIds.add(field.fieldId);
+      return cached;
+    });
+    const basePlan = { ...fallback, fields: baseFields };
+
+    const { unresolved } = partitionPlanFields({ fields: payload.fields, plan: basePlan, lockedIds: cachedIds });
+
+    if (unresolved.length === 0) {
       return NextResponse.json({
         ok: true,
         plan: {
-          ...fallback,
-          summary: "Generated a high-confidence deterministic plan.",
+          ...basePlan,
+          summary:
+            cachedIds.size > 0
+              ? "Planned from your profile and saved answers — no AI call needed."
+              : "Generated a high-confidence deterministic plan.",
         },
       });
     }
 
     let rawPlan: unknown = null;
+    const { shortFields, toOriginal } = withShortFieldIds(unresolved);
     try {
-      rawPlan = await callMercuryPlan({ payload, profile });
+      rawPlan = restorePlanFieldIds(await callMercuryPlan({ payload, fields: shortFields, profile }), toOriginal);
     } catch (error) {
       await reportError("Mercury autofill plan failed", error, {
         userId: user.id,
         platform: payload.platform,
-        fieldCount: payload.fields.length,
+        fieldCount: unresolved.length,
       });
     }
 
     const plan = rawPlan
-      ? normalizeAutofillPlan({ raw: rawPlan, fields: payload.fields, fallback, stepName: payload.stepName })
-      : fallback;
+      ? normalizeAutofillPlan({ raw: rawPlan, fields: payload.fields, fallback: basePlan, stepName: payload.stepName })
+      : basePlan;
+
+    if (rawPlan) {
+      await savePlanAnswers({ supabase, userId: user.id, unresolved, rawPlan, plan });
+    }
 
     return NextResponse.json({ ok: true, plan });
   } catch (error) {

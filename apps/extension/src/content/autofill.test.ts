@@ -2155,3 +2155,132 @@ describe("content autofill extraction", () => {
     expect(compact.options).toContain("Hyderabad");
   });
 });
+
+describe("fill correctness upgrades", () => {
+  it("normalizes human dates into ISO for native date and month inputs", async () => {
+    const doc = installDom(`<!doctype html>
+      <form>
+        <label for="start">Start date</label>
+        <input id="start" type="date" />
+        <label for="grad">Graduation month</label>
+        <input id="grad" type="month" />
+      </form>`);
+    const fields = extractPageFields(doc);
+    const startField = fields.find((field) => /start date/i.test(field.label));
+    const gradField = fields.find((field) => /graduation month/i.test(field.label));
+    const plan: ExtensionAutofillPlanItem[] = [
+      { fieldId: startField!.fieldId, action: "fill", value: "May 3, 2021", optionLabel: null, confidence: 0.9, note: null },
+      { fieldId: gradField!.fieldId, action: "fill", value: "05/2019", optionLabel: null, confidence: 0.9, note: null },
+    ];
+
+    await applyAutofillPlan({ fields, plan, getResume: async () => null });
+
+    expect((doc.querySelector("#start") as HTMLInputElement).value).toBe("2021-05-03");
+    expect((doc.querySelector("#grad") as HTMLInputElement).value).toBe("2019-05");
+  });
+
+  it("selects every value of an array plan on a native multi-select", async () => {
+    const doc = installDom(`<!doctype html>
+      <form>
+        <label for="skills">Skills</label>
+        <select id="skills" multiple>
+          <option>React</option>
+          <option>TypeScript</option>
+          <option>Go</option>
+          <option>Rust</option>
+        </select>
+      </form>`);
+    const fields = extractPageFields(doc);
+    const field = fields.find((item) => /skills/i.test(item.label));
+    const plan: ExtensionAutofillPlanItem[] = [
+      { fieldId: field!.fieldId, action: "select", value: ["React", "TypeScript"], optionLabel: null, confidence: 0.9, note: null },
+    ];
+
+    const records = await applyAutofillPlan({ fields, plan, getResume: async () => null });
+
+    const select = doc.querySelector("#skills") as HTMLSelectElement;
+    const selected = Array.from(select.options).filter((option) => option.selected).map((option) => option.textContent);
+    expect(selected).toEqual(["React", "TypeScript"]);
+    expect(records[0]?.status).toBe("filled");
+    expect(records[0]?.valuePreview).toContain("2/2");
+  });
+
+  it("retries a failed fill once and reports the recovered record", async () => {
+    const doc = installDom(`<!doctype html>
+      <form>
+        <label for="notice">Notice period</label>
+        <input id="notice" />
+      </form>`);
+    const fields = extractPageFields(doc);
+    const field = fields.find((item) => /notice/i.test(item.label));
+    const plan: ExtensionAutofillPlanItem[] = [
+      { fieldId: field!.fieldId, action: "fill", value: "30 days", optionLabel: null, confidence: 0.9, note: null },
+    ];
+
+    let attempts = 0;
+    const emitted: string[] = [];
+    const records = await applyAutofillPlan({
+      fields,
+      plan,
+      getResume: async () => null,
+      onField: (record) => emitted.push(record.status),
+      strategy: {
+        id: "generic",
+        async fillField({ field: strategyField, item }) {
+          attempts += 1;
+          if (attempts === 1) {
+            return {
+              signature: strategyField.signature,
+              label: strategyField.label,
+              required: strategyField.required,
+              canonicalKey: "unknown",
+              status: "failed",
+              confidence: item.confidence,
+              source: "llm",
+              error: "Widget was not ready.",
+            };
+          }
+          return null; // fall through to the generic filler on retry
+        },
+      },
+    });
+
+    expect(attempts).toBe(2);
+    expect(records).toHaveLength(1);
+    expect(records[0]?.status).toBe("filled");
+    expect(emitted).toEqual(["failed", "filled"]);
+    expect((doc.querySelector("#notice") as HTMLInputElement).value).toBe("30 days");
+  });
+
+  it("extracts and fills fields rendered inside open shadow roots", async () => {
+    const doc = installDom(`<!doctype html>
+      <body>
+        <div id="app-host"></div>
+      </body>`);
+    const host = doc.getElementById("app-host") as HTMLElement;
+    const root = host.attachShadow({ mode: "open" });
+    root.innerHTML = `
+      <form>
+        <label for="sf-email">Email address</label>
+        <input id="sf-email" type="email" />
+        <span id="sf-phone-label">Phone number</span>
+        <input aria-labelledby="sf-phone-label" id="sf-phone" type="tel" />
+      </form>`;
+
+    const fields = extractPageFields(doc);
+    const emailField = fields.find((field) => /email address/i.test(field.label));
+    const phoneField = fields.find((field) => /phone number/i.test(field.label));
+    expect(emailField).toBeTruthy();
+    expect(phoneField).toBeTruthy();
+
+    const plan: ExtensionAutofillPlanItem[] = [
+      { fieldId: emailField!.fieldId, action: "fill", value: "asha@example.com", optionLabel: null, confidence: 0.95, note: null },
+      { fieldId: phoneField!.fieldId, action: "fill", value: "9876543210", optionLabel: null, confidence: 0.95, note: null },
+    ];
+    const records = await applyAutofillPlan({ fields, plan, getResume: async () => null });
+
+    expect(records.every((record) => record.status === "filled")).toBe(true);
+    expect((root.querySelector("#sf-email") as HTMLInputElement).value).toBe("asha@example.com");
+    expect((root.querySelector("#sf-phone") as HTMLInputElement).value).toBe("9876543210");
+  });
+});

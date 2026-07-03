@@ -3,6 +3,14 @@
 @source "../entrypoints/**/*.{html,ts,tsx}";
 @source "./**/*.{ts,tsx}";
 
+@font-face {
+  font-family: "Plus Jakarta Sans";
+  font-style: normal;
+  font-weight: 400 800;
+  font-display: swap;
+  src: url("/fonts/plus-jakarta-sans-latin.woff2") format("woff2");
+}
+
 :host,
 :root {
   all: initial;
@@ -23,6 +31,7 @@
   --jp-mint: #18b981;
   --jp-coral: #f58abb;
   --jp-white: #ffffff;
+  --jp-line: #e6ecf5;
   --jp-border: rgba(191, 219, 254, 0.68);
   --jp-shadow: 0 6px 10px rgba(16, 47, 102, 0.08);
   --jp-font:
@@ -51,14 +60,16 @@ textarea {
 }
 
 .jp-shell {
-  background: linear-gradient(180deg, #ffffff 0%, var(--jp-panel) 42%, var(--jp-panel-2) 100%);
+  background: #f7f9fd;
   color: var(--jp-ink);
 }
 
-.jp-glass {
+/* Settings-page card: white surface separated by a hairline ring, no gloss. */
+.jp-card {
   background: var(--jp-white);
-  border: 1px solid var(--jp-border);
-  box-shadow: var(--jp-shadow);
+  border-radius: 16px;
+  box-shadow: 0 0 0 1px rgba(13, 40, 97, 0.07);
+  overflow: hidden;
 }
 
 .jp-topbar,

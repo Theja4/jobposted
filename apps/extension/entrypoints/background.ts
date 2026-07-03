@@ -584,9 +584,12 @@ async function syncApplicationWithQueue(
   }
 }
 
-async function retryQueuedApplicationSyncs() {
+// `force` (used by the panel's "flush now" path) ignores per-item backoff so
+// reopening the panel can recover immediately instead of waiting out the
+// escalating 30s→60m schedule. The alarm-driven path leaves it false.
+async function retryQueuedApplicationSyncs(force = false) {
   const queue = await readPendingApplicationSyncs();
-  const due = dueApplicationSyncs(queue);
+  const due = force ? queue : dueApplicationSyncs(queue);
   for (const item of due) {
     try {
       await syncApplication(item.payload);
@@ -793,10 +796,15 @@ async function handleMessage(message: ExtensionMessage, tabId?: number): Promise
       // Content scripts can't touch chrome.tabs; they delegate tab creation here.
       await chrome.tabs.create({ url: message.url, active: true });
       return { ok: true, type: "OPEN_TAB" };
+    case "OPEN_OPTIONS":
+      // chrome.runtime.openOptionsPage is unavailable in content scripts; the in-page
+      // panel delegates here so the options page opens (or focuses if already open).
+      await chrome.runtime.openOptionsPage();
+      return { ok: true, type: "OPEN_OPTIONS" };
     case "APPLICATION_SYNC":
       return { ok: true, type: "APPLICATION_SYNC", result: await syncApplicationWithQueue(message.payload) };
     case "APPLICATION_SYNC_RETRY":
-      return { ok: true, type: "APPLICATION_SYNC_RETRY", status: await retryQueuedApplicationSyncs() };
+      return { ok: true, type: "APPLICATION_SYNC_RETRY", status: await retryQueuedApplicationSyncs(true) };
     case "SYNC_QUEUE_STATUS":
       return { ok: true, type: "SYNC_QUEUE_STATUS", status: await readSyncQueueStatus() };
     case "ANSWER_SAVE":

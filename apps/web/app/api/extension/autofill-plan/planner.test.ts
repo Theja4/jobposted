@@ -520,3 +520,177 @@ describe("autofill plan fallback guardrails", () => {
     });
   });
 });
+
+describe("mercury cost controls", () => {
+  const identityFields = () => [
+    field({ fieldId: "first", label: "First name" }),
+    field({ fieldId: "email", label: "Email" }),
+    field({ fieldId: "resume", label: "Resume/CV", type: "file" }),
+    field({ fieldId: "notice", label: "What is your notice period?", required: false }),
+  ];
+
+  it("partitions confident profile fields away from Mercury and keeps open questions", async () => {
+    const { partitionPlanFields, buildFallbackAutofillPlan } = await import("./planner");
+    const fields = identityFields();
+    const plan = buildFallbackAutofillPlan({ fields, profile: profile(), stepName: "Apply" });
+
+    const { unresolved } = partitionPlanFields({ fields, plan });
+
+    const unresolvedIds = unresolved.map((item) => item.fieldId);
+    expect(unresolvedIds).toContain("notice");
+    expect(unresolvedIds).not.toContain("first");
+    expect(unresolvedIds).not.toContain("email");
+    // File fields never go to the model.
+    expect(unresolvedIds).not.toContain("resume");
+  });
+
+  it("honors lockedIds from the answer cache during partition", async () => {
+    const { partitionPlanFields, buildFallbackAutofillPlan } = await import("./planner");
+    const fields = identityFields();
+    const plan = buildFallbackAutofillPlan({ fields, profile: profile(), stepName: "Apply" });
+
+    const { unresolved } = partitionPlanFields({ fields, plan, lockedIds: new Set(["notice"]) });
+
+    expect(unresolved.map((item) => item.fieldId)).not.toContain("notice");
+  });
+
+  it("round-trips short field ids", async () => {
+    const { withShortFieldIds, restorePlanFieldIds } = await import("./planner");
+    const fields = [
+      field({ fieldId: "jp-are-you-legally-authorized-to-work-radio-14", label: "Authorized?" }),
+      field({ fieldId: "jp-will-you-require-sponsorship-radio-15", label: "Sponsorship?" }),
+    ];
+
+    const { shortFields, toOriginal } = withShortFieldIds(fields);
+    expect(shortFields.map((item) => item.fieldId)).toEqual(["f0", "f1"]);
+
+    const restored = restorePlanFieldIds(
+      { fields: [{ fieldId: "f1", action: "select", value: "No", optionLabel: "No", confidence: 0.9, note: null }] },
+      toOriginal,
+    ) as { fields: Array<{ fieldId: string }> };
+    expect(restored.fields[0]?.fieldId).toBe("jp-will-you-require-sponsorship-radio-15");
+  });
+
+  it("slims the profile prompt to what the unresolved fields need", async () => {
+    const { profileForPrompt } = await import("./planner");
+    const fatProfile = profile({
+      experience: Array.from({ length: 8 }, (_, index) => ({
+        title: `Engineer ${index}`,
+        company: `Company ${index}`,
+        startDate: "2020-01",
+        endDate: null,
+        current: index === 0,
+        bullets: ["Did a thing", "Did another thing", "Third thing", "Fourth thing"],
+      })),
+      skills: Array.from({ length: 80 }, (_, index) => `Skill ${index}`),
+      answers: [
+        { key: "screening.notice_period", prompt: "Notice period", value: "30 days" },
+        ...Array.from({ length: 60 }, (_, index) => ({
+          key: `misc.${index}`,
+          prompt: `Unrelated question ${index}`,
+          value: `Answer ${index}`,
+        })),
+      ],
+    });
+    const focus = [field({ fieldId: "notice", label: "What is your notice period?" })];
+
+    const slim = profileForPrompt(fatProfile, focus);
+
+    // No textarea in focus: bullets dropped entirely.
+    expect(slim.experience.every((item) => item.bullets.length === 0)).toBe(true);
+    // Skills trimmed since no skills-like field is in focus.
+    expect(slim.skills.length).toBeLessThanOrEqual(12);
+    // The relevant answer survives; the answer list is capped.
+    expect(slim.answers.some((answer) => answer.key === "screening.notice_period")).toBe(true);
+    expect(slim.answers.length).toBeLessThanOrEqual(40);
+    // Without focus the payload keeps the old wide shape.
+    expect(profileForPrompt(fatProfile).answers.length).toBe(61);
+  });
+});
+
+describe("answer cache", () => {
+  it("builds signatures from normalized labels and refuses short ones", async () => {
+    const { planAnswerSignature } = await import("./planner");
+    expect(planAnswerSignature({ label: "Are you legally authorized to work in the U.S.?" })).toBe(
+      "plan:v1:are you legally authorized to work in the u s",
+    );
+    expect(planAnswerSignature({ label: "Name" })).toBeNull();
+  });
+
+  it("caches reusable screening answers and refuses job-specific or fragile ones", async () => {
+    const { cacheablePlanAnswer } = await import("./planner");
+    const sponsorship = field({
+      fieldId: "sponsor",
+      label: "Will you now or in the future require sponsorship?",
+      type: "radio",
+      options: ["Yes", "No"],
+    });
+    const cached = cacheablePlanAnswer(sponsorship, {
+      fieldId: "sponsor",
+      action: "select",
+      value: "No",
+      optionLabel: "No",
+      confidence: 0.9,
+      note: null,
+    });
+    expect(cached?.signature).toContain("plan:v1:will you now or in the future require sponsorship");
+    expect(cached?.answer.value).toBe("No");
+
+    const why = field({ fieldId: "why", label: "Why do you want to work at Acme?", type: "textarea" });
+    expect(
+      cacheablePlanAnswer(why, { fieldId: "why", action: "fill", value: "Because...", optionLabel: null, confidence: 0.9, note: null }),
+    ).toBeNull();
+
+    const startDate = field({ fieldId: "start", label: "What is your earliest start date?" });
+    expect(
+      cacheablePlanAnswer(startDate, { fieldId: "start", action: "fill", value: "2026-08-01", optionLabel: null, confidence: 0.9, note: null }),
+    ).toBeNull();
+
+    const education = field({ fieldId: "degree", label: "Degree", repeater: "education" });
+    expect(
+      cacheablePlanAnswer(education, { fieldId: "degree", action: "select", value: "BS", optionLabel: "BS", confidence: 0.9, note: null }),
+    ).toBeNull();
+
+    const lowConfidence = field({ fieldId: "gov", label: "Are you a government official?" });
+    expect(
+      cacheablePlanAnswer(lowConfidence, { fieldId: "gov", action: "fill", value: "No", optionLabel: null, confidence: 0.5, note: null }),
+    ).toBeNull();
+  });
+
+  it("replays cached answers against a different site's options", async () => {
+    const { planItemFromCachedAnswer } = await import("./planner");
+    const radio = field({
+      fieldId: "auth",
+      label: "Are you legally authorized to work in the United States?",
+      type: "radio",
+      options: ["Yes, I am authorized", "No, I am not"],
+    });
+
+    const item = planItemFromCachedAnswer(radio, { value: "Yes", optionLabel: "Yes", confidence: 0.9 });
+
+    expect(item?.action).toBe("select");
+    expect(item?.optionLabel).toBe("Yes, I am authorized");
+    // Confidence is capped below the auto-confidence bar so the panel treats it as reviewable.
+    expect(item?.confidence).toBeLessThanOrEqual(0.88);
+  });
+
+  it("falls through to Mercury when the cached option does not exist on this site", async () => {
+    const { planItemFromCachedAnswer } = await import("./planner");
+    const select = field({
+      fieldId: "source",
+      label: "How did you hear about this role?",
+      type: "select",
+      options: ["Employee referral", "Job fair"],
+    });
+
+    expect(planItemFromCachedAnswer(select, { value: "LinkedIn", optionLabel: "LinkedIn", confidence: 0.9 })).toBeNull();
+  });
+
+  it("rejects malformed cached payloads", async () => {
+    const { planItemFromCachedAnswer } = await import("./planner");
+    const target = field({ fieldId: "pronouns", label: "What are your pronouns?" });
+    expect(planItemFromCachedAnswer(target, null)).toBeNull();
+    expect(planItemFromCachedAnswer(target, { value: { nested: true }, confidence: 0.9 })).toBeNull();
+    expect(planItemFromCachedAnswer(target, { value: "she/her", confidence: 0.4 })).toBeNull();
+  });
+});

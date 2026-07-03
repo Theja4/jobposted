@@ -34,3 +34,24 @@ coverage/
 # misc
 *.pem
 .vercel
+# Microsoft Foundry
+AZURE_AI_FOUNDRY_ENDPOINT=https://thejachitturi99-5979-resource.services.ai.azure.com/api/projects/thejachitturi99-5979
+AZURE_AI_FOUNDRY_API_KEY=BYRHA1bkxX5n92oed8SAuf5XVZ4YLxOE0vSh7ptuHNhh7Glfq9a4JQQJ99CFACHYHv6XJ3w3AAAAACOG4GEc 
+AZURE_AI_FOUNDRY_MODELS=gpt-5.4-mini,DeepSeek-V4-Flash
+AZURE_AI_FOUNDRY_MODEL=gpt-5.4-mini
+AZURE_AI_FOUNDRY_MODEL_PREMIUM=gpt-5.4-mini
+AZURE_AI_FOUNDRY_SECONDARY_MODEL=DeepSeek-V4-Flash
+FOUNDRY_PRIMARY_TIMEOUT_MS=30000
+FOUNDRY_SECONDARY_TIMEOUT_MS=45000
+
+
+LLM_PROVIDER_ORDER=foundry,openrouter
+
+
+OPENROUTER_API_KEY=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
+OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
+OPENROUTER_SITE_URL=https://rezoomed.com
+OPENROUTER_APP_TITLE=Rezoomed
+ANTHROPIC_MODEL=deepseek/deepseek-v4-flash
+ANTHROPIC_MODEL_PREMIUM=deepseek/deepseek-v4-flash
+OPENROUTER_FALLBACK_MODELS=google/gemini-3.5-flash

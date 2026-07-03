@@ -158,9 +158,14 @@ export function parseOpenGraph(doc: Document): Partial<ResolvedJobContext> | nul
   ]);
   if (!ogTitle && !siteName) return null;
   const split = splitRoleAndCompany(ogTitle);
+  // Only trust an explicit og:site_name for the company. Deriving it from the
+  // title split is unreliable — titles like "Program Manager, Professional
+  // Services - East" would yield "East" (a region qualifier) as the company and
+  // wrongly outrank a known ATS board slug. The title-split company still
+  // survives at low confidence via parseHeading for sites with no better signal.
   return {
     role: split.role,
-    company: siteName || split.company,
+    company: siteName,
     location: "",
   };
 }

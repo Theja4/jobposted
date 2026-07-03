@@ -68,6 +68,49 @@ function cssEscape(value: string): string {
   return value.replace(/["\\]/g, "\\$&");
 }
 
+// ---------------------------------------------------------------------------
+// Shadow-DOM awareness. Several ATS front-ends (SuccessFactors, Phenom career
+// sites, newer iCIMS widgets) render the application form inside open shadow
+// roots, which document.querySelectorAll never reaches.
+// ---------------------------------------------------------------------------
+
+function isShadowRoot(node: Node | null | undefined): node is ShadowRoot {
+  return Boolean(node && node.nodeType === 11 /* DOCUMENT_FRAGMENT_NODE */ && "host" in node);
+}
+
+/** querySelectorAll across the root and every open shadow root beneath it. */
+function queryAllDeep(root: ParentNode, selector: string): HTMLElement[] {
+  const results = Array.from(root.querySelectorAll<HTMLElement>(selector));
+  for (const host of Array.from(root.querySelectorAll<HTMLElement>("*"))) {
+    const shadow = host.shadowRoot;
+    if (shadow) results.push(...queryAllDeep(shadow, selector));
+  }
+  return results;
+}
+
+/** The element's own tree scope: its shadow root when it lives in one, else the document. */
+function rootScope(element: Element): Document | ShadowRoot {
+  const root = typeof element.getRootNode === "function" ? element.getRootNode() : element.ownerDocument;
+  return isShadowRoot(root) ? root : element.ownerDocument;
+}
+
+/** getElementById that respects the element's tree scope (ids inside a shadow root are scoped to it). */
+function elementById(element: Element, id: string): HTMLElement | null {
+  const scope = rootScope(element) as ParentNode & { getElementById?: (id: string) => HTMLElement | null };
+  const scoped =
+    typeof scope.getElementById === "function"
+      ? scope.getElementById(id)
+      : scope.querySelector<HTMLElement>(`#${cssEscape(id)}`);
+  return scoped ?? element.ownerDocument.getElementById(id);
+}
+
+/** parentElement that climbs out of shadow roots via their host. */
+function parentThroughShadow(node: HTMLElement): HTMLElement | null {
+  if (node.parentElement) return node.parentElement;
+  const root = typeof node.getRootNode === "function" ? node.getRootNode() : null;
+  return isShadowRoot(root) && root.host instanceof HTMLElement ? root.host : null;
+}
+
 export function sleep(ms: number) {
   return new Promise((resolve) => window.setTimeout(resolve, ms));
 }
@@ -220,11 +263,11 @@ function isPopupChoiceInternal(element: HTMLElement) {
   return popup !== element || element.getAttribute("role") === "listbox" || element.getAttribute("role") === "menu";
 }
 
-function textById(doc: Document, id: string | null) {
+function textById(anchor: Element, id: string | null) {
   if (!id) return "";
   return id
     .split(/\s+/)
-    .map((part) => visibleText(doc.getElementById(part)?.textContent))
+    .map((part) => visibleText(elementById(anchor, part)?.textContent))
     .filter(Boolean)
     .join(" ");
 }
@@ -249,7 +292,7 @@ function isVisible(element: HTMLElement) {
     (element.type === "radio" || element.type === "checkbox") &&
     element.getAttribute("tabindex") !== "-1";
   const view = element.ownerDocument.defaultView;
-  for (let node: HTMLElement | null = element; node; node = node.parentElement) {
+  for (let node: HTMLElement | null = element; node; node = parentThroughShadow(node)) {
     if (node.hasAttribute("hidden") || node.getAttribute("aria-hidden") === "true") return false;
     const style = view?.getComputedStyle?.(node);
     if (style && (style.display === "none" || style.visibility === "hidden" || style.visibility === "collapse")) {
@@ -279,7 +322,7 @@ function hasRenderedBox(element: HTMLElement) {
 }
 
 export function countVisibleApplicationControls(doc: Document = document) {
-  return Array.from(doc.querySelectorAll<HTMLElement>(CONTROL_SELECTOR)).filter(
+  return queryAllDeep(doc, CONTROL_SELECTOR).filter(
     (element) => isVisible(element) && !isPopupChoiceInternal(element),
   ).length;
 }
@@ -295,7 +338,7 @@ function labelElementsText(element: HTMLElement) {
 function explicitLabelText(element: HTMLElement) {
   const id = element.getAttribute("id");
   if (!id) return "";
-  return visibleText(element.ownerDocument.querySelector(`label[for="${cssEscape(id)}"]`)?.textContent);
+  return visibleText(rootScope(element).querySelector(`label[for="${cssEscape(id)}"]`)?.textContent);
 }
 
 function textWithoutControls(container: HTMLElement) {
@@ -350,7 +393,7 @@ function semanticSectionText(element: HTMLElement) {
 }
 
 function nearestPrecedingHeading(element: HTMLElement) {
-  const headings = Array.from(element.ownerDocument.querySelectorAll<HTMLElement>(SECTION_HEADING_SELECTOR)).filter(isVisible);
+  const headings = Array.from(rootScope(element).querySelectorAll<HTMLElement>(SECTION_HEADING_SELECTOR)).filter(isVisible);
   let best: HTMLElement | null = null;
   for (const heading of headings) {
     if (heading.tagName === "LEGEND" && !heading.closest("fieldset")?.contains(element)) continue;
@@ -387,7 +430,7 @@ function uploadFileLabelText(element: HTMLElement) {
   if (!(element instanceof HTMLInputElement) || element.type !== "file") return "";
   const doc = element.ownerDocument;
   const id = element.getAttribute("id");
-  const direct = id ? doc.getElementById(`upload-label-${id}`) : null;
+  const direct = id ? elementById(element, `upload-label-${id}`) : null;
   const directText = visibleText(direct?.textContent);
   if (directText) return directText;
 
@@ -411,7 +454,7 @@ function labelFor(element: HTMLElement): string {
   const doc = element.ownerDocument;
   const aria = visibleText(element.getAttribute("aria-label"));
   if (aria) return aria;
-  const labelled = textById(doc, element.getAttribute("aria-labelledby"));
+  const labelled = textById(element, element.getAttribute("aria-labelledby"));
   if (labelled) return labelled;
   const upload = uploadFileLabelText(element);
   if (upload) return upload;
@@ -419,7 +462,7 @@ function labelFor(element: HTMLElement): string {
   if (native) return native;
   const id = element.getAttribute("id");
   if (id) {
-    const explicit = doc.querySelector(`label[for="${cssEscape(id)}"]`);
+    const explicit = rootScope(element).querySelector(`label[for="${cssEscape(id)}"]`);
     if (explicit?.textContent) return visibleText(explicit.textContent);
   }
   const wrapping = element.closest("label");
@@ -525,7 +568,7 @@ function isRequired(element: HTMLElement, label: string) {
 function optionTextForElement(element: HTMLElement) {
   return (
     visibleText(element.getAttribute("aria-label")) ||
-    textById(element.ownerDocument, element.getAttribute("aria-labelledby")) ||
+    textById(element, element.getAttribute("aria-labelledby")) ||
     visibleText(element.getAttribute("data-value")) ||
     visibleText(element.getAttribute("data-option-value")) ||
     labelElementsText(element) ||
@@ -565,13 +608,13 @@ function comboboxOptions(element: HTMLElement) {
     .split(/\s+/)
     .filter(Boolean);
   const nodes = controlledIds.flatMap((id) =>
-    Array.from(doc.getElementById(id)?.querySelectorAll<HTMLElement>("[role='option'], option, li") ?? []),
+    Array.from(elementById(element, id)?.querySelectorAll<HTMLElement>("[role='option'], option, li") ?? []),
   );
   // Some widgets render the listbox as a sibling without wiring aria-controls.
   nodes.push(...Array.from(fieldContainer(element).querySelectorAll<HTMLElement>("[role='option']")));
   const datalistId = element instanceof HTMLInputElement ? element.getAttribute("list") : null;
   if (datalistId) {
-    nodes.push(...Array.from(doc.getElementById(datalistId)?.querySelectorAll<HTMLElement>("option") ?? []));
+    nodes.push(...Array.from(elementById(element, datalistId)?.querySelectorAll<HTMLElement>("option") ?? []));
   }
   const listed = nodes.map((option) => visibleText(option.textContent || option.getAttribute("value")));
   // Merge in any backing native <select> (select2/chosen/react-select keep one in the DOM).
@@ -830,7 +873,7 @@ function radioGroupLabel(element: HTMLElement): string {
   const group = element.closest("[role='radiogroup']");
   const aria = visibleText(group?.getAttribute("aria-label"));
   if (aria) return aria;
-  const labelledby = textById(element.ownerDocument, group?.getAttribute("aria-labelledby") ?? null);
+  const labelledby = textById(element, group?.getAttribute("aria-labelledby") ?? null);
   if (labelledby) return labelledby;
   const question = fieldEntryQuestionLabel(element.parentElement ?? element, element);
   if (question) return question;
@@ -930,7 +973,7 @@ function checkboxGroupKey(
 function checkboxGroupLabel(input: HTMLInputElement, container: HTMLElement): string {
   const legend = visibleText(input.closest("fieldset")?.querySelector("legend")?.textContent);
   if (legend) return legend;
-  const describedBy = textById(input.ownerDocument, input.getAttribute("aria-describedby"));
+  const describedBy = textById(input, input.getAttribute("aria-describedby"));
   const description = visibleText(
     input.getAttribute("description") ||
       input.getAttribute("data-description") ||
@@ -1009,7 +1052,7 @@ function buttonChoiceGroupContainer(button: HTMLElement, candidates: ReadonlySet
 }
 
 function buttonChoiceGroupLabel(container: HTMLElement) {
-  const labelled = textById(container.ownerDocument, container.getAttribute("aria-labelledby"));
+  const labelled = textById(container, container.getAttribute("aria-labelledby"));
   if (labelled) return labelled;
   const aria = visibleText(container.getAttribute("aria-label"));
   if (aria) return aria;
@@ -1043,7 +1086,7 @@ function choiceButtonSelected(element: HTMLElement) {
 }
 
 function discoverButtonChoiceGroups(doc: Document) {
-  const candidates = Array.from(doc.querySelectorAll<HTMLElement>("button, [role='button']")).filter(isChoiceButtonCandidate);
+  const candidates = queryAllDeep(doc, "button, [role='button']").filter(isChoiceButtonCandidate);
   const candidateSet = new Set(candidates);
   const groups = new Map<HTMLElement, HTMLElement[]>();
   for (const button of candidates) {
@@ -1084,7 +1127,7 @@ export function extractPageFields(doc: Document = document): PageField[] {
   const roleRadioGroups = new Map<Element, HTMLElement[]>();
   const checkboxGroups = new Map<string, { container: HTMLElement; elements: HTMLInputElement[] }>();
   const checkboxContainerKeys = new Map<HTMLElement, string>();
-  const candidates = Array.from(doc.querySelectorAll<HTMLElement>(CONTROL_SELECTOR)).filter(isVisible);
+  const candidates = queryAllDeep(doc, CONTROL_SELECTOR).filter(isVisible);
   const choiceWidgetRoots = new Set<HTMLElement>();
 
   for (const element of candidates) {
@@ -1674,6 +1717,59 @@ function looksLikePhoneNumberField(field: PageField) {
   return /\b(phone|mobile|telephone|tel)\b/.test(text) && !/\b(country|code|calling|dial)\b/.test(text);
 }
 
+const MONTH_NAMES: Record<string, number> = {
+  jan: 1,
+  feb: 2,
+  mar: 3,
+  apr: 4,
+  may: 5,
+  jun: 6,
+  jul: 7,
+  aug: 8,
+  sep: 9,
+  oct: 10,
+  nov: 11,
+  dec: 12,
+};
+
+function parseFlexibleDate(value: string): { year: number; month: number; day: number | null } | null {
+  const text = clean(value);
+  if (!text || /\b(present|current|now|ongoing)\b/i.test(text)) return null;
+
+  const iso = /^(\d{4})[-/](\d{1,2})(?:[-/](\d{1,2}))?$/.exec(text);
+  if (iso) return { year: Number(iso[1]), month: Number(iso[2]), day: iso[3] ? Number(iso[3]) : null };
+
+  const monthName = /^([a-z]{3,9})\.?\s+(?:(\d{1,2})(?:st|nd|rd|th)?,?\s+)?(\d{4})$/i.exec(text);
+  if (monthName) {
+    const month = MONTH_NAMES[monthName[1]!.slice(0, 3).toLowerCase()];
+    if (month) return { year: Number(monthName[3]), month, day: monthName[2] ? Number(monthName[2]) : null };
+  }
+
+  // Numeric US-style: MM/YYYY or MM/DD/YYYY.
+  const numeric = /^(\d{1,2})[-/](?:(\d{1,2})[-/])?(\d{4})$/.exec(text);
+  if (numeric) return { year: Number(numeric[3]), month: Number(numeric[1]), day: numeric[2] ? Number(numeric[2]) : null };
+
+  const yearOnly = /^(\d{4})$/.exec(text);
+  if (yearOnly) return { year: Number(yearOnly[1]), month: 1, day: null };
+  return null;
+}
+
+/**
+ * Native date/month inputs silently reject anything that is not ISO formatted, so a plan
+ * value like "May 2021" or "05/2021" must become "2021-05-01" / "2021-05" before it is set.
+ */
+function dateInputValue(element: HTMLElement, value: string): string {
+  if (!(element instanceof HTMLInputElement)) return value;
+  const type = (element.type || "").toLowerCase();
+  if (type !== "date" && type !== "month") return value;
+  const parsed = parseFlexibleDate(value);
+  if (!parsed || parsed.month < 1 || parsed.month > 12) return value;
+  const month = String(parsed.month).padStart(2, "0");
+  if (type === "month") return `${parsed.year}-${month}`;
+  const day = parsed.day && parsed.day >= 1 && parsed.day <= 31 ? parsed.day : 1;
+  return `${parsed.year}-${month}-${String(day).padStart(2, "0")}`;
+}
+
 function nationalPhoneText(value: string) {
   const trimmed = value.trim();
   const digits = phoneDigits(trimmed);
@@ -1884,7 +1980,7 @@ function controlledChoiceIds(element: HTMLElement) {
 function controlledChoiceOptionElements(element: HTMLElement) {
   const doc = element.ownerDocument;
   return controlledChoiceIds(element).flatMap((id) =>
-    Array.from(doc.getElementById(id)?.querySelectorAll<HTMLElement>("[role='option'], [role='menuitem'], option, li, [data-value]") ?? []),
+    Array.from(elementById(element, id)?.querySelectorAll<HTMLElement>("[role='option'], [role='menuitem'], option, li, [data-value]") ?? []),
   );
 }
 
@@ -1910,29 +2006,33 @@ function choiceOptionSelector() {
 
 function visibleGlobalChoiceOptions(element: HTMLElement) {
   const doc = element.ownerDocument;
-  return Array.from(
-    doc.querySelectorAll<HTMLElement>(
-      [
-        "[role='option']",
-        "[role='menuitem']",
-        "[role='listbox'] li",
-        "[role='menu'] li",
-        "[role='listbox'] [data-value]",
-        "[role='menu'] [data-value]",
-        "[data-value]",
-        "[data-option-value]",
-        "[data-automation-id*='option' i]",
-        "[data-testid*='option' i]",
-        ".select2-result",
-        ".select2-result-label",
-        ".select2-results__option",
-        ".select2-results li",
-        ".select__option",
-        ".select__menu [class*='option' i]",
-        "[class*='select__menu' i] [class*='option' i]",
-      ].join(","),
-    ),
-  ).filter((option) => isVisible(option) && !option.closest("#jobposted-autofill-panel-host"));
+  const selector = [
+    "[role='option']",
+    "[role='menuitem']",
+    "[role='listbox'] li",
+    "[role='menu'] li",
+    "[role='listbox'] [data-value]",
+    "[role='menu'] [data-value]",
+    "[data-value]",
+    "[data-option-value]",
+    "[data-automation-id*='option' i]",
+    "[data-testid*='option' i]",
+    ".select2-result",
+    ".select2-result-label",
+    ".select2-results__option",
+    ".select2-results li",
+    ".select__option",
+    ".select__menu [class*='option' i]",
+    "[class*='select__menu' i] [class*='option' i]",
+  ].join(",");
+  // Widgets inside a shadow root usually render their popup in that same root, which the
+  // document-level query cannot see — scan the element's own tree scope as well.
+  const scope = rootScope(element);
+  const options = Array.from(doc.querySelectorAll<HTMLElement>(selector));
+  if (scope !== doc) options.push(...Array.from(scope.querySelectorAll<HTMLElement>(selector)));
+  return Array.from(new Set(options)).filter(
+    (option) => isVisible(option) && !option.closest("#jobposted-autofill-panel-host"),
+  );
 }
 
 function visibleDynamicChoiceOptions(element: HTMLElement, ignoredOptions: ReadonlySet<HTMLElement> = new Set()) {
@@ -2048,15 +2148,21 @@ function filledRequiredChoiceMirrors(element: HTMLElement) {
 function selectedChoiceText(field: PageField) {
   const element = field.element;
   if (element instanceof HTMLSelectElement) return currentValue(element, field.elements) ?? "";
-  const display = element.querySelector<HTMLElement>(
-    [
-      "[class*='select__single-value' i]",
-      "[class*='select2-chosen' i]",
-      "[class*='single-value' i]",
-      "[data-testid*='selected' i]",
-    ].join(","),
+  const displays = Array.from(
+    element.querySelectorAll<HTMLElement>(
+      [
+        "[class*='select__single-value' i]",
+        "[class*='select__multi-value__label' i]",
+        "[class*='select2-chosen' i]",
+        "[class*='single-value' i]",
+        "[data-testid*='selected' i]",
+      ].join(","),
+    ),
   );
-  const displayText = visibleText(display?.textContent || display?.getAttribute("aria-label"));
+  const displayText = displays
+    .map((display) => visibleText(display.textContent || display.getAttribute("aria-label")))
+    .filter(Boolean)
+    .join(", ");
   if (displayText && !isPlaceholderOption(displayText)) return displayText;
   const ariaValue = visibleText(element.getAttribute("aria-valuetext"));
   if (ariaValue && !isPlaceholderOption(ariaValue)) return ariaValue;
@@ -2541,6 +2647,52 @@ function fillCheckboxGroup(field: PageField, item: ExtensionAutofillPlanItem) {
   );
 }
 
+/**
+ * Multi-value selection on a single widget: a native multi-<select> gets every matching
+ * option in one shot; tokenized comboboxes (react-select multi and friends) get one
+ * search-and-pick pass per value. Already-selected chips are never re-clicked — that
+ * would toggle them off.
+ */
+async function fillMultiChoice(field: PageField, item: ExtensionAutofillPlanItem, values: string[]) {
+  if (field.element instanceof HTMLSelectElement && (field.element.multiple || field.element.hasAttribute("multiple"))) {
+    const select = field.element;
+    const options = Array.from(select.options);
+    const matches = new Set<HTMLOptionElement>();
+    for (const value of values) {
+      const match = bestOption(value, options, (option) => option.textContent || option.value);
+      if (match) matches.add(match);
+    }
+    if (matches.size === 0) {
+      return recordFor(field, item, field.required ? "needs_user" : "skipped", "No matching options were found.");
+    }
+    for (const option of options) option.selected = matches.has(option);
+    // Mirror into the attribute as well: DOMs that model <select> as single-choice
+    // (linkedom, some form libraries reading attributes) keep only the last
+    // property write otherwise. In browsers this only touches defaultSelected.
+    for (const option of options) {
+      if (matches.has(option)) option.setAttribute("selected", "selected");
+      else option.removeAttribute("selected");
+    }
+    dispatchFieldEvents(select);
+    return recordFor(field, item, "filled", undefined, `${matches.size}/${values.length} selected`);
+  }
+
+  let selected = 0;
+  for (const value of values) {
+    const already = normalize(selectedChoiceText(field));
+    if (already && normalize(value) && already.includes(normalize(value))) {
+      selected += 1;
+      continue;
+    }
+    if (await fillCombobox(field, value)) selected += 1;
+    await sleep(120);
+  }
+  if (selected === 0) {
+    return recordFor(field, item, field.required ? "needs_user" : "skipped", "Could not select any of the options.");
+  }
+  return recordFor(field, item, "filled", undefined, `${selected}/${values.length} selected`);
+}
+
 async function fillPlanItem(field: PageField, item: ExtensionAutofillPlanItem, getResume: ApplyAutofillPlanArgs["getResume"]) {
   if (field.type === "multiselect" && field.elements.length > 1) return fillCheckboxGroup(field, item);
   if (item.action === "skip") return recordFor(field, item, field.required ? "needs_user" : "skipped", item.note ?? "Skipped.");
@@ -2556,6 +2708,10 @@ async function fillPlanItem(field: PageField, item: ExtensionAutofillPlanItem, g
     return recordFor(field, item, ok ? "filled" : "failed", ok ? undefined : "Could not update checkbox.");
   }
   if (item.action === "select" || (item.action === "fill" && isSelectableField(field))) {
+    const values = Array.isArray(item.value) ? item.value.map(clean).filter(Boolean) : [];
+    if (values.length > 1 && field.elements.length <= 1 && field.type !== "radio") {
+      return fillMultiChoice(field, item, values);
+    }
     const label = item.optionLabel || textValue(item);
     if (!label) return recordFor(field, item, field.required ? "needs_user" : "skipped", "No dropdown option was provided.");
     const ok =
@@ -2566,7 +2722,8 @@ async function fillPlanItem(field: PageField, item: ExtensionAutofillPlanItem, g
           : await fillCombobox(field, label);
     return recordFor(field, item, ok ? "filled" : "needs_user", ok ? undefined : `Could not select ${label}.`);
   }
-  const value = looksLikePhoneNumberField(field) ? nationalPhoneText(textValue(item)) : textValue(item);
+  const rawValue = looksLikePhoneNumberField(field) ? nationalPhoneText(textValue(item)) : textValue(item);
+  const value = dateInputValue(field.element, rawValue);
   const ok = fillEditable(field.element, value);
   return recordFor(field, item, ok ? "filled" : "failed", ok ? undefined : "Could not fill this field.");
 }
@@ -2599,28 +2756,92 @@ async function fillOtherReveal(
   return [record];
 }
 
+const MAX_FILL_RETRIES = 8;
+// A choice-widget attempt that ran longer than this already went through the full
+// open/search/wait treatment; repeating it would only double the worst-case latency.
+const RETRY_FAST_FAIL_MS = 2500;
+
+interface FillAttempt {
+  field: PageField;
+  item: ExtensionAutofillPlanItem;
+  recordIndex: number;
+  durationMs: number;
+}
+
+function retryTargetText(item: ExtensionAutofillPlanItem) {
+  return clean(item.optionLabel) || textValue(item);
+}
+
+/**
+ * A fill is worth one more attempt when it failed outright with a concrete target, or when
+ * it was recorded as filled but the widget visibly shows no selection — async dropdowns
+ * (portal-rendered listboxes, slow searches) often settle just after the first pass.
+ * Choice widgets only qualify when the first attempt failed FAST: that means the widget
+ * had not mounted its options yet, which is exactly what a delayed second pass fixes.
+ */
+function shouldRetryAttempt(attempt: FillAttempt, record: ExtensionFieldFillRecord) {
+  const { field, item } = attempt;
+  if (item.action === "skip" || item.action === "attach") return false;
+  const isChoiceWidget = field.type === "combobox" || field.type === "typeahead";
+  if (record.status === "failed" || record.status === "needs_user") {
+    if (!retryTargetText(item)) return false;
+    if (isChoiceWidget && attempt.durationMs >= RETRY_FAST_FAIL_MS) return false;
+    return true;
+  }
+  if (record.status === "filled" && isChoiceWidget && attempt.durationMs < RETRY_FAST_FAIL_MS) {
+    const target = retryTargetText(item);
+    return Boolean(target) && !choiceSelectionMatches(field, target, item.optionLabel ?? undefined);
+  }
+  return false;
+}
+
 export async function applyAutofillPlan(args: ApplyAutofillPlanArgs) {
   const byId = new Map(args.fields.map((field) => [field.fieldId, field]));
   const before = new Set(args.fields.map((field) => field.fieldId));
   const records: ExtensionFieldFillRecord[] = [];
+  const attempts: FillAttempt[] = [];
+
+  const fillOnce = async (field: PageField, item: ExtensionAutofillPlanItem) =>
+    (await args.strategy?.fillField?.({
+      field,
+      item,
+      getResume: args.getResume,
+      shouldStop: args.shouldStop,
+    })) ?? (await fillPlanItem(field, item, args.getResume));
 
   for (const item of args.plan) {
     if (args.shouldStop?.()) break;
     const field = byId.get(item.fieldId);
     if (!field) continue;
     args.onFieldStart?.(field, item);
-    const record =
-      (await args.strategy?.fillField?.({
-        field,
-        item,
-        getResume: args.getResume,
-        shouldStop: args.shouldStop,
-      })) ?? (await fillPlanItem(field, item, args.getResume));
+    const startedAt = Date.now();
+    const record = await fillOnce(field, item);
+    attempts.push({ field, item, recordIndex: records.length, durationMs: Date.now() - startedAt });
     records.push(record);
     args.onField?.(record);
     const revealRecords = await fillOtherReveal(before, field, item, args.onField);
     records.push(...revealRecords);
     await sleep(80);
+  }
+
+  // Verification pass: give late-settling widgets one bounded retry instead of leaving
+  // a correct answer unfilled (or a zombie "filled" the page never registered).
+  const retryable = attempts.filter((attempt) => {
+    const record = records[attempt.recordIndex];
+    return record && shouldRetryAttempt(attempt, record);
+  });
+  if (retryable.length > 0 && !args.shouldStop?.()) {
+    await sleep(350);
+    for (const attempt of retryable.slice(0, MAX_FILL_RETRIES)) {
+      if (args.shouldStop?.()) break;
+      const previous = records[attempt.recordIndex]!;
+      const record = await fillOnce(attempt.field, attempt.item);
+      if (record.status !== previous.status || record.status === "filled") {
+        records[attempt.recordIndex] = record;
+        args.onField?.(record);
+      }
+      await sleep(80);
+    }
   }
 
   return records;

@@ -10,6 +10,10 @@ type CandidateValue = string | string[] | boolean | null;
 const PLACEHOLDER_OPTION = /^(select|choose|please select|select one|choose one|--|n\/a)$/i;
 const OTHER_OPTION = /\b(other|not listed|not in list|not available|unlisted|not found|cannot find|unknown|none of the above|prefer not|decline|do not wish|choose not|not applicable|n\/a)\b/i;
 const MERCURY_SKIP_CONFIDENCE = 0.9;
+// Per-field bar for "the deterministic plan already answered this; don't spend
+// Mercury tokens on it". Everything at/above this is a direct profile copy the
+// model could not improve on.
+const MERCURY_FIELD_CONFIDENCE = 0.85;
 const CALLING_CODES = [
   "1",
   "7",
@@ -153,7 +157,30 @@ export const AUTOFILL_PLAN_SCHEMA = {
   },
 } as const;
 
-export function profileForPrompt(profile: MasterProfile) {
+/**
+ * Profile payload for the Mercury prompt. When `focusFields` is provided (the fields the
+ * model actually has to plan), the payload is trimmed to what those fields could use:
+ * bullets only when a free-text answer might draw on them, saved answers filtered by
+ * token overlap with the field labels (plus the most recent few, which are usually the
+ * screening answers), and the skills list shortened unless a skills-like field is present.
+ */
+export function profileForPrompt(profile: MasterProfile, focusFields?: ExtensionAutofillPageField[]) {
+  const focus = focusFields && focusFields.length > 0 ? focusFields : null;
+  const focusText = focus
+    ? normalize(focus.map((field) => `${field.label} ${field.section ?? ""} ${field.options.slice(0, 12).join(" ")}`).join(" "))
+    : "";
+  const focusTokens = new Set(tokens(focusText));
+  const wantsEssay = !focus || focus.some((field) => field.type === "textarea");
+  const wantsSkills = !focus || /\b(skill|technolog|language|tool|stack|framework)\b/.test(focusText);
+  const answerMatchesFocus = (answer: MasterProfile["answers"][number]) =>
+    tokens(`${answer.key} ${answer.prompt}`).some((token) => focusTokens.has(token));
+  const usableAnswers = profile.answers.filter((answer) => clean(answer.value));
+  // Recent answers first (they arrive ordered by updated_at desc) so freshly saved
+  // screening answers survive even when their prompt shares no token with the label.
+  const answers = focus
+    ? usableAnswers.filter((answer, index) => index < 12 || answerMatchesFocus(answer)).slice(0, 40)
+    : usableAnswers.slice(0, 80);
+
   return {
     identity: profile.identity,
     location: profile.location,
@@ -161,18 +188,22 @@ export function profileForPrompt(profile: MasterProfile) {
     workAuth: profile.workAuth,
     compensation: profile.compensation,
     demographics: profile.demographics,
-    education: profile.education.slice(0, 6),
-    experience: profile.experience.slice(0, 8).map((item) => ({
+    education: profile.education.slice(0, focus ? 4 : 6),
+    experience: profile.experience.slice(0, focus ? 6 : 8).map((item, index) => ({
       title: item.title,
       company: item.company,
       location: item.location,
       startDate: item.startDate,
       endDate: item.endDate,
       current: item.current,
-      bullets: item.bullets.slice(0, 4),
+      bullets: wantsEssay ? item.bullets.slice(0, focus ? (index < 3 ? 2 : 0) : 4) : [],
     })),
-    skills: profile.skills.slice(0, 80),
-    answers: profile.answers.slice(0, 80),
+    skills: profile.skills.slice(0, wantsSkills ? 40 : 12),
+    answers: answers.map((answer) => ({
+      key: answer.key,
+      prompt: answer.prompt,
+      value: clean(answer.value).slice(0, 400),
+    })),
     documents: {
       resumeName: profile.documents.resumeName,
       coverLetterName: profile.documents.coverLetterName,
@@ -671,10 +702,159 @@ function isChoiceField(field: ExtensionAutofillPageField) {
   );
 }
 
+// ---------------------------------------------------------------------------
+// Cross-application answer cache. The same screening questions ("Are you legally
+// authorized…", "Will you require sponsorship…", pronouns, notice period, hear-about-us)
+// repeat across nearly every application. Once Mercury answers one, the answer is stored
+// per user and replayed locally on the next application — zero model tokens.
+// ---------------------------------------------------------------------------
+
+/** Marker platform for plan-answer rows in extension_field_mappings (cross-ATS reuse). */
+export const PLAN_ANSWER_PLATFORM = "*";
+export const PLAN_ANSWER_KEY = "plan_answer";
+const PLAN_ANSWER_MIN_CONFIDENCE = 0.72;
+// Answers replayed from cache stay below the auto-confidence bar so the panel still
+// presents them as reviewable rather than silently authoritative.
+const PLAN_ANSWER_MAX_REPLAY_CONFIDENCE = 0.88;
+
+/** Questions whose answers are inherently job-, company-, or time-specific. */
+const NON_REUSABLE_QUESTION =
+  /\b(why|describe|tell us|explain|motivat|cover letter|essay|anything else|additional information|comments?|questions? for|note to|message|date|when can you|availab|signature|initials|referr?ed by|referral|who told you|salary history)\b/i;
+const NON_REUSABLE_DICTIONARIES = new Set(["phone_country_code", "country", "region", "school"]);
+
+export interface CachedPlanAnswer {
+  value: string | string[] | boolean;
+  optionLabel: string | null;
+  confidence: number;
+}
+
+export function planAnswerSignature(field: Pick<ExtensionAutofillPageField, "label">) {
+  const label = normalize(field.label).slice(0, 160);
+  // Very short labels ("name", "city") are too ambiguous to reuse across sites — and the
+  // deterministic layer answers those anyway.
+  return label.length >= 8 ? `plan:v1:${label}` : null;
+}
+
+/** Returns the cacheable payload for a model-planned item, or null when it must not be reused. */
+export function cacheablePlanAnswer(
+  field: ExtensionAutofillPageField,
+  item: ExtensionAutofillPlanItem,
+): { signature: string; answer: CachedPlanAnswer } | null {
+  if (field.type === "file" || field.type === "date" || field.repeater) return null;
+  if (item.action !== "fill" && item.action !== "select" && item.action !== "check" && item.action !== "uncheck") return null;
+  if (item.confidence < PLAN_ANSWER_MIN_CONFIDENCE) return null;
+  if (field.optionDictionary && NON_REUSABLE_DICTIONARIES.has(field.optionDictionary)) return null;
+  if (NON_REUSABLE_QUESTION.test(`${field.label} ${field.section ?? ""}`)) return null;
+  const signature = planAnswerSignature(field);
+  if (!signature) return null;
+
+  const value =
+    item.action === "check" ? true : item.action === "uncheck" ? false : item.value ?? (clean(item.optionLabel) || null);
+  if (value == null) return null;
+  if (typeof value === "string" && (!value.trim() || value.length > 200)) return null;
+  if (Array.isArray(value) && (value.length === 0 || value.join(", ").length > 300)) return null;
+  return {
+    signature,
+    answer: {
+      value,
+      optionLabel: clean(item.optionLabel) || null,
+      confidence: Math.max(0, Math.min(1, item.confidence)),
+    },
+  };
+}
+
+function parseCachedAnswer(raw: unknown): CachedPlanAnswer | null {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+  const record = raw as Record<string, unknown>;
+  const value = record.value;
+  const isValidValue =
+    typeof value === "string" || typeof value === "boolean" || (Array.isArray(value) && value.every((item) => typeof item === "string"));
+  if (!isValidValue) return null;
+  return {
+    value: value as CachedPlanAnswer["value"],
+    optionLabel: typeof record.optionLabel === "string" && record.optionLabel.trim() ? record.optionLabel : null,
+    confidence: typeof record.confidence === "number" ? record.confidence : 0,
+  };
+}
+
+/**
+ * Materialize a cached answer against the live field. Options differ site-to-site, so the
+ * stored value is re-matched against the current option list; when an exact option is
+ * required and none matches, the field falls through to Mercury instead.
+ */
+export function planItemFromCachedAnswer(field: ExtensionAutofillPageField, raw: unknown): ExtensionAutofillPlanItem | null {
+  const cached = parseCachedAnswer(raw);
+  if (!cached) return null;
+  const confidence = Math.min(Math.max(0, cached.confidence), PLAN_ANSWER_MAX_REPLAY_CONFIDENCE);
+  if (confidence < PLAN_ANSWER_MIN_CONFIDENCE) return null;
+  if (field.type === "file") return null;
+  const note = "Reused your saved answer to this question.";
+  const requiresExactOption = !field.optionMode || field.optionMode === "full";
+
+  if (field.type === "checkbox" && field.options.length === 0) {
+    if (typeof cached.value !== "boolean") return null;
+    return { fieldId: field.fieldId, action: cached.value ? "check" : "uncheck", value: cached.value, optionLabel: null, confidence, note };
+  }
+
+  if (field.type === "multiselect") {
+    const values = Array.isArray(cached.value) ? cached.value.map(clean).filter(Boolean) : [clean(cached.value)].filter(Boolean);
+    if (values.length === 0) return null;
+    if (requiresExactOption && field.options.length > 0) {
+      const matched = values.map((value) => pickOptionLabel(value, field.options));
+      if (matched.some((value) => !value)) return null;
+      return { fieldId: field.fieldId, action: "select", value: matched as string[], optionLabel: null, confidence, note };
+    }
+    return { fieldId: field.fieldId, action: "select", value: values, optionLabel: null, confidence, note };
+  }
+
+  if (isChoiceField(field)) {
+    const wanted = cached.optionLabel ?? cached.value;
+    const matched = field.options.length > 0 ? pickFieldOptionLabel(wanted, field) : null;
+    if (requiresExactOption && field.options.length > 0 && !matched) return null;
+    return {
+      fieldId: field.fieldId,
+      action: "select",
+      value: cached.value,
+      optionLabel: matched ?? cached.optionLabel,
+      confidence,
+      note,
+    };
+  }
+
+  if (!hasCandidateValue(cached.value)) return null;
+  return { fieldId: field.fieldId, action: "fill", value: cached.value, optionLabel: null, confidence, note };
+}
+
 function hasConcreteValue(item: ExtensionAutofillPlanItem) {
   if (Array.isArray(item.value)) return item.value.length > 0 && item.value.every((value) => clean(value));
   if (typeof item.value === "boolean") return true;
   return Boolean(clean(item.value));
+}
+
+/**
+ * True when the plan item is a decision the deterministic layer fully stands behind:
+ * confident, with a concrete value, and (for choice fields) an exact option to select.
+ */
+export function isConfidentPlanItem(
+  field: ExtensionAutofillPageField,
+  item: ExtensionAutofillPlanItem,
+  threshold = MERCURY_SKIP_CONFIDENCE,
+) {
+  if (item.action === "skip") return !field.required;
+  if (item.confidence < threshold) return false;
+  if ((item.action === "fill" || item.action === "attach") && !hasConcreteValue(item)) return false;
+
+  if (isChoiceField(field)) {
+    const requiresExactOption = !field.optionMode || field.optionMode === "full";
+    if (field.type === "multiselect") {
+      const values = Array.isArray(item.value) ? item.value : clean(item.optionLabel) ? [clean(item.optionLabel)] : [];
+      if (values.length === 0) return false;
+      if (requiresExactOption && field.options.length > 0 && values.some((value) => !pickOptionLabel(value, field.options))) return false;
+    } else if (requiresExactOption && field.options.length > 0 && !clean(item.optionLabel)) {
+      return false;
+    }
+  }
+  return true;
 }
 
 export function canSkipMercuryForPlan(args: {
@@ -687,27 +867,63 @@ export function canSkipMercuryForPlan(args: {
   for (const item of args.plan.fields) {
     const field = fieldsById.get(item.fieldId);
     if (!field) return false;
-
-    if (item.action === "skip") {
-      if (field.required) return false;
-      continue;
-    }
-
-    actionable += 1;
-    if (item.confidence < MERCURY_SKIP_CONFIDENCE) return false;
-    if ((item.action === "fill" || item.action === "attach") && !hasConcreteValue(item)) return false;
-
-    if (isChoiceField(field)) {
-      const requiresExactOption = !field.optionMode || field.optionMode === "full";
-      if (field.type === "multiselect") {
-        const values = Array.isArray(item.value) ? item.value : clean(item.optionLabel) ? [clean(item.optionLabel)] : [];
-        if (values.length === 0) return false;
-        if (requiresExactOption && field.options.length > 0 && values.some((value) => !pickOptionLabel(value, field.options))) return false;
-      } else if (requiresExactOption && field.options.length > 0 && !clean(item.optionLabel)) {
-        return false;
-      }
-    }
+    if (!isConfidentPlanItem(field, item)) return false;
+    if (item.action !== "skip") actionable += 1;
   }
 
   return actionable > 0;
+}
+
+/**
+ * Split the page between fields the local plan already answers and fields that still
+ * need Mercury. File fields never go to the model (it cannot attach documents, and the
+ * prompt forbids fabricating document names), and `lockedIds` lets the caller pin fields
+ * resolved from the answer cache. A confident "skip" is NOT locked: an unanswered
+ * optional question is exactly what the model should get a chance to answer.
+ */
+export function partitionPlanFields(args: {
+  fields: ExtensionAutofillPageField[];
+  plan: ExtensionAutofillPlan;
+  lockedIds?: ReadonlySet<string>;
+}) {
+  const itemById = new Map(args.plan.fields.map((item) => [item.fieldId, item]));
+  const unresolved: ExtensionAutofillPageField[] = [];
+  for (const field of args.fields) {
+    if (args.lockedIds?.has(field.fieldId)) continue;
+    if (field.type === "file") continue;
+    const item = itemById.get(field.fieldId);
+    if (item && item.action !== "skip" && isConfidentPlanItem(field, item, MERCURY_FIELD_CONFIDENCE)) continue;
+    unresolved.push(field);
+  }
+  return { unresolved };
+}
+
+/**
+ * Long slugged fieldIds ("jp-are-you-legally-authorized-...-radio-14") are paid twice —
+ * in the prompt and again in the response. Swap them for "f0","f1",… before calling the
+ * model and restore afterwards.
+ */
+export function withShortFieldIds(fields: ExtensionAutofillPageField[]) {
+  const toOriginal = new Map<string, string>();
+  const shortFields = fields.map((field, index) => {
+    const shortId = `f${index}`;
+    toOriginal.set(shortId, field.fieldId);
+    return { ...field, fieldId: shortId };
+  });
+  return { shortFields, toOriginal };
+}
+
+export function restorePlanFieldIds(raw: unknown, toOriginal: ReadonlyMap<string, string>): unknown {
+  if (!raw || typeof raw !== "object") return raw;
+  const record = raw as Record<string, unknown>;
+  if (!Array.isArray(record.fields)) return raw;
+  return {
+    ...record,
+    fields: record.fields.map((item) => {
+      if (!item || typeof item !== "object") return item;
+      const planItem = item as Record<string, unknown>;
+      const fieldId = typeof planItem.fieldId === "string" ? planItem.fieldId : "";
+      return { ...planItem, fieldId: toOriginal.get(fieldId) ?? fieldId };
+    }),
+  };
 }

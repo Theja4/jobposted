@@ -189,8 +189,8 @@ function logoDevPublishableKey() {
   ).trim();
 }
 
-function logoDevImageUrl(kind: "domain" | "name", value: string | null | undefined) {
-  const token = logoDevPublishableKey();
+function logoDevImageUrl(kind: "domain" | "name", value: string | null | undefined, overrideToken?: string) {
+  const token = (overrideToken ?? "").trim() || logoDevPublishableKey();
   const cleanValue = (value ?? "").trim();
   if (!token || !cleanValue) return null;
   const path =
@@ -210,11 +210,12 @@ function logoDevFallbackUrl(args: {
   companyDomain: string | null | undefined;
   companyName: string | null | undefined;
   useNameFallback: boolean;
+  token?: string;
 }) {
   const companyDomain = args.companyDomain ?? inferCompanyDomainFromCompanyName(args.companyName);
   return (
-    logoDevImageUrl("domain", companyDomain) ??
-    (args.useNameFallback ? logoDevImageUrl("name", args.companyName) : null)
+    logoDevImageUrl("domain", companyDomain, args.token) ??
+    (args.useNameFallback ? logoDevImageUrl("name", args.companyName, args.token) : null)
   );
 }
 
@@ -222,11 +223,15 @@ export function logoDevCompanyLogoUrl(args: {
   companyDomain?: string | null | undefined;
   companyName?: string | null | undefined;
   useNameFallback?: boolean;
+  /** Publishable logo.dev token. Falls back to LOGO_DEV_* env when omitted —
+   *  clients without process.env (e.g. the extension) pass it explicitly. */
+  token?: string;
 }) {
   return logoDevFallbackUrl({
     companyDomain: args.companyDomain ?? null,
     companyName: args.companyName ?? null,
     useNameFallback: args.useNameFallback !== false,
+    token: args.token,
   });
 }
 

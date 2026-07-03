@@ -10,6 +10,10 @@ export const REZOOMED_BUILDER_IMPORT_PATH = "/dashboard/builder/import";
 export const SUPABASE_URL: string = import.meta.env.WXT_SUPABASE_URL || "";
 export const SUPABASE_ANON_KEY: string = import.meta.env.WXT_SUPABASE_ANON_KEY || "";
 
+// Publishable logo.dev key, baked at build time. Client-safe. Used to render
+// real company logos in the panel via logo.dev's image API.
+export const LOGO_DEV_TOKEN: string = import.meta.env.WXT_LOGO_DEV_TOKEN || "";
+
 export const EXTENSION_BRIDGE_PATH = "/extension/bridge";
 
 export const API_PROFILE_PATH = "/api/extension/profile";

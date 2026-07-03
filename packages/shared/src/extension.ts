@@ -448,6 +448,7 @@ export type ExtensionMessage =
   | { type: "RESUME_LIST" }
   | { type: "RESUME_UPLOAD"; name: string; dataBase64: string }
   | { type: "OPEN_TAB"; url: string }
+  | { type: "OPEN_OPTIONS" }
   | { type: "APPLICATION_SYNC"; payload: ExtensionApplicationUpsert }
   | { type: "APPLICATION_SYNC_RETRY" }
   | { type: "SYNC_QUEUE_STATUS" }
@@ -477,6 +478,7 @@ export type ExtensionMessageResponse =
   | { ok: true; type: "RESUME_LIST"; resumes: ExtensionResumeOption[] }
   | { ok: true; type: "RESUME_UPLOAD"; resume: ExtensionResumeOption | null }
   | { ok: true; type: "OPEN_TAB" }
+  | { ok: true; type: "OPEN_OPTIONS" }
   | { ok: true; type: "APPLICATION_SYNC"; result: ExtensionApplicationResponse }
   | { ok: true; type: "APPLICATION_SYNC_RETRY"; status: ExtensionSyncQueueStatus }
   | { ok: true; type: "SYNC_QUEUE_STATUS"; status: ExtensionSyncQueueStatus }
