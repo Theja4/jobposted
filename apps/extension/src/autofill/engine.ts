@@ -38,6 +38,37 @@ export function humanDelay(settings: ExtensionSettings, shouldStop?: () => boole
   });
 }
 
+function delay(ms: number, shouldStop?: () => boolean) {
+  if (!shouldStop) return new Promise((resolve) => window.setTimeout(resolve, ms));
+  return new Promise((resolve) => {
+    const startedAt = Date.now();
+    const tick = () => {
+      if (shouldStop() || Date.now() - startedAt >= ms) {
+        resolve(undefined);
+        return;
+      }
+      window.setTimeout(tick, 50);
+    };
+    tick();
+  });
+}
+
+function currentFields(adapter: PlatformAdapter) {
+  return extractFields(document, adapter.id, adapter.mapFields(document));
+}
+
+async function fieldsWhenReady(adapter: PlatformAdapter, shouldStop?: () => boolean) {
+  let fields = currentFields(adapter);
+  if (fields.length > 0) return fields;
+  const startedAt = Date.now();
+  while (!shouldStop?.() && Date.now() - startedAt < 2500) {
+    await delay(200, shouldStop);
+    fields = currentFields(adapter);
+    if (fields.length > 0) return fields;
+  }
+  return fields;
+}
+
 export async function fillCurrentStep(args: {
   adapter: PlatformAdapter;
   profile: MasterProfile;
@@ -49,8 +80,7 @@ export async function fillCurrentStep(args: {
 }): Promise<AutofillResult> {
   const { adapter, profile, settings, onField, shouldStop } = args;
   const step = adapter.detectStep(document);
-  const hints = adapter.mapFields(document);
-  const fields = extractFields(document, adapter.id, hints);
+  const fields = adapter.fillExtras ? currentFields(adapter) : await fieldsWhenReady(adapter, shouldStop);
   const records: ExtensionFieldFillRecord[] = [];
   const getResume = async () => {
     const response = await runtimeMessage<ExtensionMessageResponse>({

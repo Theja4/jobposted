@@ -140,6 +140,57 @@ describe("fillField file uploads", () => {
     expect(input.files?.item(0)?.name).toBe("Theja Chitturi Resume.pdf");
   });
 
+  it("attaches Lever resume inputs nested inside the visible upload control", async () => {
+    const { document, window } = parseHTML(`
+      <li class="application-question resume">
+        <label>
+          <div class="application-label">Resume/CV <span class="required">*</span></div>
+          <div class="application-field">
+            <a href="#" class="postings-btn template-btn-utility visible-resume-upload">
+              <span class="filename"></span>
+              <span class="default-label">ATTACH RESUME/CV</span>
+              <input class="application-file-input invisible-resume-upload" data-qa="input-resume" id="resume-upload-input" name="resume" tabindex="-1" type="file" />
+            </a>
+          </div>
+        </label>
+      </li>
+    `);
+    installDomGlobals(window);
+    const input = document.getElementById("resume-upload-input") as HTMLInputElement;
+    const filename = document.querySelector(".filename") as HTMLElement;
+    input.addEventListener("change", () => {
+      filename.textContent = input.files?.item(0)?.name ?? "";
+    });
+    const getResume = vi.fn(async () => ({
+      resumeUrl: "https://files.example.com/user/base/resume.pdf?token=signed",
+      resumeName: "Theja Lever Resume.pdf",
+    }));
+    globalThis.fetch = vi.fn(async () =>
+      new Response(new Blob(["resume"], { type: "application/pdf" }), {
+        headers: { "content-type": "application/pdf" },
+      }),
+    ) as typeof fetch;
+
+    const record = await fillField(
+      {
+        id: "resume-upload-input",
+        element: input,
+        label: "Resume/CV *",
+        context: "Resume/CV *",
+        type: "file",
+        required: true,
+        options: [],
+        signature: "resume:file:lever",
+      },
+      mapping,
+      { ...context, platform: "lever", getResume },
+    );
+
+    expect(record.status).toBe("filled");
+    expect(input.files?.item(0)?.name).toBe("Theja Lever Resume.pdf");
+    expect(filename.textContent).toBe("Theja Lever Resume.pdf");
+  });
+
   it("does not attach the same resume to a second upload field on the page", async () => {
     const { document, window } = parseHTML(`<input id="resume-one" type="file" /><input id="resume-two" type="file" />`);
     installDomGlobals(window);
@@ -224,6 +275,51 @@ describe("fillField file uploads", () => {
     expect(globalThis.fetch).not.toHaveBeenCalled();
   });
 
+  it("does not re-upload when Workday already shows the attached resume (e.g. after a step reload)", async () => {
+    // Fresh document with no jpResumeAttached flag — simulates Workday reloading the page between
+    // steps after the first upload. The <input type=file> is empty, but Workday re-renders the
+    // previously attached file as a file-upload-item, which must stop a second upload.
+    const { document, window } = parseHTML(`
+      <div data-automation-id="formField-resume">
+        <div data-automation-id="file-upload-drop-zone">
+          <input id="resume" type="file" data-automation-id="file-upload-input-ref" />
+        </div>
+        <ul>
+          <li data-automation-id="file-upload-item">
+            <span>Theja_Chitturi.pdf</span>
+            <button type="button" data-automation-id="delete-file">Delete</button>
+          </li>
+        </ul>
+      </div>
+    `);
+    installDomGlobals(window);
+    const input = document.querySelector<HTMLInputElement>("#resume") as HTMLInputElement;
+    const getResume = vi.fn(async () => ({
+      resumeUrl: "https://files.example.com/resume.pdf",
+      resumeName: "Theja_Chitturi.pdf",
+    }));
+    globalThis.fetch = vi.fn() as typeof fetch;
+
+    const field: FieldDescriptor = {
+      id: "resume",
+      element: input,
+      label: "Resume/CV",
+      context: "Resume/CV",
+      type: "file",
+      required: true,
+      options: [],
+      signature: "resume:file",
+    };
+
+    const record = await fillField(field, mapping, { ...context, getResume });
+
+    expect(record.status).toBe("skipped");
+    expect(record.error).toBe("Already attached resume/CV.");
+    expect(input.files?.length ?? 0).toBe(0);
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+    expect(getResume).not.toHaveBeenCalled();
+  });
+
   it("skips optional resume uploads only when no resume/CV is available", async () => {
     const getResume = vi.fn(async () => ({ resumeUrl: null }));
     globalThis.fetch = vi.fn() as typeof fetch;
@@ -234,6 +330,43 @@ describe("fillField file uploads", () => {
     expect(record.error).toBe("No resume/CV available.");
     expect(getResume).toHaveBeenCalledOnce();
     expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
+});
+
+describe("fillField checkbox choices", () => {
+  it("checks the pronoun option that matches the resolved setup value", async () => {
+    const { document, window } = parseHTML(`
+      <label><input id="he" type="checkbox" name="pronouns" value="He/him" /><span>He/him</span></label>
+      <label><input id="she" type="checkbox" name="pronouns" value="She/her" /><span>She/her</span></label>
+    `);
+    installDomGlobals(window);
+    const he = document.getElementById("he") as HTMLInputElement;
+    const she = document.getElementById("she") as HTMLInputElement;
+    const choiceMapping: ExtensionFieldMapping = {
+      canonicalKey: "answers.profile_pronouns",
+      value: "She/her",
+      confidence: 0.86,
+      source: "heuristic",
+    };
+
+    const field = (element: HTMLInputElement, label: string): FieldDescriptor => ({
+      id: element.id,
+      element,
+      label,
+      context: "Pronouns",
+      type: "checkbox",
+      required: false,
+      options: [],
+      signature: `pronouns:${label}`,
+    });
+
+    const heRecord = await fillField(field(he, "He/him"), choiceMapping, context);
+    const sheRecord = await fillField(field(she, "She/her"), choiceMapping, context);
+
+    expect(heRecord.status).toBe("filled");
+    expect(sheRecord.status).toBe("filled");
+    expect(he.checked).toBe(false);
+    expect(she.checked).toBe(true);
   });
 });
 
@@ -1272,6 +1405,49 @@ describe("fillField custom choice controls", () => {
     expect(no.hasAttribute("checked")).toBe(true);
   });
 
+  it("selects hidden native Lever radio groups", async () => {
+    const { document, window } = parseHTML(`
+      <form class="application">
+        <li class="application-question custom-question">
+          <div class="application-label full-width multiple-choice">
+            <div class="text">Do you have a family member or relative who is currently employed by Dun &amp; Bradstreet?<span class="required">*</span></div>
+          </div>
+          <div class="application-field full-width required-field">
+            <ul data-qa="multiple-choice">
+              <li><label><input type="radio" name="cards[dnb][field1]" value="Yes" required style="display:none" /><span>Yes</span></label></li>
+              <li><label><input type="radio" name="cards[dnb][field1]" value="No" required style="display:none" /><span>No</span></label></li>
+            </ul>
+          </div>
+        </li>
+      </form>
+    `);
+    installDomGlobals(window);
+    const field = extractFields(document, "lever")[0]!;
+    const yes = document.querySelector("input[value='Yes']") as HTMLInputElement;
+    const no = document.querySelector("input[value='No']") as HTMLInputElement;
+    let visibleLabelClicks = 0;
+    no.closest("label")?.addEventListener("click", () => {
+      visibleLabelClicks += 1;
+    });
+    const record = await fillField(
+      field,
+      {
+        canonicalKey: "answers.screening.company_relative_connection",
+        value: "No",
+        confidence: 0.84,
+        source: "answer",
+      },
+      context,
+    );
+
+    expect(field.type).toBe("radio");
+    expect(field.options).toEqual(["Yes", "No"]);
+    expect(record.status).toBe("filled");
+    expect(yes.checked).toBe(false);
+    expect(no.checked).toBe(true);
+    expect(visibleLabelClicks).toBeGreaterThan(0);
+  });
+
   it("skips already-selected button choice groups", async () => {
     const { document, window } = parseHTML(`
       <div>
@@ -2073,6 +2249,64 @@ describe("fillField custom choice controls", () => {
 
     expect(record.status).toBe("filled");
     expect(select.value).toBe("board");
+  });
+
+  it.each([
+    ["Bachelor of Technology B.Tech", "bachelors"],
+    ["M.Tech", "masters"],
+    ["MCA", "masters"],
+    ["PhD", "doctorate"],
+    ["Associate of Science", "associates"],
+    ["Postgraduate Diploma", "certificate"],
+    ["Higher Secondary", "high-school"],
+  ])("selects the right degree level for %s", async (degree, expectedValue) => {
+    const { document, window } = parseHTML(`
+      <select id="degree">
+        <option value="">Select One</option>
+        <option value="associates">Associates</option>
+        <option value="honours-bachelor">Honours Bachelor</option>
+        <option value="bachelors">Bachelors</option>
+        <option value="honours-master">Honours Master</option>
+        <option value="masters">Masters</option>
+        <option value="doctorate">Doctorate</option>
+        <option value="certificate">Certificate</option>
+        <option value="high-school">High School</option>
+      </select>
+    `);
+    installDomGlobals(window);
+    const select = document.getElementById("degree") as HTMLSelectElement;
+    const record = await fillField(
+      {
+        id: "degree",
+        element: select,
+        label: "Degree",
+        context: "",
+        type: "select",
+        required: true,
+        options: [
+          "Select One",
+          "Associates",
+          "Honours Bachelor",
+          "Bachelors",
+          "Honours Master",
+          "Masters",
+          "Doctorate",
+          "Certificate",
+          "High School",
+        ],
+        signature: "degree",
+      },
+      {
+        canonicalKey: "answers.degree",
+        value: degree,
+        confidence: 0.9,
+        source: "answer",
+      },
+      context,
+    );
+
+    expect(record.status).toBe("filled");
+    expect(select.value).toBe(expectedValue);
   });
 
   it("uses the first real referral source option when no preferred source exists", async () => {

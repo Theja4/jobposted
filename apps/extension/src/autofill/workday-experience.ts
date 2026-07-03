@@ -828,14 +828,14 @@ function degreeSearchTargets(target: string) {
   const text = normalizeText(target);
   const aliases: string[] = [];
   if (
-    /\bb\s*tech\b|\bbtech\b|\bbachelor(?:s|'s)? of technology\b|\bbachelor(?:s|'s)? in technology\b|\bbachelor(?:s|'s)? of engineering\b|\bbe\b|\bbs\b|\bbsc\b|\bba\b|\bbachelor\b/.test(
+    /\bb\s*tech\b|\bbtech\b|\bbachelor(?:s|'s)? of technology\b|\bbachelor(?:s|'s)? in technology\b|\bbachelor(?:s|'s)? of engineering\b|\bb\s*e\b|\bbe\b|\bb\s*s\b|\bbs\b|\bb\s*sc\b|\bbsc\b|\bb\s*a\b|\bba\b|\bb\s*com\b|\bbcom\b|\bbca\b|\bbba\b|\bbachelor\b/.test(
       text,
     )
   ) {
-    aliases.push("Three to Four year University Bachelors degree", "Bachelors degree", "Bachelor's Degree");
+    aliases.push("Bachelors degree", "Bachelor's Degree", "Three to Four year University Bachelors degree");
   }
   if (
-    /\bm\s*tech\b|\bmtech\b|\bmaster(?:s|'s)? of technology\b|\bmaster(?:s|'s)? in technology\b|\bmaster(?:s|'s)? of engineering\b|\bme\b|\bms\b|\bmsc\b|\bma\b|\bmeng\b|\bmba\b|\bmaster\b/.test(
+    /\bm\s*tech\b|\bmtech\b|\bmaster(?:s|'s)? of technology\b|\bmaster(?:s|'s)? in technology\b|\bmaster(?:s|'s)? of engineering\b|\bm\s*e\b|\bme\b|\bm\s*s\b|\bms\b|\bm\s*sc\b|\bmsc\b|\bm\s*a\b|\bma\b|\bm\s*com\b|\bmcom\b|\bmca\b|\bmeng\b|\bmba\b|\bmaster\b/.test(
       text,
     )
   ) {

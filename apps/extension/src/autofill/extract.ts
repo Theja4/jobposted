@@ -216,7 +216,10 @@ function labelFor(element: HTMLElement): string {
 
   const wrapping = element.closest("label");
   if (wrapping?.textContent) {
-    return visibleText(wrapping.textContent.replace((element as HTMLInputElement).value ?? "", ""));
+    const wrappingText = visibleText(wrapping.textContent);
+    const withoutValue = visibleText(wrappingText.replace((element as HTMLInputElement).value ?? "", ""));
+    if (element instanceof HTMLInputElement && element.type === "checkbox") return withoutValue || wrappingText;
+    return withoutValue;
   }
 
   const container = element.closest("[data-automation-id], [data-testid], div");
@@ -388,14 +391,14 @@ export function signatureFor(parts: {
   ).slice(0, 240);
 }
 
-function isOptionButtonCandidate(element: HTMLElement): boolean {
+function isOptionButtonCandidate(element: HTMLElement, requireVisible = true): boolean {
   if (isWorkdayExperienceOwnedControl(element)) return false;
   if (element.tagName !== "BUTTON" && element.getAttribute("role") !== "button") return false;
   // Dropdown triggers and listbox internals are handled by the combobox path, not here.
   if (element.getAttribute("role") === "combobox" || element.hasAttribute("aria-haspopup")) return false;
   if (element.closest("[role='listbox'], [role='menu'], [role='option'], [role='menuitem']")) return false;
   if (element.querySelector(FIELD_SELECTOR)) return false;
-  if (!isVisible(element)) return false;
+  if (requireVisible && !isVisible(element)) return false;
   const text = visibleText(element.textContent || element.getAttribute("aria-label"));
   if (!text || text.length > 40) return false;
   return !looksLikeActionControl(text);
@@ -496,8 +499,16 @@ function extractGreenhouseChoiceWidgets(dom: Document, platform: string, existin
  * <button> toggles instead of radios/selects, which the field selector ignores. Detect those groups
  * and emit one synthetic radio-type field per group so they can be resolved and filled.
  */
-function extractButtonChoiceGroups(dom: Document, platform: string, existing: FieldDescriptor[]): FieldDescriptor[] {
-  const candidates = Array.from(dom.querySelectorAll<HTMLElement>("button, [role='button']")).filter(isOptionButtonCandidate);
+function extractButtonChoiceGroups(
+  dom: Document,
+  platform: string,
+  existing: FieldDescriptor[],
+  options: { requireVisible?: boolean } = {},
+): FieldDescriptor[] {
+  const requireVisible = options.requireVisible ?? true;
+  const candidates = Array.from(dom.querySelectorAll<HTMLElement>("button, [role='button']")).filter((element) =>
+    isOptionButtonCandidate(element, requireVisible),
+  );
   if (candidates.length < 2) return [];
   const candidateSet = new Set(candidates);
   const groups = new Map<HTMLElement, HTMLElement[]>();
@@ -532,6 +543,136 @@ function extractButtonChoiceGroups(dom: Document, platform: string, existing: Fi
     });
   }
   return fields;
+}
+
+function nativeRadioQuestionContainer(input: HTMLInputElement) {
+  return (
+    input.closest<HTMLElement>(".application-question, fieldset, [role='radiogroup'], [data-testid], [data-automation-id]") ??
+    input.parentElement
+  );
+}
+
+function nativeRadioQuestionLabel(container: HTMLElement, input: HTMLInputElement) {
+  const aria = container.getAttribute("aria-label");
+  if (aria) return visibleText(aria);
+  const labelledBy = textById(input.ownerDocument, container.getAttribute("aria-labelledby"));
+  if (labelledBy) return labelledBy;
+  const label = container.querySelector<HTMLElement>(
+    "legend, .application-label .text, .application-label, [data-qa*='question' i], [class*='question' i] [class*='label' i], [class*='label' i], [class*='heading' i]",
+  );
+  if (label?.textContent) {
+    const text = visibleText(label.textContent);
+    if (text) return text;
+  }
+  return textWithoutControls(container).slice(0, 160);
+}
+
+function nativeRadioOptionText(input: HTMLInputElement) {
+  const id = input.id ? cssEscape(input.id) : "";
+  const explicit = id ? input.ownerDocument.querySelector(`label[for="${id}"]`) : null;
+  return (
+    visibleText(explicit?.textContent) ||
+    visibleText(input.closest("label")?.textContent) ||
+    visibleText(input.getAttribute("aria-label")) ||
+    textById(input.ownerDocument, input.getAttribute("aria-labelledby")) ||
+    visibleText(input.value)
+  );
+}
+
+function extractNativeRadioGroups(dom: Document, platform: string, existing: FieldDescriptor[]): FieldDescriptor[] {
+  const groups = new Map<string, HTMLInputElement[]>();
+  for (const input of Array.from(dom.querySelectorAll<HTMLInputElement>("input[type='radio'][name]"))) {
+    if (!input.name) continue;
+    if (isWorkdayExperienceOwnedControl(input)) continue;
+    const group = groups.get(input.name) ?? [];
+    group.push(input);
+    groups.set(input.name, group);
+  }
+
+  const fields: FieldDescriptor[] = [];
+  for (const [name, radios] of groups) {
+    if (radios.length < 2) continue;
+    if (existing.some((field) => radios.some((radio) => field.element === radio || field.element.contains(radio) || radio.contains(field.element)))) continue;
+    const first = radios[0];
+    if (!first) continue;
+    const container = nativeRadioQuestionContainer(first);
+    if (!container) continue;
+    const label = nativeRadioQuestionLabel(container, first);
+    if (!label) continue;
+    const options = radios.map(nativeRadioOptionText).filter(Boolean);
+    if (options.length < 2) continue;
+    const context = fieldContext(first);
+    const type = "radio" as const;
+    const signature = signatureFor({ platform, label, context, type, options });
+    fields.push({
+      id: `${type}:${signature}:${existing.length + fields.length}`,
+      element: first,
+      label,
+      context,
+      type,
+      required: radios.some((radio) => requiredFor(radio, label, context)),
+      options,
+      signature,
+    });
+  }
+  return fields;
+}
+
+function extractEmergencyFields(dom: Document, platform: string): FieldDescriptor[] {
+  const fields: FieldDescriptor[] = [];
+  const seenRadioGroups = new Set<string>();
+  for (const element of Array.from(dom.querySelectorAll<HTMLElement>(FIELD_SELECTOR))) {
+    if (isWorkdayExperienceOwnedControl(element)) continue;
+    if (element.closest("[role='listbox'], [role='menu'], [role='option'], [role='menuitem']")) continue;
+    const type = controlType(element);
+    if (element instanceof HTMLInputElement) {
+      if (element.type === "hidden" || element.type === "submit" || element.type === "button" || element.type === "image" || element.type === "reset") continue;
+      if (element.type === "radio" && element.name) {
+        if (seenRadioGroups.has(element.name)) continue;
+        seenRadioGroups.add(element.name);
+        continue;
+      }
+    }
+    const label = labelFor(element);
+    const context = fieldContext(element);
+    const options = optionsFor(element);
+    if (!label && type !== "file") continue;
+    const signature = signatureFor({ platform, label, context, type, options });
+    fields.push({
+      id: `${type}:${signature}:emergency-${fields.length}`,
+      element,
+      label,
+      context,
+      type,
+      required: requiredFor(element, label, context),
+      options,
+      signature,
+    });
+  }
+  fields.push(...extractNativeRadioGroups(dom, platform, fields));
+  fields.push(...extractButtonChoiceGroups(dom, platform, fields, { requireVisible: false }));
+  return fields;
+}
+
+function hasNonFileFormControls(dom: Document) {
+  return Boolean(
+    dom.querySelector(
+      [
+        "input:not([type='hidden']):not([type='file']):not([type='submit']):not([type='button']):not([type='image']):not([type='reset'])",
+        "textarea",
+        "select",
+        "[role='combobox']",
+        "[aria-haspopup='listbox']",
+        "[aria-haspopup='menu']",
+        "[contenteditable='true']",
+      ].join(","),
+    ),
+  );
+}
+
+function shouldUseEmergencyFields(dom: Document, fields: FieldDescriptor[]) {
+  if (fields.length === 0) return true;
+  return fields.every((field) => field.type === "file") && hasNonFileFormControls(dom);
 }
 
 export function extractFields(dom: Document, platform: string, hints: AdapterHint[] = []): FieldDescriptor[] {
@@ -574,6 +715,13 @@ export function extractFields(dom: Document, platform: string, hints: AdapterHin
 
   fields.push(...extractGreenhouseChoiceWidgets(dom, platform, fields));
   fields.push(...extractButtonChoiceGroups(dom, platform, fields));
+  fields.push(...extractNativeRadioGroups(dom, platform, fields));
+  if (shouldUseEmergencyFields(dom, fields)) {
+    const emergencyFields = extractEmergencyFields(dom, platform);
+    if (emergencyFields.length > fields.length) {
+      fields.splice(0, fields.length, ...emergencyFields);
+    }
+  }
   fields.sort(documentOrder);
   applyHints(dom, fields, hints);
   return fields;

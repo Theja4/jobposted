@@ -1,7 +1,9 @@
 import {
   FIELD_RULES,
   isUsableAnswerValue,
+  matchDefaultScreeningAnswer,
   matchScreeningReusableAnswer,
+  resolvePronounFieldValue,
   valueForKey,
   type ExtensionFieldContext,
   type ExtensionFieldMapping,
@@ -215,10 +217,17 @@ export function toFieldContext(
   };
 }
 
+function isConditionalDetailField(text: string) {
+  return (
+    /\bif\s+(?:you|yes|applicable|selected|referred|related)\b/.test(text) &&
+    /\b(?:list|name|names|explain|describe|provide|share|specify|details?|dates?|functional area)\b/.test(text)
+  );
+}
+
 function answerMapping(field: FieldDescriptor, profile: MasterProfile): ExtensionFieldMapping | null {
   const text = fieldText(field);
   const questionText = normalizeText(`${field.label} ${field.context}`);
-  const semanticAnswer = matchScreeningReusableAnswer(text, profile);
+  const semanticAnswer = isConditionalDetailField(questionText) ? null : matchScreeningReusableAnswer(text, profile);
   if (semanticAnswer && isUsableAnswerValue(semanticAnswer, questionText)) {
     return {
       canonicalKey: `answers.${semanticAnswer.key}`,
@@ -234,13 +243,21 @@ function answerMapping(field: FieldDescriptor, profile: MasterProfile): Extensio
     const prompt = normalizeText(item.prompt);
     return (key && text.includes(key)) || (prompt && (text.includes(prompt) || prompt.includes(text)));
   });
-  if (!answer) return null;
-  return {
+  if (answer) return {
     canonicalKey: `answers.${answer.key}`,
     value: answer.value,
     confidence: 0.8,
     source: "answer",
     reason: "Matched a reusable screening answer.",
+  };
+  const defaultAnswer = matchDefaultScreeningAnswer(field);
+  if (!defaultAnswer) return null;
+  return {
+    canonicalKey: `answers.${defaultAnswer.key}`,
+    value: defaultAnswer.value,
+    confidence: 0.78,
+    source: "heuristic",
+    reason: "Matched a safe default screening answer.",
   };
 }
 
@@ -368,6 +385,18 @@ export async function resolveField(args: {
   if (compliance) return compliance;
   const referralSource = referralSourceMapping(field);
   if (referralSource) return referralSource;
+
+  if (matchDefaultScreeningAnswer(field)) {
+    const answer = answerMapping(field, profile);
+    if (answer) return answer;
+  }
+  const pronoun = resolvePronounFieldValue(field, profile);
+  if (pronoun) {
+    return {
+      ...pronoun,
+      reason: "Selected pronouns from setup gender.",
+    };
+  }
 
   for (const rule of RULES) {
     if (rule.needsDemographics && !args.demographicsEnabled) continue;

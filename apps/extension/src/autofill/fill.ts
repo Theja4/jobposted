@@ -37,6 +37,19 @@ function dispatchFieldEvents(element: HTMLElement) {
   element.dispatchEvent(new FocusEvent("blur", { bubbles: true }));
 }
 
+function dispatchMouseSequence(element: HTMLElement) {
+  const view = element.ownerDocument.defaultView;
+  const MouseEventCtor = view?.MouseEvent ?? (typeof MouseEvent !== "undefined" ? MouseEvent : undefined);
+  const EventCtor = MouseEventCtor ?? Event;
+  for (const type of ["pointerdown", "mousedown", "mouseup", "click"]) {
+    try {
+      element.dispatchEvent(new EventCtor(type, { bubbles: true, cancelable: true }));
+    } catch {
+      element.dispatchEvent(new Event(type, { bubbles: true, cancelable: true }));
+    }
+  }
+}
+
 function dispatchInputChange(element: HTMLElement) {
   element.dispatchEvent(new Event("input", { bubbles: true }));
   element.dispatchEvent(new Event("change", { bubbles: true }));
@@ -149,6 +162,28 @@ function uploadedDocumentAlreadyVisible(element: HTMLElement, key: ExtensionFiel
   });
 }
 
+// A successfully attached file lives in the page (Workday renders a file-upload-item with a delete
+// control), but the per-document jpResumeAttached flag is wiped whenever Workday reloads between
+// steps, and the <input type=file> reads empty once Workday has consumed the file — so without a
+// DOM check a second fill pass happily attaches the same resume again. Detect the rendered item.
+const ATTACHED_FILE_INDICATOR =
+  "[data-automation-id='file-upload-item'], [data-automation-id*='file-upload-item' i], [data-automation-id*='delete-file' i], [data-automation-id*='deleteFile' i]";
+
+// Widen from the file input to the largest ancestor that still owns just this one file input — that
+// is this upload widget's boundary, so an adjacent resume/cover-letter upload can't trip the check.
+function uploadWidgetRoot(input: HTMLElement) {
+  let widget: HTMLElement = input;
+  for (let node = input.parentElement; node && node !== input.ownerDocument.body; node = node.parentElement) {
+    if (node.querySelectorAll("input[type='file']").length > 1) break;
+    widget = node;
+  }
+  return widget;
+}
+
+function documentAlreadyAttachedInDom(input: HTMLElement) {
+  return Boolean(uploadWidgetRoot(input).querySelector(ATTACHED_FILE_INDICATOR));
+}
+
 function filenameFromContentDisposition(header: string | null) {
   if (!header) return null;
   const encoded = /filename\*\s*=\s*(?:UTF-8'')?([^;]+)/i.exec(header)?.[1];
@@ -190,21 +225,35 @@ function safeDocumentFilename(url: string, contentDisposition: string | null, mi
 
 function fileListFromFile(element: HTMLElement, file: File) {
   type DataTransferConstructor = new () => DataTransfer;
-  const view = element.ownerDocument.defaultView as (Window & { DataTransfer?: DataTransferConstructor }) | null;
+  type FileConstructor = new (fileBits: BlobPart[], fileName: string, options?: FilePropertyBag) => File;
+  const view = element.ownerDocument.defaultView as (Window & { DataTransfer?: DataTransferConstructor; File?: FileConstructor }) | null;
+  const PageFile = view?.File ?? (typeof File !== "undefined" ? File : undefined);
+  let pageFile = file;
+  if (PageFile) {
+    let isSameRealmFile = false;
+    try {
+      isSameRealmFile = file instanceof PageFile;
+    } catch {
+      isSameRealmFile = false;
+    }
+    if (!isSameRealmFile) {
+      pageFile = new PageFile([file], file.name, { type: file.type, lastModified: file.lastModified });
+    }
+  }
   const DataTransferCtor = view?.DataTransfer ?? (typeof DataTransfer !== "undefined" ? DataTransfer : undefined);
   if (DataTransferCtor) {
     try {
       const transfer = new DataTransferCtor();
-      transfer.items.add(file);
+      transfer.items.add(pageFile);
       return transfer.files;
     } catch {
       // Some DOM shims expose DataTransfer without a constructible implementation.
     }
   }
-  const files = [file] as unknown as FileList;
+  const files = [pageFile] as unknown as FileList;
   Object.defineProperty(files, "item", {
     configurable: true,
-    value: (index: number) => (index === 0 ? file : null),
+    value: (index: number) => (index === 0 ? pageFile : null),
   });
   return files;
 }
@@ -448,6 +497,12 @@ function looksLikePlaceholder(value: string, field: FieldDescriptor) {
 
 function valueEchoesPrompt(field: FieldDescriptor, value: ExtensionFieldMapping["value"]) {
   if (typeof value !== "string") return false;
+  if (
+    (field.type === "checkbox" || field.type === "radio") &&
+    optionScore(`${labelForChoice(field.element)} ${field.element.getAttribute("value") ?? ""}`, value) >= 0.82
+  ) {
+    return false;
+  }
   const text = normalizedText(value);
   if (!text) return false;
   const label = normalizedText(field.label);
@@ -1217,11 +1272,17 @@ function activateChoice(element: HTMLElement, group: HTMLElement[]) {
   if (element instanceof HTMLInputElement) {
     if (element.type === "radio") {
       for (const item of group) {
-        if (item instanceof HTMLInputElement && item.type === "radio") item.checked = item === element;
+        if (item instanceof HTMLInputElement && item.type === "radio") nativeCheckedSetter(item, item === element);
       }
     }
+    const label = element.closest("label");
+    const explicitLabel = element.id ? element.ownerDocument.querySelector<HTMLElement>(`label[for="${cssEscape(element.id)}"]`) : null;
+    const visibleTarget = label ?? explicitLabel ?? element;
+    dispatchMouseSequence(visibleTarget);
+    if (!element.checked) nativeCheckedSetter(element, true);
     element.click();
     dispatchFieldEvents(element);
+    if (visibleTarget !== element) dispatchFieldEvents(visibleTarget);
     return;
   }
   for (const item of group) {
@@ -1250,12 +1311,29 @@ function fillRadio(field: FieldDescriptor, mapping: ExtensionFieldMapping) {
   const threshold = isReferralSourceKey(mapping.canonicalKey) ? 0.1 : 0.4;
   if (!best || best.score < threshold) return false;
   activateChoice(best.input, group);
-  return true;
+  if (!(best.input instanceof HTMLInputElement) && best.input.getAttribute("role") !== "radio") return true;
+  return choiceIsSelected(best.input);
+}
+
+function checkboxDesiredState(field: FieldDescriptor, value: ExtensionFieldMapping["value"]) {
+  if (typeof value === "boolean") return value;
+  const desired = desiredString(value);
+  if (!desired) return false;
+
+  const label = labelForChoice(field.element);
+  const rawValue = field.element instanceof HTMLInputElement ? field.element.value : "";
+  const choiceScore = Math.max(optionScore(label, desired), optionScore(rawValue, desired));
+  if (choiceScore >= 0.82) return true;
+
+  const text = normalizedText(desired);
+  if (/^(yes|true|y|1)$/.test(text)) return true;
+  if (/^(no|false|n|0)$/.test(text)) return false;
+  return false;
 }
 
 function fillCheckbox(field: FieldDescriptor, value: ExtensionFieldMapping["value"]) {
   if (!(field.element instanceof HTMLInputElement)) return false;
-  const desired = typeof value === "boolean" ? value : /^(yes|true|y|1)$/i.test(desiredString(value));
+  const desired = checkboxDesiredState(field, value);
   if (field.element.checked !== desired) {
     activateElement(field.element);
     if (field.element.checked !== desired) nativeCheckedSetter(field.element, desired);
@@ -1677,7 +1755,11 @@ export async function fillField(
         field.element.classList.add("jp-field-highlight");
         return { ...base, status: field.required ? "needs_user" : "skipped", error: `Could not attach ${label} automatically.` };
       }
-      if (documentUploadAlreadyHandled(field.element.ownerDocument, effectiveMapping.canonicalKey)) {
+      if (
+        documentUploadAlreadyHandled(field.element.ownerDocument, effectiveMapping.canonicalKey) ||
+        documentAlreadyAttachedInDom(field.element)
+      ) {
+        markDocumentUploadHandled(field.element.ownerDocument, effectiveMapping.canonicalKey);
         return { ...base, status: "skipped", error: `Already attached ${label}.` };
       }
       const docs = await context.getResume(null);

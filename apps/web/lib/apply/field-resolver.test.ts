@@ -47,9 +47,33 @@ describe("resolveFieldValue", () => {
     expect(r.value).toBe("Yes");
   });
 
+  it("maps pronoun questions from setup gender even when demographics are disabled", () => {
+    const male = resolveFieldValue(
+      field({ label: "Pronouns", type: "checkbox", options: ["He/him", "She/her", "They/them"] }),
+      profile({ demographics: { gender: "Male" } }),
+      { demographicsEnabled: false },
+    );
+    const female = resolveFieldValue(
+      field({ label: "She/her", context: "Pronouns", type: "checkbox" }),
+      profile({ demographics: { gender: "Female" } }),
+      { demographicsEnabled: false },
+    );
+
+    expect(male).toMatchObject({
+      canonicalKey: "answers.profile_pronouns",
+      value: "He/him",
+      source: "heuristic",
+    });
+    expect(female).toMatchObject({
+      canonicalKey: "answers.profile_pronouns",
+      value: "She/her",
+      source: "heuristic",
+    });
+  });
+
   it("maps company employee connection questions to the setup answer", () => {
     const r = resolveFieldValue(
-      field({ label: "Do you have any relatives currently employed by this organization?" }),
+      field({ label: "Do you know anyone currently employed by this organization?" }),
       profile({
         answers: [
           { key: "screening.company_employee_connection", prompt: "Do you know anyone at this company?", value: "No" },
@@ -124,6 +148,164 @@ describe("resolveFieldValue", () => {
     expect(exEmployee.value).toBe("No");
   });
 
+  it("answers AI opt-out and future-role contact consent questions with safe defaults", () => {
+    const aiOptOut = resolveFieldValue(
+      field({
+        label: "Do you request to opt-out of the use of artificial intelligence in the recruitment process?",
+        type: "select",
+        options: ["I wish to opt out", "I do not wish to opt out"],
+      }),
+      profile(),
+      { demographicsEnabled: false },
+    );
+    const futureContact = resolveFieldValue(
+      field({
+        label: "Do you agree to be contacted in future if you are a good fit for another role?",
+        type: "select",
+        options: ["Yes, I agree", "No, I do not agree"],
+      }),
+      profile(),
+      { demographicsEnabled: false },
+    );
+
+    expect(aiOptOut).toMatchObject({
+      canonicalKey: "answers.screening.ai_recruiting_opt_out",
+      value: "I do not wish to opt out",
+      source: "heuristic",
+    });
+    expect(futureContact).toMatchObject({
+      canonicalKey: "answers.screening.future_role_contact_consent",
+      value: "Yes, I agree",
+      source: "heuristic",
+    });
+  });
+
+  it("defaults Lever company-background radios to the safest negative option", () => {
+    const p = profile({
+      answers: [{ key: "screening.company_employee_connection", prompt: "Do you know anyone at this company?", value: "Yes" }],
+    });
+    const previousEmployee = resolveFieldValue(
+      field({
+        label: "Are you a current or previous employee of Dun & Bradstreet?",
+        type: "radio",
+        options: [
+          "No previous work experience with the company",
+          "Former employee or intern",
+          "Former contractor",
+          "Current employee or intern",
+          "Current contractor",
+        ],
+      }),
+      p,
+      { demographicsEnabled: false },
+    );
+    const family = resolveFieldValue(
+      field({
+        label: "Do you have a family member or relative who is currently employed by Dun & Bradstreet?",
+        type: "radio",
+        options: ["Yes", "No"],
+      }),
+      p,
+      { demographicsEnabled: false },
+    );
+    const referral = resolveFieldValue(
+      field({
+        label: "Did a current Dun & Bradstreet employee influence you to apply or refer you to the company/role?",
+        type: "radio",
+        options: ["Yes", "No"],
+      }),
+      p,
+      { demographicsEnabled: false },
+    );
+    const referralName = resolveFieldValue(
+      field({
+        label: "If you were referred by a Dun & Bradstreet employee, please list their name:",
+        type: "text",
+      }),
+      p,
+      { demographicsEnabled: false },
+    );
+
+    expect(previousEmployee).toMatchObject({
+      canonicalKey: "answers.screening.previous_company_employment",
+      value: "No",
+    });
+    expect(family).toMatchObject({
+      canonicalKey: "answers.screening.company_relative_connection",
+      value: "No",
+      source: "heuristic",
+    });
+    expect(referral).toMatchObject({
+      canonicalKey: "answers.screening.company_employee_connection",
+      value: "No",
+      source: "heuristic",
+    });
+    expect(referralName.canonicalKey).toBe("unknown");
+  });
+
+  it("does not infer prior employment from generic current-company wording", () => {
+    const p = profile({
+      answers: [],
+      experience: [{ title: "Engineer", company: "Current Co", startDate: "2024-01", endDate: null, current: true, bullets: [] }],
+    });
+    const previousEmployee = resolveFieldValue(
+      field({
+        label: "Are you a current or previous employee of Dun & Bradstreet?",
+        context: "Current company",
+        type: "radio",
+        options: ["No previous work experience with the company", "Current employee or intern"],
+      }),
+      p,
+      { demographicsEnabled: false },
+    );
+    const currentLocation = resolveFieldValue(field({ label: "Current location", type: "text" }), p, { demographicsEnabled: false });
+
+    expect(previousEmployee).toMatchObject({
+      canonicalKey: "answers.screening.previous_company_employment",
+      value: "No",
+    });
+    expect(currentLocation).toMatchObject({
+      canonicalKey: "location.city",
+      value: "Austin",
+    });
+  });
+
+  it("falls back to Yes/No for AI opt-out and future contact questions when those are the only choices", () => {
+    const aiOptOut = resolveFieldValue(
+      field({
+        label: "Do you want to opt out of AI use during hiring?",
+        type: "select",
+        options: ["Yes", "No"],
+      }),
+      profile(),
+      { demographicsEnabled: false },
+    );
+    const futureContact = resolveFieldValue(
+      field({
+        label: "May we contact you about future opportunities?",
+        type: "radio",
+        options: ["Yes", "No"],
+      }),
+      profile(),
+      { demographicsEnabled: false },
+    );
+
+    expect(aiOptOut.value).toBe("No");
+    expect(futureContact.value).toBe("Yes");
+  });
+
+  it("does not answer open-ended AI questions with the opt-out default", () => {
+    const r = resolveFieldValue(
+      field({
+        label: "Do you request to opt-out of the use of artificial intelligence in the recruitment process?",
+        type: "textarea",
+      }),
+      profile(),
+      { demographicsEnabled: false },
+    );
+    expect(r.canonicalKey).toBe("unknown");
+  });
+
   it("answers current-firm questions from the current or latest organization", () => {
     const p = profile({
       experience: [
@@ -134,6 +316,10 @@ describe("resolveFieldValue", () => {
     const current = resolveFieldValue(field({ label: "Current firm you're part of?" }), p, { demographicsEnabled: false });
     expect(current.canonicalKey).toBe("experience.currentCompany");
     expect(current.value).toBe("Current Co");
+
+    const ashbyCurrentOrLast = resolveFieldValue(field({ label: "Current or last company you worked for" }), p, { demographicsEnabled: false });
+    expect(ashbyCurrentOrLast.canonicalKey).toBe("experience.currentCompany");
+    expect(ashbyCurrentOrLast.value).toBe("Current Co");
 
     const latest = resolveFieldValue(
       field({ label: "Name of your current employer" }),
@@ -229,6 +415,8 @@ describe("pickOption (radio/checkbox matcher)", () => {
     expect(pickOption("Senior", ["Junior", "Senior", "Staff"])).toBe("Senior");
     expect(pickOption("Yes", ["Yes", "No"])).toBe("Yes");
     expect(pickOption("No", ["yes", "no"])).toBe("no");
+    expect(pickOption("I do not wish to opt out", ["I wish to opt out", "I do not wish to opt out"])).toBe("I do not wish to opt out");
+    expect(pickOption("Yes, I agree", ["Yes, I agree", "No, I do not agree"])).toBe("Yes, I agree");
     expect(pickOption("Maybe", ["Yes", "No"])).toBeNull();
     expect(pickOption("120000", ["$100k-$150k", "$150k+"])).toBeNull();
   });

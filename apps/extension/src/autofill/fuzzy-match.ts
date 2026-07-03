@@ -1,4 +1,4 @@
-import { normalizeText } from "./text";
+import { degreeOptionScore, normalizeText } from "./text";
 
 /**
  * Local, dependency-free fuzzy matcher for Workday's controlled-vocabulary fields
@@ -172,6 +172,9 @@ function softTokenScore(aTokens: string[], bTokens: string[]): number {
 
 /** Similarity of `a` (target) to `b` (candidate option), 0..1. */
 export function fuzzyScore(a: string, b: string): number {
+  const degreeScore = degreeOptionScore(b, a);
+  if (degreeScore !== null) return degreeScore;
+
   const aTokens = contentTokens(a);
   const bTokens = contentTokens(b);
   const aContent = aTokens.join(" ");

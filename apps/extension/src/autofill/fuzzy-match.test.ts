@@ -9,6 +9,18 @@ const DEGREE_OPTIONS = [
   "Major: Three to Four year University Bachelors degree (e.g. BA, BS)",
 ];
 
+const SIMPLE_DEGREE_OPTIONS = [
+  "Select One",
+  "Associates",
+  "Honours Bachelor",
+  "Bachelors",
+  "Honours Master",
+  "Masters",
+  "Doctorate",
+  "Certificate",
+  "High School",
+];
+
 const FIELD_OF_STUDY_OPTIONS = [
   "Computer and Information Science",
   "Computer Engineering",
@@ -35,6 +47,11 @@ describe("fuzzyScore", () => {
       DEFAULT_FUZZY_THRESHOLD,
     );
   });
+
+  it("does not treat an honours bachelor as a plain bachelor's degree", () => {
+    expect(fuzzyScore("Bachelor's Degree", "Honours Bachelor")).toBeLessThan(DEFAULT_FUZZY_THRESHOLD);
+    expect(fuzzyScore("Master's Degree", "Honours Master")).toBeLessThan(DEFAULT_FUZZY_THRESHOLD);
+  });
 });
 
 describe("bestMatch — controlled-vocabulary selection", () => {
@@ -46,6 +63,24 @@ describe("bestMatch — controlled-vocabulary selection", () => {
   it("maps a plain 'Bachelor's Degree' to the plain Bachelors option, not Joint/Major variants", () => {
     const match = bestMatch("Bachelor's Degree", DEGREE_OPTIONS, (option) => option);
     expect(match?.option).toBe("Three to Four year University Bachelors degree (e.g. BA, BS)");
+  });
+
+  it.each([
+    ["Bachelor of Technology B.Tech", "Bachelors"],
+    ["B.E.", "Bachelors"],
+    ["BCA", "Bachelors"],
+    ["M.Tech", "Masters"],
+    ["Master of Technology M.Tech", "Masters"],
+    ["MCA", "Masters"],
+    ["M.Com", "Masters"],
+    ["MBA", "Masters"],
+    ["PhD", "Doctorate"],
+    ["Associate of Science", "Associates"],
+    ["Postgraduate Diploma", "Certificate"],
+    ["Higher Secondary", "High School"],
+  ])("maps '%s' to '%s'", (target, expected) => {
+    const match = bestMatch(target, SIMPLE_DEGREE_OPTIONS, (option) => option);
+    expect(match?.option).toBe(expected);
   });
 
   it("maps 'Master's Degree' to the Masters option", () => {

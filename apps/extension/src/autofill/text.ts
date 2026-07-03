@@ -8,6 +8,69 @@ export function normalizeText(value: string): string {
     .trim();
 }
 
+type DegreeLevel = "associate" | "bachelor" | "master" | "doctorate" | "certificate" | "highSchool";
+
+const DEGREE_QUALIFIERS = new Set(["honor", "joint", "major", "minor"]);
+
+function degreeTokens(value: string) {
+  return normalizeText(value)
+    .split(" ")
+    .filter(Boolean)
+    .map((token) => (token === "honour" || token === "honors" || token === "honours" ? "honor" : token));
+}
+
+export function degreeLevel(value: string): DegreeLevel | null {
+  const text = normalizeText(value);
+  const compact = text.replace(/\s+/g, "");
+  if (!text) return null;
+  if (
+    /\bph\s*d\b|\bphd\b|\bdoctorate\b|\bdoctoral\b|\bdoctor of philosophy\b|\bpsy\s*d\b|\bpsyd\b|\bed\s*d\b|\bedd\b|\bjd\b/.test(
+      text,
+    )
+  ) {
+    return "doctorate";
+  }
+  if (
+    /\bm\s*tech\b|\bmtech\b|\bmaster(?:s|\s+s)?\b|\bm\s*e\b|\bm\s*s\b|\bms\b|\bm\s*sc\b|\bmsc\b|\bm\s*a\b|\bma\b|\bm\s*com\b|\bmcom\b|\bmca\b|\bmeng\b|\bmba\b/.test(
+      text,
+    )
+  ) {
+    return "master";
+  }
+  if (
+    /\bb\s*tech\b|\bbtech\b|\bbachelor(?:s|\s+s)?\b|\bb\s*e\b|\bb\s*s\b|\bbs\b|\bb\s*sc\b|\bbsc\b|\bb\s*a\b|\bba\b|\bb\s*com\b|\bbcom\b|\bbca\b|\bbba\b/.test(
+      text,
+    ) ||
+    /\bbachelor(?:s|\s+s)? (?:of|in) (?:technology|engineering|science|arts?)\b/.test(text) ||
+    /\bbachelor(?:s|\s+s)?(?:of|in)(?:technology|engineering|science|arts?)\b/.test(compact)
+  ) {
+    return "bachelor";
+  }
+  if (/\bassociate(?:s|\s+s)?\b/.test(text)) return "associate";
+  if (/\bdiploma\b|\bcertificate\b|\bcertification\b/.test(text)) return "certificate";
+  if (/\bhigh school\b|\bsecondary\b|\bhigher secondary\b|\bhsc\b|\bssc\b|\b12th\b|\b10th\b/.test(text)) return "highSchool";
+  return null;
+}
+
+export function degreeQualifierMismatch(option: string, desired: string) {
+  const optionLevel = degreeLevel(option);
+  const desiredLevel = degreeLevel(desired);
+  if (!optionLevel || !desiredLevel || optionLevel !== desiredLevel) return false;
+  const optionQualifiers = new Set(degreeTokens(option).filter((token) => DEGREE_QUALIFIERS.has(token)));
+  const desiredQualifiers = new Set(degreeTokens(desired).filter((token) => DEGREE_QUALIFIERS.has(token)));
+  for (const qualifier of optionQualifiers) if (!desiredQualifiers.has(qualifier)) return true;
+  for (const qualifier of desiredQualifiers) if (!optionQualifiers.has(qualifier)) return true;
+  return false;
+}
+
+export function degreeOptionScore(option: string, desired: string) {
+  const optionLevel = degreeLevel(option);
+  const desiredLevel = degreeLevel(desired);
+  if (!optionLevel || !desiredLevel) return null;
+  if (optionLevel !== desiredLevel) return 0;
+  return degreeQualifierMismatch(option, desired) ? 0.35 : 1;
+}
+
 export function visibleText(value: string | null | undefined): string {
   return (value ?? "").replace(/\s+/g, " ").trim();
 }
@@ -17,6 +80,9 @@ export function includesAny(haystack: string, needles: RegExp[]): boolean {
 }
 
 export function optionScore(option: string, desired: string): number {
+  const degreeScore = degreeOptionScore(option, desired);
+  if (degreeScore !== null) return degreeScore;
+
   const a = normalizeText(option);
   const b = normalizeText(desired);
   if (!a || !b) return 0;
