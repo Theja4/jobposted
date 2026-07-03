@@ -3125,7 +3125,15 @@ function loadTrackerPage(stage = trackerFilter, offset = 0): Promise<{ page: Tra
         offset,
       });
       if (response.ok && response.type === "TRACKER_LIST") {
-        const page = { items: response.items, pagination: response.pagination };
+        // Guarantee a pagination object so a malformed/legacy response can never poison the cache
+        // and crash the tab's `pagination.offset` reads on the next mount.
+        const pagination = response.pagination ?? {
+          limit: TRACKER_PAGE_SIZE,
+          offset,
+          total: response.items?.length ?? 0,
+          hasMore: false,
+        };
+        const page = { items: response.items ?? [], pagination };
         trackerPageCache.set(key, page);
         return { page, error: null };
       }
@@ -3170,7 +3178,7 @@ function TrackerTab({ onOpen }: { onOpen: (url: string) => void }) {
   const [error, setError] = useState<string | null>(null);
   // Seed from the remembered filter so a return visit restores the last column.
   const [filter, setFilterState] = useState<string>(trackerFilter);
-  const [offset, setOffset] = useState(page?.pagination.offset ?? 0);
+  const [offset, setOffset] = useState(page?.pagination?.offset ?? 0);
   const setFilter = (key: string) => {
     trackerFilter = key;
     setFilterState(key);
