@@ -122,7 +122,7 @@ export function PanelStyles() {
         box-shadow: 0 0 0 1px rgba(31, 95, 224, 0.12), 0 6px 14px -8px rgba(31, 95, 224, 0.4);
       }
       .jp-brand-mark img { width: 28px; height: 28px; object-fit: contain; }
-      .jp-brand strong { font-size: 16px; font-weight: 800; letter-spacing: -0.02em; color: var(--ink); line-height: 1.15; }
+      .jp-brand strong { font-size: 19px; font-weight: 800; letter-spacing: -0.02em; color: var(--ink); line-height: 1.15; }
 
       /* Live status line: the header always says what the copilot is doing. */
       .jp-status {
@@ -157,12 +157,20 @@ export function PanelStyles() {
 
       .jp-header-actions { display: flex; align-items: center; gap: 2px; }
       .jp-text-action {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
         padding: 6px 9px;
         border-radius: var(--r-s);
         color: var(--muted);
         font-size: 11px;
         font-weight: 700;
         transition: background 140ms var(--ease), color 140ms var(--ease);
+      }
+      .jp-text-action svg { width: 13px; height: 13px; }
+      .jp-full-tracker-action {
+        color: var(--blue-700);
+        background: var(--blue-50);
       }
       .jp-icon-action {
         display: grid;
@@ -340,6 +348,8 @@ export function PanelStyles() {
         padding: 5px 10px;
         font-size: 11px;
         font-weight: 700;
+        line-height: 1.35;
+        text-align: left;
         transition: filter 140ms var(--ease);
       }
       .jp-job-review:hover { filter: brightness(0.97); }
@@ -450,6 +460,62 @@ export function PanelStyles() {
       .jp-switch-sm .jp-switch-knob { width: 15px; height: 15px; }
       .jp-autotrack-on .jp-switch { background: var(--blue-600); }
       .jp-autotrack-on .jp-switch-sm .jp-switch-knob { transform: translateX(13px); }
+      .jp-settings-switch-on.jp-switch { background: var(--blue-600); }
+      .jp-settings-switch-on .jp-switch-knob { transform: translateX(15px); }
+
+      /* ══ Settings view ═════════════════════════════════════════════════ */
+      .jp-settings { padding: 14px 16px 20px; display: flex; flex-direction: column; gap: 12px; }
+      .jp-settings-card { background: var(--surface); border-radius: var(--r-l); box-shadow: var(--ring-card); overflow: hidden; }
+      .jp-settings-title {
+        padding: 14px 16px 4px;
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
+        color: var(--muted);
+      }
+      .jp-settings-policy { display: flex; align-items: flex-start; gap: 12px; padding: 8px 16px 16px; }
+      .jp-settings-policy-icon {
+        display: grid;
+        flex: 0 0 auto;
+        place-items: center;
+        width: 34px;
+        height: 34px;
+        border-radius: var(--r-m);
+        background: var(--blue-50);
+        color: var(--blue-700);
+      }
+      .jp-settings-policy-icon svg { width: 17px; height: 17px; }
+      .jp-settings-row {
+        display: flex;
+        width: 100%;
+        align-items: center;
+        justify-content: space-between;
+        gap: 20px;
+        padding: 13px 16px;
+        text-align: left;
+        border-top: 1px solid var(--line);
+        transition: background 140ms var(--ease);
+      }
+      .jp-settings-row:hover { background: var(--surface-2); }
+      .jp-settings-row-last { padding-bottom: 15px; }
+      .jp-settings-row-text { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+      .jp-settings-row-label { font-size: 13px; font-weight: 700; color: var(--ink); }
+      .jp-settings-row-desc { font-size: 11.5px; font-weight: 500; line-height: 1.45; color: var(--muted); }
+      .jp-settings-note {
+        display: flex;
+        align-items: flex-start;
+        gap: 10px;
+        padding: 13px 14px;
+        border-radius: var(--r-l);
+        background: var(--blue-50);
+        color: var(--ink);
+        font-size: 12px;
+        font-weight: 500;
+        line-height: 1.5;
+      }
+      .jp-settings-note svg { flex: 0 0 auto; width: 17px; height: 17px; margin-top: 2px; color: var(--blue-700); }
+      .jp-settings-note p { margin: 0; }
 
       .jp-save-button {
         display: inline-flex;
@@ -1013,6 +1079,55 @@ export function PanelStyles() {
       .jp-tk-tab-on { color: var(--blue-600); }
 
       .jp-tk-list { display: flex; flex-direction: column; gap: 10px; }
+      .jp-tk-pagination {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        padding: 8px 2px 0;
+        color: var(--muted);
+        font-size: 11px;
+        font-weight: 700;
+      }
+      .jp-tk-page-summary { min-width: 0; line-height: 1.35; }
+      .jp-tk-page-controls {
+        display: flex;
+        flex: 0 0 auto;
+        align-items: center;
+        gap: 4px;
+      }
+      .jp-tk-page-numbers { display: flex; align-items: center; gap: 3px; }
+      .jp-tk-pagination button,
+      .jp-tk-page-arrow,
+      .jp-tk-page-ellipsis {
+        display: inline-grid;
+        place-items: center;
+        width: 28px;
+        height: 28px;
+        border-radius: var(--r-s);
+        font-size: 11px;
+        font-weight: 800;
+      }
+      .jp-tk-pagination button {
+        background: var(--surface);
+        color: var(--ink-2);
+        box-shadow: inset 0 0 0 1px var(--line);
+        transition: background 140ms var(--ease), color 140ms var(--ease), box-shadow 140ms var(--ease);
+      }
+      .jp-tk-pagination button:hover:not(:disabled) {
+        background: var(--blue-50);
+        color: var(--blue-700);
+        box-shadow: inset 0 0 0 1px rgba(31, 95, 224, 0.2);
+      }
+      .jp-tk-page-arrow svg { width: 15px; height: 15px; }
+      .jp-tk-page-arrow-hidden { visibility: hidden; pointer-events: none; }
+      .jp-tk-page-number-on:disabled {
+        color: var(--blue-700);
+        background: var(--blue-50);
+        box-shadow: inset 0 0 0 1px rgba(31, 95, 224, 0.24);
+        opacity: 1;
+      }
+      .jp-tk-page-ellipsis { color: var(--muted); }
       .jp-tk-card {
         display: flex;
         flex-direction: column;

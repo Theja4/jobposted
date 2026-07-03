@@ -1374,6 +1374,80 @@ describe("content autofill extraction", () => {
     expect(itemFor(discipline)).toMatchObject({ action: "select", value: "Electronics", optionLabel: "Engineering" });
   });
 
+  it("fills structured employment repeater fields from the profile when the planner skips them", () => {
+    const doc = installDom(`<!doctype html>
+      <form>
+        <section id="employment-fields" class="employment--container">
+          <h2>Employment</h2>
+          <label for="company-name-0">Company name</label>
+          <input id="company-name-0" />
+          <label for="title-0">Title</label>
+          <input id="title-0" />
+          <label for="location-0">Location</label>
+          <input id="location-0" />
+          <label for="start-0">Start date</label>
+          <input id="start-0" />
+          <label for="end-0">End date</label>
+          <input id="end-0" />
+          <label for="current-0">I currently work here</label>
+          <input id="current-0" type="checkbox" />
+          <label for="description-0">Description</label>
+          <textarea id="description-0"></textarea>
+        </section>
+      </form>`);
+    const fields = extractPageFields(doc);
+    const company = fields.find((item) => /company/i.test(item.label));
+    const title = fields.find((item) => /^title$/i.test(item.label));
+    const location = fields.find((item) => /location/i.test(item.label));
+    const start = fields.find((item) => /start/i.test(item.label));
+    const end = fields.find((item) => /end/i.test(item.label));
+    const current = fields.find((item) => /currently work/i.test(item.label));
+    const description = fields.find((item) => /description/i.test(item.label));
+    expect(fields.filter((item) => item.repeater === "experience")).toHaveLength(7);
+
+    const skippedPlan: ExtensionAutofillPlan = {
+      stepName: "Application",
+      fields: fields.map((field) => ({
+        fieldId: field.fieldId,
+        action: "skip",
+        value: null,
+        optionLabel: null,
+        confidence: 0.25,
+        note: "model skipped",
+      })),
+    };
+
+    const merged = mergeProfileEducationPlan(
+      fields,
+      skippedPlan,
+      profile({
+        experience: [
+          {
+            company: "ION Group",
+            title: "Product Analyst",
+            location: "Hyderabad, India",
+            startDate: "2021-10",
+            endDate: "2026-03",
+            current: false,
+            bullets: ["Owned workflow automation", "Improved candidate routing"],
+          },
+        ],
+      }),
+    );
+    const itemFor = (field: PageField | undefined) => merged.fields.find((item) => item.fieldId === field?.fieldId);
+
+    expect(itemFor(company)).toMatchObject({ action: "fill", value: "ION Group" });
+    expect(itemFor(title)).toMatchObject({ action: "fill", value: "Product Analyst" });
+    expect(itemFor(location)).toMatchObject({ action: "fill", value: "Hyderabad, India" });
+    expect(itemFor(start)).toMatchObject({ action: "fill", value: "2021-10" });
+    expect(itemFor(end)).toMatchObject({ action: "fill", value: "2026-03" });
+    expect(itemFor(current)).toMatchObject({ action: "uncheck", value: false });
+    expect(itemFor(description)).toMatchObject({
+      action: "fill",
+      value: "Owned workflow automation\nImproved candidate routing",
+    });
+  });
+
   it("falls back to Other on education comboboxes when the school is not available", async () => {
     const doc = installDom(`<!doctype html>
       <form>

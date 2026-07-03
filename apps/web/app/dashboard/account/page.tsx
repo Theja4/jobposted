@@ -2,10 +2,8 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { SignOutButton } from "@/components/dashboard/SignOutButton";
-import { ModeToggle } from "@/components/dashboard/ModeToggle";
 import { ManageBillingButton } from "@/components/dashboard/ManageBillingButton";
 import { getBundledProEntitlement } from "@/lib/billing/entitlements";
-import { getApplicationMode } from "@/lib/dashboard/applications";
 import { REZOOMED_ACCOUNT_URL, REZOOMED_URL, SUPPORT_EMAIL } from "@/lib/site";
 import { Mail, ShieldCheck, ExternalLink, ReceiptText } from "lucide-react";
 
@@ -25,7 +23,6 @@ export default async function AccountPage() {
   const provider = user?.app_metadata?.provider ?? "email";
   const entitlement = user ? await getBundledProEntitlement(supabase, user.id) : null;
   const isPro = entitlement?.active ?? false;
-  const mode = isPro ? await getApplicationMode() : "review";
 
   return (
     <div className="space-y-6">
@@ -72,16 +69,7 @@ export default async function AccountPage() {
         </dl>
       </section>
 
-      {isPro ? (
-        <section className="liquid-glass rounded-[1.75rem] p-6 sm:p-7">
-          <h2 className="text-lg font-extrabold tracking-[-0.02em] text-ink">How JobPosted applies</h2>
-          <p className="mt-1.5 mb-4 text-sm leading-6 text-muted">
-            Choose whether JobPosted prepares a daily queue for your review, or waits for you to
-            handle applications manually.
-          </p>
-          <ModeToggle mode={mode} />
-        </section>
-      ) : (
+      {!isPro ? (
         <section className="liquid-glass rounded-[1.75rem] p-6 sm:p-7">
           <h2 className="text-lg font-extrabold tracking-[-0.02em] text-ink">JobPosted Pro</h2>
           <p className="mt-1.5 text-sm leading-6 text-muted">
@@ -95,7 +83,7 @@ export default async function AccountPage() {
             View pricing <ExternalLink className="size-3.5" />
           </Link>
         </section>
-      )}
+      ) : null}
 
       <section className="liquid-glass rounded-[1.75rem] p-6 sm:p-7">
         <h2 className="text-lg font-extrabold tracking-[-0.02em] text-ink">Connected to Rezoomed</h2>

@@ -418,12 +418,42 @@ export interface ExtensionTrackerItem {
   notes: string | null;
 }
 
+export interface ExtensionTrackerPagination {
+  limit: number;
+  offset: number;
+  total: number;
+  hasMore: boolean;
+}
+
 /** A resume the user can attach to a tracked application. */
 export interface ExtensionResumeOption {
   id: string;
   name: string;
   createdAt: string | null;
   url: string | null;
+}
+
+export const EXTENSION_ANSWER_TONES = ["professional", "confident", "shorter", "longer", "less formal"] as const;
+export type ExtensionAnswerTone = (typeof EXTENSION_ANSWER_TONES)[number];
+export type ExtensionAnswerMode = "quick" | "improve";
+
+export interface ExtensionAnswerDraftRequest {
+  question: string;
+  mode: ExtensionAnswerMode;
+  tone?: ExtensionAnswerTone | null;
+  currentText?: string | null;
+}
+
+const ELIGIBILITY_QUESTION_PATTERN =
+  /\b(sponsor|sponsorship|visa|h1-?b|work authoriz|authorized to work|right to work|citizen|citizenship|green card|permanent resident|felony|convicted|criminal|background check|salary|compensation|desired pay|expected pay|start date|notice period|gender|race|ethnic|disability|veteran|date of birth|ssn|social security)\b/i;
+
+/**
+ * Eligibility / personal-data questions (work authorization, sponsorship, salary, EEO, etc.) that
+ * must be answered deterministically from the profile — never AI-drafted. Shared by the answer-assist
+ * endpoint (which refuses them) and the extension UI (which hides the draft controls for them).
+ */
+export function isEligibilityQuestion(text: string): boolean {
+  return ELIGIBILITY_QUESTION_PATTERN.test(text ?? "");
 }
 
 export type ExtensionMessage =
@@ -443,7 +473,7 @@ export type ExtensionMessage =
   | { type: "COVER_LETTER_ACTIVE_TAB" }
   | { type: "JOB_STATE_QUERY" }
   | { type: "JOB_STATE_CLEAR" }
-  | { type: "TRACKER_LIST" }
+  | { type: "TRACKER_LIST"; stage?: string; limit?: number; offset?: number }
   | { type: "TRACKER_UPDATE"; id: string; stage?: string; notes?: string | null; resumeDocId?: string | null }
   | { type: "RESUME_LIST" }
   | { type: "RESUME_UPLOAD"; name: string; dataBase64: string }
@@ -453,6 +483,7 @@ export type ExtensionMessage =
   | { type: "APPLICATION_SYNC_RETRY" }
   | { type: "SYNC_QUEUE_STATUS" }
   | { type: "ANSWER_SAVE"; answer: ReusableAnswer }
+  | { type: "ANSWER_DRAFT"; payload: ExtensionAnswerDraftRequest }
   | { type: "SETTINGS_GET" }
   | { type: "SETTINGS_SET"; settings: Partial<ExtensionSettings> }
   | { type: "OVERLAY_STATUS"; tabUrl?: string };
@@ -473,7 +504,7 @@ export type ExtensionMessageResponse =
   | { ok: true; type: "COVER_LETTER_ACTIVE_TAB"; result: ExtensionCoverLetterResponse }
   | { ok: true; type: "JOB_STATE_QUERY"; state: ExtensionJobState | null }
   | { ok: true; type: "JOB_STATE_CLEAR" }
-  | { ok: true; type: "TRACKER_LIST"; items: ExtensionTrackerItem[] }
+  | { ok: true; type: "TRACKER_LIST"; items: ExtensionTrackerItem[]; pagination: ExtensionTrackerPagination }
   | { ok: true; type: "TRACKER_UPDATE"; item: ExtensionTrackerItem | null }
   | { ok: true; type: "RESUME_LIST"; resumes: ExtensionResumeOption[] }
   | { ok: true; type: "RESUME_UPLOAD"; resume: ExtensionResumeOption | null }
@@ -483,6 +514,7 @@ export type ExtensionMessageResponse =
   | { ok: true; type: "APPLICATION_SYNC_RETRY"; status: ExtensionSyncQueueStatus }
   | { ok: true; type: "SYNC_QUEUE_STATUS"; status: ExtensionSyncQueueStatus }
   | { ok: true; type: "ANSWER_SAVE" }
+  | { ok: true; type: "ANSWER_DRAFT"; answer: string }
   | { ok: true; type: "SETTINGS_GET"; settings: ExtensionSettings }
   | { ok: true; type: "SETTINGS_SET"; settings: ExtensionSettings }
   | { ok: true; type: "OVERLAY_STATUS"; supported: boolean; platform: ExtensionPlatform }

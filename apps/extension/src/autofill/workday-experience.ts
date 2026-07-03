@@ -87,6 +87,13 @@ const EDUCATION_FIELDS = {
   endYear: "[data-automation-id='formField-lastYearAttended']",
 } as const;
 
+const LANGUAGE_FIELDS = {
+  language:
+    "[data-automation-id='formField-language'], [data-automation-id='formField-languageName'], [data-automation-id='formField-languageProficiency-language']",
+  proficiency:
+    "[data-automation-id='formField-proficiency'], [data-automation-id='formField-languageProficiency-proficiency'], [data-automation-id='formField-languageProficiency']",
+} as const;
+
 const MONTH_NAMES = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
 // Brief grace after typing in case the widget searches as you type, then we press Enter and wait
 // patiently for the async result list to render.
@@ -1694,6 +1701,13 @@ function educationRows(root: HTMLElement) {
   ]);
 }
 
+function languageRows(root: HTMLElement) {
+  return rowsBySectionFields(root, LANGUAGE_FIELDS.language, [
+    LANGUAGE_FIELDS.language,
+    LANGUAGE_FIELDS.proficiency,
+  ]);
+}
+
 /** The Add / Add Another button belonging to the section whose heading matches `pattern`. */
 function sectionAddButton(root: HTMLElement, pattern: RegExp) {
   const located = headingPosition(root, pattern);
@@ -1990,6 +2004,114 @@ async function fillEducationSection(root: HTMLElement, context: FillContext) {
   }
 }
 
+function profileLanguageValues(context: FillContext) {
+  const profileWithOptionalLanguages = context.profile as typeof context.profile & { languages?: unknown };
+  const explicit =
+    Array.isArray(profileWithOptionalLanguages.languages)
+      ? profileWithOptionalLanguages.languages.filter((value): value is string => typeof value === "string")
+      : [];
+  const answerValues = context.profile.answers
+    .filter((answer) => {
+      const key = normalizeText(answer.key);
+      const prompt = normalizeText(answer.prompt);
+      return (
+        key === "screening languages" ||
+        key === "languages" ||
+        /\blanguages?\b/.test(prompt) && /\b(?:speak|fluent|fluently|known|proficient)\b/.test(prompt)
+      );
+    })
+    .flatMap((answer) => answer.value.split(/[,;\n]+/));
+
+  return uniqueVisibleTargets([...explicit, ...answerValues])
+    .filter((language) => !/^(?:none|n\/a|na|not applicable)$/i.test(language))
+    .slice(0, MAX_REPEATER_ROWS);
+}
+
+function languageRowHasValue(row: HTMLElement) {
+  const wrapper = row.querySelector<HTMLElement>(LANGUAGE_FIELDS.language);
+  if (!wrapper) return false;
+  if (hasAnyChip(wrapper)) return true;
+  const input = wrapper.querySelector<HTMLInputElement | HTMLTextAreaElement>("input:not([type='hidden']), textarea");
+  return Boolean(visibleText(input?.value));
+}
+
+async function fillLanguageRow(row: HTMLElement, language: string, context: FillContext) {
+  const shouldStop = context.shouldStop;
+  const languageContainer = row.querySelector<HTMLElement>(LANGUAGE_FIELDS.language);
+  if (!languageContainer) return false;
+  const alreadyFilled = languageRowHasValue(row);
+  const filled = isTypeaheadWrapper(languageContainer)
+    ? await fillTypeaheadValue(languageContainer, language, {
+        skipIfAnyExistingChip: true,
+        shouldStop,
+        optionMatcher: bestMatchingStrictOptionForTargets,
+      })
+    : (fillTextWrapper(row, LANGUAGE_FIELDS.language, language), languageRowHasValue(row));
+
+  const proficiencyContainer = row.querySelector<HTMLElement>(LANGUAGE_FIELDS.proficiency);
+  if (proficiencyContainer && !shouldStop?.()) {
+    const trigger = degreeTrigger(proficiencyContainer);
+    if (trigger && !degreeHasValue(trigger)) {
+      await fillDegree(proficiencyContainer, "Fluent", shouldStop);
+    } else if (!trigger) {
+      fillTextWrapper(row, LANGUAGE_FIELDS.proficiency, "Fluent");
+    }
+  }
+
+  emitWorkdayProgress(context, {
+    label: "Language",
+    canonicalKey: "answers.screening.languages",
+    status: filled || alreadyFilled ? "filled" : shouldStop?.() ? "skipped" : "needs_user",
+    error: filled || alreadyFilled ? undefined : shouldStop?.() ? "Stopped." : "No matching option.",
+    valuePreview: language,
+    signatureHint: language,
+  });
+  return filled || alreadyFilled;
+}
+
+async function fillLanguageSection(root: HTMLElement, context: FillContext) {
+  const languages = profileLanguageValues(context);
+  if (languages.length === 0) return;
+
+  wdlog("language rows", {
+    desired: languages.length,
+    existing: languageRows(root).length,
+    languages,
+  });
+
+  let rows = await ensureRows(
+    () => languageRows(root),
+    () => sectionAddButton(root, /languages?/i),
+    1,
+    context.shouldStop,
+  );
+
+  for (let index = 0; index < languages.length; index += 1) {
+    if (context.shouldStop?.()) break;
+    rows = languageRows(root);
+    if (rows.length <= index) {
+      rows = await ensureRows(
+        () => languageRows(root),
+        () => sectionAddButton(root, /languages?/i),
+        index + 1,
+        context.shouldStop,
+      );
+    }
+    const row = rows[index];
+    if (!row) break;
+    await fillLanguageRow(row, languages[index], context);
+    await sleep(500);
+    if (index + 1 < languages.length && languageRows(root).length <= index + 1) {
+      await ensureRows(
+        () => languageRows(root),
+        () => sectionAddButton(root, /languages?/i),
+        index + 2,
+        context.shouldStop,
+      );
+    }
+  }
+}
+
 export async function fillWorkdayExperience(context: FillContext): Promise<void> {
   const root = myExperienceRoot(document);
   if (!root) return;
@@ -1998,6 +2120,8 @@ export async function fillWorkdayExperience(context: FillContext): Promise<void>
   await fillWorkExperienceSection(root, context);
   if (context.shouldStop?.()) return;
   await fillEducationSection(root, context);
+  if (context.shouldStop?.()) return;
+  await fillLanguageSection(root, context);
   if (context.shouldStop?.()) return;
   await fillSkills(root, context);
 }

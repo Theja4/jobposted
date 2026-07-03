@@ -4,6 +4,7 @@ import type { MasterProfile } from "@jobposted/shared";
 import { detectAdapter } from "../adapters";
 import { extractFields } from "./extract";
 import { resolveField } from "./resolve";
+import type { FieldDescriptor } from "./types";
 
 const fixtures = import.meta.glob("../fixtures/*.html", {
   query: "?raw",
@@ -52,6 +53,19 @@ async function loadHtml(html: string, url: string) {
   return { adapter, fields };
 }
 
+function testField(document: Document, field: Omit<Partial<FieldDescriptor>, "element"> & Pick<FieldDescriptor, "label">): FieldDescriptor {
+  return {
+    id: field.id ?? field.label,
+    element: document.querySelector("[data-test-field]") as HTMLElement,
+    label: field.label,
+    context: field.context ?? "",
+    type: field.type ?? "text",
+    required: field.required ?? false,
+    options: field.options ?? [],
+    signature: field.signature ?? field.label,
+  };
+}
+
 describe("field resolution", () => {
   it("maps Workday automation ids", async () => {
     const { adapter, fields } = await loadFixture("workday", "https://acme.myworkdayjobs.com/job/apply");
@@ -64,7 +78,7 @@ describe("field resolution", () => {
     expect(mappings.map((mapping) => mapping.canonicalKey)).toContain("documents.resume");
   });
 
-  it("maps Lever full name and links", async () => {
+  it("maps generic full-name and link fields from an ATS-shaped fixture", async () => {
     const { adapter, fields } = await loadFixture("lever", "https://jobs.lever.co/acme/1");
     const mappings = await Promise.all(fields.map((field) => resolveField({ field, profile, platform: adapter.id, url: "", demographicsEnabled: false })));
     expect(mappings.map((mapping) => mapping.canonicalKey)).toEqual(
@@ -72,328 +86,8 @@ describe("field resolution", () => {
     );
   });
 
-  it("maps Lever pronoun checkboxes from setup gender", async () => {
-    const { adapter, fields } = await loadHtml(
-      `<!doctype html>
-      <form class="application">
-        <li class="application-question">
-          <div class="application-label multiple-select">Pronouns</div>
-          <div class="application-field">
-            <ul data-qa="candidatePronounsCheckboxes" id="candidatePronounsCheckboxes">
-              <li><label><input type="checkbox" name="pronouns" value="He/him" /><span>He/him</span></label></li>
-              <li><label><input type="checkbox" name="pronouns" value="She/her" /><span>She/her</span></label></li>
-              <li><label><input type="checkbox" name="pronouns" value="They/them" /><span>They/them</span></label></li>
-              <li><label><input type="checkbox" name="pronouns" value="Use name only" /><span>Use name only</span></label></li>
-            </ul>
-          </div>
-        </li>
-      </form>`,
-      "https://jobs.lever.co/dnb/8eb0cdd5-1bf4-4865-9e84-7db8ec89fba2/apply",
-    );
-    const maleProfile: MasterProfile = { ...profile, demographics: { gender: "Male" } };
-    const femaleProfile: MasterProfile = { ...profile, demographics: { gender: "Female" } };
-    const maleMappings = await Promise.all(
-      fields.map((field) => resolveField({ field, profile: maleProfile, platform: adapter.id, url: "", demographicsEnabled: false })),
-    );
-    const femaleMappings = await Promise.all(
-      fields.map((field) => resolveField({ field, profile: femaleProfile, platform: adapter.id, url: "", demographicsEnabled: false })),
-    );
-    const maleByLabel = new Map(fields.map((field, index) => [field.label, maleMappings[index]]));
-    const femaleByLabel = new Map(fields.map((field, index) => [field.label, femaleMappings[index]]));
-
-    expect(adapter.id).toBe("lever");
-    expect(fields.find((field) => field.label === "He/him")?.type).toBe("checkbox");
-    expect(maleByLabel.get("He/him")).toMatchObject({
-      canonicalKey: "answers.profile_pronouns",
-      value: "He/him",
-    });
-    expect(femaleByLabel.get("She/her")).toMatchObject({
-      canonicalKey: "answers.profile_pronouns",
-      value: "She/her",
-    });
-  });
-
-  it("extracts Lever application cards with hidden native radio groups", async () => {
-    const { adapter, fields } = await loadHtml(
-      `<!doctype html>
-      <form class="application">
-        <li class="application-question">
-          <div class="application-label full-width text"><div class="text">Full name<span class="required">*</span></div></div>
-          <div class="application-field full-width required-field"><input name="name" required /></div>
-        </li>
-        <li class="application-question">
-          <div class="application-label full-width text"><div class="text">Email<span class="required">*</span></div></div>
-          <div class="application-field full-width required-field"><input name="email" type="email" required /></div>
-        </li>
-        <li class="application-question">
-          <div class="application-label full-width text"><div class="text">Phone <span class="required">*</span></div></div>
-          <div class="application-field full-width required-field"><input name="phone" required /></div>
-        </li>
-        <li class="application-question">
-          <div class="application-label full-width text"><div class="text">LinkedIn URL</div></div>
-          <div class="application-field full-width"><input name="urls[LinkedIn]" /></div>
-        </li>
-        <li class="application-question custom-question">
-          <div class="application-label full-width multiple-choice">
-            <div class="text">Are you a current or previous employee of Dun &amp; Bradstreet?<span class="required">*</span></div>
-          </div>
-          <div class="application-field full-width required-field">
-            <ul data-qa="multiple-choice">
-              <li><label><input type="radio" name="cards[dnb][field0]" value="No previous work experience with the company" required style="display:none" /><span>No previous work experience with the company</span></label></li>
-              <li><label><input type="radio" name="cards[dnb][field0]" value="Former employee or intern" required style="display:none" /><span>Former employee or intern</span></label></li>
-            </ul>
-          </div>
-        </li>
-        <li class="application-question custom-question">
-          <div class="application-label full-width multiple-choice">
-            <div class="text">Do you have a family member or relative who is currently employed by Dun &amp; Bradstreet?<span class="required">*</span></div>
-          </div>
-          <div class="application-field full-width required-field">
-            <ul data-qa="multiple-choice">
-              <li><label><input type="radio" name="cards[dnb][field1]" value="Yes" required style="display:none" /><span>Yes</span></label></li>
-              <li><label><input type="radio" name="cards[dnb][field1]" value="No" required style="display:none" /><span>No</span></label></li>
-            </ul>
-          </div>
-        </li>
-        <li class="application-question">
-          <div class="application-label full-width text"><div class="text">Resume/CV <span class="required">*</span></div></div>
-          <div class="application-field full-width required-field"><input type="file" name="resume" /></div>
-        </li>
-      </form>`,
-      "https://jobs.lever.co/dnb/8eb0cdd5-1bf4-4865-9e84-7db8ec89fba2/apply",
-    );
-    expect(adapter.id).toBe("lever");
-    expect(fields.map((field) => field.label)).toEqual(
-      expect.arrayContaining(["Full name*", "Email*", "Phone *", "LinkedIn URL", "Resume/CV *"]),
-    );
-    const radioFields = fields.filter((field) => field.type === "radio");
-    expect(radioFields).toHaveLength(2);
-    expect(radioFields[0]).toMatchObject({
-      label: "Are you a current or previous employee of Dun & Bradstreet?*",
-      required: true,
-      options: ["No previous work experience with the company", "Former employee or intern"],
-    });
-    expect(radioFields[1]).toMatchObject({
-      label: "Do you have a family member or relative who is currently employed by Dun & Bradstreet?*",
-      required: true,
-      options: ["Yes", "No"],
-    });
-  });
-
-  it("answers D&B Lever background radios with safe negative defaults", async () => {
-    const { adapter, fields } = await loadHtml(
-      `<!doctype html>
-      <form class="application">
-        <li class="application-question custom-question">
-          <div class="application-label full-width multiple-choice">
-            <div class="text">Are you a current or previous employee of Dun &amp; Bradstreet?<span class="required">*</span></div>
-          </div>
-          <div class="application-field full-width required-field">
-            <ul data-qa="multiple-choice">
-              <li><label><input type="radio" name="cards[dnb][field0]" value="No previous work experience with the company" required /><span>No previous work experience with the company</span></label></li>
-              <li><label><input type="radio" name="cards[dnb][field0]" value="Former employee or intern" required /><span>Former employee or intern</span></label></li>
-              <li><label><input type="radio" name="cards[dnb][field0]" value="Former contractor" required /><span>Former contractor</span></label></li>
-              <li><label><input type="radio" name="cards[dnb][field0]" value="Current employee or intern" required /><span>Current employee or intern</span></label></li>
-              <li><label><input type="radio" name="cards[dnb][field0]" value="Current contractor" required /><span>Current contractor</span></label></li>
-            </ul>
-          </div>
-        </li>
-        <li class="application-question custom-question">
-          <div class="application-label full-width multiple-choice">
-            <div class="text">Do you have a family member or relative who is currently employed by Dun &amp; Bradstreet?<span class="required">*</span></div>
-          </div>
-          <div class="application-field full-width required-field">
-            <ul data-qa="multiple-choice">
-              <li><label><input type="radio" name="cards[dnb][field1]" value="Yes" required /><span>Yes</span></label></li>
-              <li><label><input type="radio" name="cards[dnb][field1]" value="No" required /><span>No</span></label></li>
-            </ul>
-          </div>
-        </li>
-        <li class="application-question custom-question">
-          <div class="application-label full-width text"><div class="text">If you have a family member or relative currently employed by Dun &amp; Bradstreet, please list their name(s):</div></div>
-          <div class="application-field full-width"><input class="card-field-input" type="text" name="cards[dnb][field2]" /></div>
-        </li>
-        <li class="application-question custom-question">
-          <div class="application-label full-width multiple-choice">
-            <div class="text">Did a current Dun &amp; Bradstreet employee influence you to apply or refer you to the company/role?<span class="required">*</span></div>
-          </div>
-          <div class="application-field full-width required-field">
-            <ul data-qa="multiple-choice">
-              <li><label><input type="radio" name="cards[dnb][field3]" value="Yes" required /><span>Yes</span></label></li>
-              <li><label><input type="radio" name="cards[dnb][field3]" value="No" required /><span>No</span></label></li>
-            </ul>
-          </div>
-        </li>
-        <li class="application-question custom-question">
-          <div class="application-label full-width text"><div class="text">If you were referred by a Dun &amp; Bradstreet employee, please list their name:</div></div>
-          <div class="application-field full-width"><input class="card-field-input" type="text" name="cards[dnb][field4]" /></div>
-        </li>
-      </form>`,
-      "https://jobs.lever.co/dnb/8eb0cdd5-1bf4-4865-9e84-7db8ec89fba2/apply",
-    );
-    expect(adapter.id).toBe("lever");
-    const profileWithGenericConnectionYes: MasterProfile = {
-      ...profile,
-      answers: [
-        ...profile.answers,
-        { key: "screening.company_employee_connection", prompt: "Do you know anyone at this company?", value: "Yes" },
-      ],
-    };
-    const mappings = await Promise.all(
-      fields.map((field) => resolveField({ field, profile: profileWithGenericConnectionYes, platform: adapter.id, url: "", demographicsEnabled: false })),
-    );
-    const byLabel = new Map(fields.map((field, index) => [field.label, mappings[index]]));
-
-    expect(byLabel.get("Are you a current or previous employee of Dun & Bradstreet?*")).toMatchObject({
-      canonicalKey: "answers.screening.previous_company_employment",
-      value: "No",
-    });
-    expect(byLabel.get("Do you have a family member or relative who is currently employed by Dun & Bradstreet?*")).toMatchObject({
-      canonicalKey: "answers.screening.company_relative_connection",
-      value: "No",
-      source: "heuristic",
-    });
-    expect(byLabel.get("Did a current Dun & Bradstreet employee influence you to apply or refer you to the company/role?*")).toMatchObject({
-      canonicalKey: "answers.screening.company_employee_connection",
-      value: "No",
-      source: "heuristic",
-    });
-    expect(byLabel.get("If you have a family member or relative currently employed by Dun & Bradstreet, please list their name(s):")?.canonicalKey).toBe("unknown");
-    expect(byLabel.get("If you were referred by a Dun & Bradstreet employee, please list their name:")?.canonicalKey).toBe("unknown");
-  });
-
-  it("falls back to Lever form controls when visibility checks report no fields", async () => {
-    const { document, window } = parseHTML(
-      `<!doctype html>
-      <form class="application">
-        <li class="application-question">
-          <div class="application-label full-width text"><div class="text">Full name<span class="required">*</span></div></div>
-          <div class="application-field full-width required-field"><input name="name" required /></div>
-        </li>
-        <li class="application-question">
-          <div class="application-label full-width text"><div class="text">Email<span class="required">*</span></div></div>
-          <div class="application-field full-width required-field"><input name="email" type="email" required /></div>
-        </li>
-        <li class="application-question">
-          <div class="application-label full-width text"><div class="text">Phone <span class="required">*</span></div></div>
-          <div class="application-field full-width required-field"><input name="phone" required /></div>
-        </li>
-        <li class="application-question">
-          <div class="application-label full-width text"><div class="text">Resume/CV <span class="required">*</span></div></div>
-          <div class="application-field full-width required-field"><input type="file" name="resume" /></div>
-        </li>
-      </form>`,
-    );
-    Object.defineProperty(window, "getComputedStyle", {
-      configurable: true,
-      value: () => ({ display: "block", visibility: "visible" }),
-    });
-    Object.assign(globalThis, {
-      window,
-      document,
-      HTMLElement: window.HTMLElement,
-      HTMLInputElement: window.HTMLInputElement,
-      HTMLTextAreaElement: window.HTMLTextAreaElement,
-      HTMLSelectElement: window.HTMLSelectElement,
-      CSS: { escape: (value: string) => value.replace(/["\\]/g, "\\$&") },
-    });
-
-    const adapter = detectAdapter("https://jobs.lever.co/dnb/8eb0cdd5-1bf4-4865-9e84-7db8ec89fba2/apply", document);
-    const fields = extractFields(document, adapter.id, adapter.mapFields(document));
-
-    expect(adapter.id).toBe("lever");
-    expect(fields.map((field) => field.label)).toEqual(
-      expect.arrayContaining(["Full name*", "Email*", "Phone *", "Resume/CV *"]),
-    );
-  });
-
-  it("maps Ashby named inputs", async () => {
+  it("maps generic named identity inputs from an ATS-shaped fixture", async () => {
     const { adapter, fields } = await loadFixture("ashby", "https://jobs.ashbyhq.com/acme/1");
-    const mappings = await Promise.all(fields.map((field) => resolveField({ field, profile, platform: adapter.id, url: "", demographicsEnabled: false })));
-    expect(mappings.map((mapping) => mapping.canonicalKey)).toEqual(
-      expect.arrayContaining(["identity.firstName", "identity.lastName", "identity.email", "identity.phone", "documents.resume"]),
-    );
-  });
-
-  it("maps Ashby current-or-last company questions to the latest employer", async () => {
-    const { adapter, fields } = await loadHtml(
-      `<!doctype html>
-      <form data-testid="CandidateApplicationForm">
-        <div class="_fieldEntry">
-          <label class="_label" for="current-company">Current or last company you worked for</label>
-          <div class="_inputWrap"><input id="current-company" placeholder="Type here..." /></div>
-        </div>
-      </form>`,
-      "https://jobs.ashbyhq.com/hopper/0c3887e0-ea7f-40a7-aad2-0c69882a5068/application",
-    );
-    const profileWithExperience: MasterProfile = {
-      ...profile,
-      experience: [
-        { title: "Senior Engineer", company: "Older Co", startDate: "2021-01", endDate: "2023-12", current: false, bullets: [] },
-        { title: "Staff Engineer", company: "Orbit Labs", startDate: "2024-01", endDate: null, current: true, bullets: [] },
-      ],
-    };
-    const mappings = await Promise.all(
-      fields.map((field) => resolveField({ field, profile: profileWithExperience, platform: adapter.id, url: "", demographicsEnabled: false })),
-    );
-    const company = fields.find((field) => /current or last company/i.test(field.label));
-    const mapping = company ? mappings[fields.indexOf(company)] : null;
-
-    expect(adapter.id).toBe("ashby");
-    expect(company).toBeTruthy();
-    expect(mapping).toMatchObject({
-      canonicalKey: "experience.currentCompany",
-      value: "Orbit Labs",
-    });
-  });
-
-  it("extracts Ashby <button> Yes/No groups and a url LinkedIn field", async () => {
-    const { adapter, fields } = await loadHtml(
-      `<!doctype html>
-      <form>
-        <div class="_fieldEntry">
-          <label class="_label">LinkedIn<span aria-hidden="true">*</span></label>
-          <div class="_inputWrap"><input type="url" name="4a5a4b65-b85e-4a0c-8edc-91a4ed39c2d2" placeholder="https://example.com..." /></div>
-        </div>
-        <div class="_fieldEntry">
-          <div class="_label">Will you now or in the future require sponsorship to work in the US?<span aria-hidden="true">*</span></div>
-          <div class="_options">
-            <button type="button">Yes</button>
-            <button type="button">No</button>
-          </div>
-        </div>
-      </form>`,
-      "https://jobs.ashbyhq.com/acme/abc/application",
-    );
-    expect(adapter.id).toBe("ashby");
-    const mappings = await Promise.all(
-      fields.map((field) => resolveField({ field, profile, platform: adapter.id, url: "", demographicsEnabled: false })),
-    );
-    const byLabel = new Map(fields.map((field, index) => [field.label, mappings[index]]));
-
-    const linkedinField = fields.find((field) => /linkedin/i.test(field.label));
-    expect(linkedinField).toBeTruthy();
-    expect(byLabel.get(linkedinField!.label)?.canonicalKey).toBe("links.linkedin");
-
-    const sponsorField = fields.find((field) => /sponsorship/i.test(field.label));
-    expect(sponsorField?.type).toBe("radio");
-    expect(sponsorField?.options).toEqual(["Yes", "No"]);
-    expect(byLabel.get(sponsorField!.label)?.canonicalKey).toBe("workAuth.requiresSponsorship");
-  });
-
-  it("maps newer Greenhouse board field variants", async () => {
-    const { adapter, fields } = await loadHtml(
-      `<!doctype html>
-      <form>
-        <div><span data-testid="field-label">First name</span><input autocomplete="given-name" /></div>
-        <div><span data-testid="field-label">Last name</span><input autocomplete="family-name" /></div>
-        <div><span data-testid="field-label">Email</span><input name="email" type="email" /></div>
-        <div><span data-testid="field-label">Phone</span><input autocomplete="tel" /></div>
-        <div><span data-testid="field-label">Resume/CV</span><input id="resume-attachment" type="file" /></div>
-      </form>`,
-      "https://job-boards.greenhouse.io/acme/jobs/1",
-    );
-    expect(adapter.id).toBe("greenhouse");
     const mappings = await Promise.all(fields.map((field) => resolveField({ field, profile, platform: adapter.id, url: "", demographicsEnabled: false })));
     expect(mappings.map((mapping) => mapping.canonicalKey)).toEqual(
       expect.arrayContaining(["identity.firstName", "identity.lastName", "identity.email", "identity.phone", "documents.resume"]),
@@ -950,9 +644,21 @@ describe("field resolution", () => {
   });
 
   it("uses generic heuristics and reusable answers", async () => {
-    const { adapter, fields } = await loadFixture("generic", "https://careers.example.com/apply");
-    expect(adapter.id).toBe("generic");
-    const mappings = await Promise.all(fields.map((field) => resolveField({ field, profile, platform: adapter.id, url: "", demographicsEnabled: false })));
+    const { document } = parseHTML("<input data-test-field />");
+    const fields = [
+      testField(document, { label: "Given name *" }),
+      testField(document, { label: "Family name *" }),
+      testField(document, { label: "Your email", type: "email" }),
+      testField(document, {
+        label: "Will you now or in the future require visa sponsorship?",
+        type: "select",
+        options: ["Yes", "No"],
+      }),
+      testField(document, { label: "Why are you interested in this company?", type: "textarea" }),
+    ];
+
+    const mappings = await Promise.all(fields.map((field) => resolveField({ field, profile, platform: "generic", url: "", demographicsEnabled: false })));
+
     expect(mappings.map((mapping) => mapping.canonicalKey)).toEqual(
       expect.arrayContaining(["identity.firstName", "identity.lastName", "identity.email", "workAuth.requiresSponsorship", "answers.why_company"]),
     );

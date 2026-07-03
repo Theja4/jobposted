@@ -3,36 +3,49 @@ import type { Route } from "next";
 import Link from "next/link";
 import {
   ArrowRight,
-  CalendarCheck,
-  Crown,
-  Gauge,
-  ListChecks,
-  Send,
+  CheckCircle2,
+  ClipboardList,
+  ExternalLink,
+  FileCheck2,
+  Search,
+  Sparkles,
+  UserRoundCheck,
   Workflow,
   type LucideIcon,
 } from "lucide-react";
+import { ChromeLogo } from "@/components/icons/ChromeLogo";
 import { CompanyAvatar } from "@/components/dashboard/CompanyAvatar";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-import {
-  getDashboardApplications,
-  getDashboardQueue,
-  getDashboardStats,
-} from "@/lib/dashboard/applications";
+import { getJobBoardListings } from "@/lib/dashboard/jobs";
 import { getTrackerPage } from "@/lib/dashboard/tracker";
 import { hasActiveSubscription } from "@/lib/billing/access";
-import { STATUS_META, type JobApplication } from "@/lib/dashboard/sample-data";
+import { CHROME_EXTENSION_URL } from "@/lib/site";
+import type { JobListing } from "@/lib/dashboard/sample-data";
 import type { TrackerItem } from "@/lib/dashboard/tracker-model";
 import { cn } from "@/lib/cn";
 
 export const metadata: Metadata = { title: "Dashboard" };
 
-type DashboardStats = Awaited<ReturnType<typeof getDashboardStats>>;
-type DashboardQueue = Awaited<ReturnType<typeof getDashboardQueue>>;
 type TrackerPage = Awaited<ReturnType<typeof getTrackerPage>>;
 
 type DashboardUser = {
   email?: string | null;
   user_metadata?: Record<string, unknown> | null;
+};
+
+type SetupStatus = {
+  completed: boolean;
+  resumeReady: boolean;
+  updatedAt: string | null;
+};
+
+type Metric = {
+  label: string;
+  value: string;
+  hint: string;
+  Icon: LucideIcon;
+  href: Route;
+  tone?: "brand" | "green" | "amber";
 };
 
 function text(value: unknown) {
@@ -69,49 +82,8 @@ function formatDate(iso: string | null | undefined) {
   return new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 
-function queueCopy(queue: DashboardQueue) {
-  if (queue.today.length > 0) {
-    return queue.mode === "review" ? "ready for review" : "queued today";
-  }
-  return queue.mode === "review" ? "no review items" : "nothing queued";
-}
-
-function statTiles(stats: DashboardStats, queue: DashboardQueue, tracker: TrackerPage) {
-  return [
-    {
-      label: "Queue today",
-      value: `${queue.today.length}`,
-      hint: queueCopy(queue),
-      href: "/dashboard/queue",
-      Icon: ListChecks,
-      primary: true,
-    },
-    {
-      label: "Active pipeline",
-      value: `${tracker.summary.activePipeline}`,
-      hint: "roles in motion",
-      href: "/dashboard/tracker",
-      Icon: Workflow,
-    },
-    {
-      label: "Sent this week",
-      value: `${stats.sentThisWeek}`,
-      hint: `${stats.responses} responses tracked`,
-      href: "/dashboard/applications",
-      Icon: Send,
-    },
-    {
-      label: "Avg match",
-      value: `${stats.avgMatch}%`,
-      hint: "JobPosted-prepared roles",
-      href: "/dashboard/applications",
-      Icon: Gauge,
-    },
-  ] as const;
-}
-
 function stageLabel(stage: TrackerItem["stage"]) {
-  if (stage === "inbox") return "To review";
+  if (stage === "inbox") return "Saved";
   if (stage === "applied") return "Applied";
   if (stage === "interview") return "Interview";
   if (stage === "offer") return "Offer";
@@ -126,27 +98,49 @@ function StagePill({ stage }: { stage: TrackerItem["stage"] }) {
       : stage === "closed"
         ? "bg-zinc-100 text-zinc-600"
         : "bg-brand-50 text-brand-700";
-  return (
-    <span className={cn("rounded-full px-2.5 py-1 text-[11px] font-black capitalize", tone)}>
-      {stageLabel(stage)}
-    </span>
-  );
+  return <span className={cn("rounded-full px-2.5 py-1 text-[11px] font-black", tone)}>{stageLabel(stage)}</span>;
 }
 
-function ApplicationStatusPill({ status }: { status: JobApplication["status"] }) {
-  const meta = STATUS_META[status];
-  return (
-    <span className={cn("rounded-full px-2.5 py-1 text-[11px] font-black", meta.className)}>
-      {meta.label}
-    </span>
-  );
+function sourceLabel(source: TrackerItem["source"]) {
+  if (source === "extension") return "Extension";
+  if (source === "manual") return "Manual";
+  if (source === "job_board") return "Job board";
+  return "JobPosted";
+}
+
+async function getSetupStatus(
+  supabase: Awaited<ReturnType<typeof createSupabaseServerClient>>,
+  userId: string,
+): Promise<SetupStatus> {
+  const [onboardingResult, profileResult] = await Promise.all([
+    supabase
+      .from("onboarding_configurations")
+      .select("completed_at,updated_at")
+      .eq("user_id", userId)
+      .maybeSingle(),
+    supabase
+      .from("profiles")
+      .select("active_resume_version_id,updated_at")
+      .eq("id", userId)
+      .maybeSingle(),
+  ]);
+
+  return {
+    completed: Boolean(onboardingResult.data?.completed_at),
+    resumeReady: typeof profileResult.data?.active_resume_version_id === "string",
+    updatedAt:
+      text(onboardingResult.data?.updated_at) ||
+      text(profileResult.data?.updated_at) ||
+      text(onboardingResult.data?.completed_at) ||
+      null,
+  };
 }
 
 function UserProfileBadge({ user }: { user?: DashboardUser | null }) {
   const avatarUrl = userAvatarUrl(user);
   const name = userName(user);
   return (
-    <div className="inline-flex max-w-full items-center gap-3 rounded-2xl bg-panel px-3 py-2 ring-1 ring-inset ring-brand-100">
+    <div className="inline-flex max-w-full items-center gap-3 rounded-2xl bg-white/75 px-3 py-2 ring-1 ring-inset ring-brand-100">
       <span className="grid size-11 shrink-0 place-items-center overflow-hidden rounded-full bg-brand-50 text-sm font-black text-brand-700">
         {avatarUrl ? (
           // eslint-disable-next-line @next/next/no-img-element
@@ -157,133 +151,172 @@ function UserProfileBadge({ user }: { user?: DashboardUser | null }) {
       </span>
       <div className="min-w-0">
         <p className="truncate text-sm font-extrabold text-ink">{name}</p>
-        <p className="text-xs font-semibold text-muted">Signed in</p>
+        <p className="text-xs font-semibold text-muted">Job search workspace</p>
       </div>
     </div>
   );
 }
 
-function StatCard({
-  label,
-  value,
-  hint,
-  href,
-  Icon,
-  primary,
-}: {
-  label: string;
-  value: string;
-  hint: string;
-  href: Route;
-  Icon: LucideIcon;
-  primary?: boolean;
-}) {
+function MetricCard({ metric }: { metric: Metric }) {
+  const tone =
+    metric.tone === "green"
+      ? "bg-emerald-50 text-emerald-700"
+      : metric.tone === "amber"
+        ? "bg-amber-50 text-amber-800"
+        : "bg-brand-50 text-brand-700";
+
   return (
     <Link
-      href={href}
-      className={cn(
-        "group relative min-h-36 overflow-hidden rounded-[1.35rem] p-5 shadow-[0_20px_46px_-34px_rgba(7,26,51,0.46),0_6px_18px_-16px_rgba(15,23,42,0.18)] transition-[transform,box-shadow] duration-150 hover:-translate-y-0.5 hover:shadow-[0_24px_54px_-34px_rgba(31,100,224,0.34),0_6px_18px_-16px_rgba(15,23,42,0.22)]",
-        primary ? "bg-brand-600 text-white" : "bg-white text-ink",
-      )}
+      href={metric.href}
+      className="group rounded-2xl bg-white p-4 shadow-[0_18px_42px_-34px_rgba(7,26,51,0.38),0_4px_14px_-14px_rgba(15,23,42,0.18)] transition-[transform,box-shadow] duration-150 hover:-translate-y-0.5 hover:shadow-[0_22px_48px_-34px_rgba(31,100,224,0.3),0_4px_14px_-14px_rgba(15,23,42,0.18)]"
     >
-      {primary && (
-        <span
-          aria-hidden
-          className="pointer-events-none absolute inset-0 bg-[radial-gradient(24rem_12rem_at_80%_0%,rgba(255,255,255,0.25),transparent_64%)]"
-        />
-      )}
-      <div className="relative flex items-start justify-between gap-4">
+      <div className="flex items-start justify-between gap-3">
         <div>
-          <p className={cn("text-sm font-extrabold", primary ? "text-white/82" : "text-muted")}>{label}</p>
-          <p className="mt-5 text-5xl font-extrabold tracking-[-0.04em]">{value}</p>
+          <p className="text-sm font-extrabold text-muted">{metric.label}</p>
+          <p className="mt-4 text-4xl font-extrabold tracking-[-0.035em] text-ink">{metric.value}</p>
         </div>
-        <span
-          className={cn(
-            "grid size-11 place-items-center rounded-full",
-            primary ? "bg-white text-brand-700" : "bg-brand-50 text-brand-700",
-          )}
-        >
-          <Icon className="size-5" aria-hidden="true" />
+        <span className={cn("grid size-10 place-items-center rounded-xl", tone)}>
+          <metric.Icon className="size-5" aria-hidden="true" />
         </span>
       </div>
-      <p className={cn("relative mt-3 text-sm font-bold", primary ? "text-white/78" : "text-muted")}>{hint}</p>
+      <p className="mt-2 text-sm font-semibold leading-5 text-muted">{metric.hint}</p>
     </Link>
   );
 }
 
-function TodayFocus({ queue }: { queue: DashboardQueue }) {
-  const hasItems = queue.today.length > 0;
-  const focusHref = (hasItems ? "/dashboard/queue" : "/dashboard/jobs") as Route;
+function PrimaryActionCard({
+  href,
+  Icon,
+  title,
+  description,
+  action,
+  external,
+}: {
+  href: string;
+  Icon: LucideIcon;
+  title: string;
+  description: string;
+  action: string;
+  external?: boolean;
+}) {
+  const content = (
+    <>
+      <span className="grid size-11 place-items-center rounded-2xl bg-brand-50 text-brand-700">
+        <Icon className="size-5" aria-hidden="true" />
+      </span>
+      <div className="min-w-0 flex-1">
+        <h3 className="text-base font-extrabold tracking-[-0.015em] text-ink">{title}</h3>
+        <p className="mt-1 text-sm font-semibold leading-6 text-muted">{description}</p>
+        <span className="mt-3 inline-flex items-center gap-1.5 text-sm font-extrabold text-brand-700">
+          {action}
+          {external ? <ExternalLink className="size-3.5" aria-hidden="true" /> : <ArrowRight className="size-3.5" aria-hidden="true" />}
+        </span>
+      </div>
+    </>
+  );
+
+  const className =
+    "flex min-h-36 items-start gap-4 rounded-2xl bg-white p-5 text-left shadow-[0_18px_42px_-34px_rgba(7,26,51,0.38),0_4px_14px_-14px_rgba(15,23,42,0.18)] transition-[transform,box-shadow] duration-150 hover:-translate-y-0.5 hover:shadow-[0_22px_48px_-34px_rgba(31,100,224,0.3),0_4px_14px_-14px_rgba(15,23,42,0.18)]";
+
+  if (external) {
+    return (
+      <a
+        href={href}
+        target={/^https?:\/\//i.test(href) ? "_blank" : undefined}
+        rel={/^https?:\/\//i.test(href) ? "noreferrer" : undefined}
+        className={className}
+      >
+        {content}
+      </a>
+    );
+  }
+
   return (
-    <section className="rounded-[1.75rem] bg-white p-5 shadow-[0_22px_52px_-38px_rgba(7,26,51,0.42),0_6px_18px_-16px_rgba(15,23,42,0.14)] sm:p-6">
-      <div className="flex flex-wrap items-start justify-between gap-4">
+    <Link href={href as Route} className={className}>
+      {content}
+    </Link>
+  );
+}
+
+function SetupReadiness({ setup, hasActivePlan }: { setup: SetupStatus; hasActivePlan: boolean }) {
+  const items = [
+    {
+      label: "Profile details",
+      done: setup.completed,
+      detail: setup.completed ? "Saved for autofill" : "Add reusable answers",
+    },
+    {
+      label: "Resume",
+      done: setup.resumeReady,
+      detail: setup.resumeReady ? "Ready for tailoring" : "Upload your master resume",
+    },
+    {
+      label: "Extension",
+      done: true,
+      detail: "Use Chrome to save and fill jobs",
+    },
+  ];
+
+  return (
+    <section className="rounded-[1.5rem] bg-white p-5 shadow-[0_18px_42px_-34px_rgba(7,26,51,0.38),0_4px_14px_-14px_rgba(15,23,42,0.18)]">
+      <div className="flex items-start justify-between gap-3">
         <div>
-          <p className="text-sm font-extrabold text-brand-700">Today&apos;s focus</p>
-          <h2 className="mt-2 text-2xl font-extrabold tracking-[-0.03em] text-ink">
-            {hasItems ? `${queue.today.length} applications need attention` : "No queue items waiting"}
-          </h2>
-          <p className="mt-1 max-w-xl text-sm font-semibold leading-6 text-muted">
-            {hasItems
-              ? queue.mode === "review"
-                ? "Review the prepared batch, then decide what goes out. Nothing is submitted without you."
-                : "These applications are in today's JobPosted queue."
-              : "Use Jobs to find new roles or Tracker to log anything you handled yourself."}
+          <h2 className="text-lg font-extrabold tracking-[-0.02em] text-ink">Workspace readiness</h2>
+          <p className="mt-1 text-sm font-semibold leading-6 text-muted">
+            Keep the data the extension reuses up to date.
           </p>
         </div>
-        <Link
-          href={focusHref}
-          className="inline-flex h-11 items-center justify-center gap-2 rounded-2xl bg-brand-600 px-4 text-sm font-extrabold text-white shadow-[0_16px_30px_-20px_rgba(31,100,224,0.7)] transition-colors hover:bg-brand-700"
-        >
-          {hasItems ? "Open queue" : "Browse jobs"}
-          <ArrowRight className="size-4" aria-hidden="true" />
-        </Link>
+        <UserRoundCheck className="size-5 text-brand-700" aria-hidden="true" />
       </div>
 
-      <div className="mt-5 space-y-2.5">
-        {hasItems ? (
-          queue.today.slice(0, 4).map((application) => (
-            <div
-              key={application.id}
-              className="flex items-center gap-3 rounded-2xl bg-panel px-3.5 py-3 shadow-[0_12px_28px_-24px_rgba(15,23,42,0.35)]"
+      <div className="mt-5 space-y-3">
+        {items.map((item) => (
+          <div key={item.label} className="flex items-center gap-3">
+            <span
+              className={cn(
+                "grid size-8 shrink-0 place-items-center rounded-lg",
+                item.done ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-800",
+              )}
             >
-              <CompanyAvatar company={application.company} logoUrl={application.companyLogoUrl} size="sm" />
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-extrabold text-ink">{application.role}</p>
-                <p className="truncate text-xs font-semibold text-muted">
-                  {application.company} · {application.matchScore}% match
-                </p>
-              </div>
-              <ApplicationStatusPill status={application.status} />
+              <CheckCircle2 className="size-4" aria-hidden="true" />
+            </span>
+            <div className="min-w-0">
+              <p className="text-sm font-extrabold text-ink">{item.label}</p>
+              <p className="text-xs font-semibold text-muted">{item.detail}</p>
             </div>
-          ))
-        ) : (
-          <div className="rounded-2xl bg-panel px-4 py-5">
-            <p className="text-sm font-bold leading-6 text-muted">
-              Browse jobs from the search above, or use Tracker for roles you applied to yourself.
-            </p>
           </div>
-        )}
+        ))}
       </div>
+
+      <Link
+        href={hasActivePlan ? "/dashboard/onboarding" : "/pricing"}
+        className="mt-5 inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-brand-600 px-4 text-sm font-extrabold text-white transition-colors hover:bg-brand-700"
+      >
+        {hasActivePlan ? "Open setup" : "Upgrade for setup"}
+        <ArrowRight className="size-4" aria-hidden="true" />
+      </Link>
     </section>
   );
 }
 
-function PipelineSnapshot({ tracker, stats }: { tracker: TrackerPage; stats: DashboardStats }) {
-  const max = Math.max(tracker.summary.tracked, tracker.summary.activePipeline, tracker.summary.needsReview, 1);
+function PipelineOverview({ tracker }: { tracker: TrackerPage }) {
   const rows = [
-    { label: "Tracked roles", value: tracker.summary.tracked, color: "bg-brand-600" },
-    { label: "Needs review", value: tracker.summary.needsReview, color: "bg-amber-400" },
-    { label: "Active pipeline", value: tracker.summary.activePipeline, color: "bg-emerald-500" },
+    { label: "Saved", value: tracker.summary.needsReview, color: "bg-amber-400" },
+    { label: "Active", value: tracker.summary.activePipeline, color: "bg-brand-600" },
+    { label: "All tracked", value: tracker.summary.tracked, color: "bg-emerald-500" },
   ];
+  const max = Math.max(...rows.map((row) => row.value), 1);
 
   return (
-    <section className="rounded-[1.75rem] bg-white p-5 shadow-[0_22px_52px_-38px_rgba(7,26,51,0.42),0_6px_18px_-16px_rgba(15,23,42,0.14)] sm:p-6">
-      <div className="flex items-start justify-between gap-4">
+    <section className="rounded-[1.5rem] bg-white p-5 shadow-[0_18px_42px_-34px_rgba(7,26,51,0.38),0_4px_14px_-14px_rgba(15,23,42,0.18)]">
+      <div className="flex items-start justify-between gap-3">
         <div>
-          <h2 className="text-xl font-extrabold tracking-[-0.02em] text-ink">Pipeline snapshot</h2>
-          <p className="mt-1 text-sm font-semibold text-muted">Tracker and JobPosted activity together.</p>
+          <h2 className="text-lg font-extrabold tracking-[-0.02em] text-ink">Tracker pipeline</h2>
+          <p className="mt-1 text-sm font-semibold leading-6 text-muted">
+            Saved, applied, interview, and offer stages from your tracker.
+          </p>
         </div>
-        <CalendarCheck className="size-5 text-brand-700" aria-hidden="true" />
+        <Workflow className="size-5 text-brand-700" aria-hidden="true" />
       </div>
 
       <div className="mt-5 space-y-4">
@@ -296,16 +329,11 @@ function PipelineSnapshot({ tracker, stats }: { tracker: TrackerPage; stats: Das
             <div className="h-2.5 overflow-hidden rounded-full bg-zinc-100">
               <span
                 className={cn("block h-full rounded-full", row.color)}
-                style={{ width: `${Math.max(6, Math.round((row.value / max) * 100))}%` }}
+                style={{ width: row.value === 0 ? "0%" : `${Math.max(8, Math.round((row.value / max) * 100))}%` }}
               />
             </div>
           </div>
         ))}
-      </div>
-
-      <div className="mt-5 rounded-2xl bg-brand-50 px-4 py-3">
-        <p className="text-xs font-black tracking-[0.08em] text-brand-700 uppercase">Quality signal</p>
-        <p className="mt-1 text-2xl font-extrabold tracking-[-0.03em] text-ink">{stats.avgMatch}% avg match</p>
       </div>
     </section>
   );
@@ -313,11 +341,11 @@ function PipelineSnapshot({ tracker, stats }: { tracker: TrackerPage; stats: Das
 
 function RecentTracker({ items }: { items: TrackerItem[] }) {
   return (
-    <section className="rounded-[1.75rem] bg-white p-5 shadow-[0_22px_52px_-38px_rgba(7,26,51,0.42),0_6px_18px_-16px_rgba(15,23,42,0.14)] sm:p-6">
+    <section className="rounded-[1.5rem] bg-white p-5 shadow-[0_18px_42px_-34px_rgba(7,26,51,0.38),0_4px_14px_-14px_rgba(15,23,42,0.18)]">
       <div className="flex items-center justify-between gap-4">
         <div>
-          <h2 className="text-xl font-extrabold tracking-[-0.02em] text-ink">Recent tracker roles</h2>
-          <p className="mt-1 text-sm font-semibold text-muted">Manual, extension, and JobPosted activity.</p>
+          <h2 className="text-lg font-extrabold tracking-[-0.02em] text-ink">Recent tracked roles</h2>
+          <p className="mt-1 text-sm font-semibold text-muted">Captured manually, from Jobs, or through the extension.</p>
         </div>
         <Link href="/dashboard/tracker" className="text-sm font-extrabold text-brand-700 hover:text-brand-800">
           Open
@@ -326,13 +354,13 @@ function RecentTracker({ items }: { items: TrackerItem[] }) {
 
       <div className="mt-5 space-y-3">
         {items.length > 0 ? (
-          items.slice(0, 5).map((item) => (
+          items.map((item) => (
             <div key={item.id} className="flex items-center gap-3">
               <CompanyAvatar company={item.company} logoUrl={item.companyLogoUrl} colorSeed={item.id} size="sm" />
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm font-extrabold text-ink">{item.role}</p>
                 <p className="truncate text-xs font-semibold text-muted">
-                  {item.company} · {formatDate(item.updatedAt)}
+                  {item.company} · {sourceLabel(item.source)} · {formatDate(item.updatedAt)}
                 </p>
               </div>
               <StagePill stage={item.stage} />
@@ -341,7 +369,7 @@ function RecentTracker({ items }: { items: TrackerItem[] }) {
         ) : (
           <div className="rounded-2xl bg-panel px-4 py-6 text-center">
             <p className="font-extrabold text-ink">No tracked roles yet</p>
-            <p className="mt-1 text-sm font-semibold text-muted">Add roles you apply to manually.</p>
+            <p className="mt-1 text-sm font-semibold text-muted">Save a job or add an application to start your tracker.</p>
           </div>
         )}
       </div>
@@ -349,41 +377,53 @@ function RecentTracker({ items }: { items: TrackerItem[] }) {
   );
 }
 
-function RecentApplications({ applications }: { applications: JobApplication[] }) {
+function FreshJobs({ jobs, total }: { jobs: JobListing[]; total: number }) {
   return (
-    <section className="rounded-[1.75rem] bg-white p-5 shadow-[0_22px_52px_-38px_rgba(7,26,51,0.42),0_6px_18px_-16px_rgba(15,23,42,0.14)] sm:p-6">
-      <div className="flex items-center justify-between gap-4">
+    <section className="rounded-[1.5rem] bg-white p-5 shadow-[0_18px_42px_-34px_rgba(7,26,51,0.38),0_4px_14px_-14px_rgba(15,23,42,0.18)]">
+      <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
-          <h2 className="text-xl font-extrabold tracking-[-0.02em] text-ink">Recent JobPosted applications</h2>
-          <p className="mt-1 text-sm font-semibold text-muted">Only applications prepared by JobPosted appear here.</p>
+          <h2 className="text-xl font-extrabold tracking-[-0.02em] text-ink">Fresh roles to review</h2>
+          <p className="mt-1 text-sm font-semibold text-muted">
+            {total > 0 ? `${total.toLocaleString()} open roles in the job board.` : "Browse new roles and save the ones worth tracking."}
+          </p>
         </div>
-        <Link href="/dashboard/applications" className="text-sm font-extrabold text-brand-700 hover:text-brand-800">
-          View history
+        <Link
+          href="/dashboard/jobs"
+          className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-brand-600 px-4 text-sm font-extrabold text-white transition-colors hover:bg-brand-700"
+        >
+          Browse jobs
+          <ArrowRight className="size-4" aria-hidden="true" />
         </Link>
       </div>
 
-      <div className="mt-5 space-y-3">
-        {applications.length > 0 ? (
-          applications.slice(0, 5).map((application) => (
-            <div
-              key={application.id}
-              className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-2xl bg-panel px-3.5 py-3"
+      <div className="mt-5 grid gap-3 lg:grid-cols-2">
+        {jobs.length > 0 ? (
+          jobs.map((job) => (
+            <Link
+              key={job.id}
+              href={{ pathname: "/dashboard/jobs", query: { q: job.company } }}
+              className="group flex min-h-28 gap-3 rounded-2xl bg-panel px-4 py-3 transition-colors hover:bg-brand-50/70"
             >
-              <CompanyAvatar company={application.company} logoUrl={application.companyLogoUrl} size="sm" />
-              <div className="min-w-[12rem] flex-1">
-                <p className="truncate text-sm font-extrabold text-ink">{application.role}</p>
-                <p className="truncate text-xs font-semibold text-muted">
-                  {application.company} · {formatDate(application.appliedOn)}
+              <CompanyAvatar company={job.company} logoUrl={job.companyLogoUrl} colorSeed={job.id} size="md" />
+              <div className="min-w-0 flex-1">
+                <p className="line-clamp-1 text-sm font-extrabold text-ink group-hover:text-brand-800">{job.title}</p>
+                <p className="mt-0.5 line-clamp-1 text-xs font-semibold text-muted">
+                  {job.company} · {job.location}
                 </p>
+                <div className="mt-3 flex flex-wrap gap-1.5">
+                  {[job.workplace, job.level, job.type].map((tag) => (
+                    <span key={tag} className="rounded-full bg-white px-2 py-1 text-[11px] font-black text-muted ring-1 ring-inset ring-zinc-100">
+                      {tag}
+                    </span>
+                  ))}
+                </div>
               </div>
-              <span className="text-sm font-extrabold text-ink">{application.matchScore}%</span>
-              <ApplicationStatusPill status={application.status} />
-            </div>
+            </Link>
           ))
         ) : (
-          <div className="rounded-2xl bg-panel px-4 py-8 text-center">
-            <p className="font-extrabold text-ink">No JobPosted applications yet</p>
-            <p className="mt-1 text-sm font-semibold text-muted">When the queue prepares roles, they will show here.</p>
+          <div className="rounded-2xl bg-panel px-4 py-8 text-center lg:col-span-2">
+            <p className="font-extrabold text-ink">No jobs loaded yet</p>
+            <p className="mt-1 text-sm font-semibold text-muted">Open Jobs to search current boards.</p>
           </div>
         )}
       </div>
@@ -391,31 +431,55 @@ function RecentApplications({ applications }: { applications: JobApplication[] }
   );
 }
 
-function ProUpgradeCard() {
+function ExtensionCard() {
   return (
-    <section className="relative overflow-hidden rounded-[1.75rem] bg-brand-600 p-5 text-white shadow-[0_24px_60px_-34px_rgba(31,100,224,0.72)] sm:p-6">
-      <span
-        aria-hidden
-        className="pointer-events-none absolute inset-0 bg-[radial-gradient(22rem_14rem_at_85%_0%,rgba(255,255,255,0.24),transparent_62%)]"
-      />
-      <div className="relative">
-        <span className="grid size-11 place-items-center rounded-2xl bg-white/16 text-white">
-          <Crown className="size-5" aria-hidden="true" />
-        </span>
-        <h2 className="mt-4 text-xl font-extrabold tracking-[-0.02em]">Unlock Pro</h2>
-        <p className="mt-2 text-sm font-semibold leading-6 text-white/78">
-          Pro prepares daily applications and unlocks Setup, Queue, and History. Jobs and Tracker
-          stay available on the free account.
-        </p>
-        <Link
-          href="/pricing"
-          className="mt-5 inline-flex h-11 items-center justify-center rounded-2xl bg-white px-4 text-sm font-extrabold text-brand-700 transition-colors hover:bg-brand-50"
-        >
-          View pricing
-        </Link>
-      </div>
+    <section className="rounded-[1.5rem] bg-ink p-5 text-white shadow-[0_22px_52px_-34px_rgba(11,18,32,0.58)]">
+      <span className="grid size-11 place-items-center rounded-2xl bg-white/10">
+        <ChromeLogo className="size-5" />
+      </span>
+      <h2 className="mt-4 text-xl font-extrabold tracking-[-0.02em]">Use the Chrome extension</h2>
+      <p className="mt-2 text-sm font-semibold leading-6 text-white/72">
+        Save roles, fill supported forms, and keep the tracker updated while you apply in your own browser.
+      </p>
+      <a
+        href={CHROME_EXTENSION_URL}
+        target={/^https?:\/\//i.test(CHROME_EXTENSION_URL) ? "_blank" : undefined}
+        rel={/^https?:\/\//i.test(CHROME_EXTENSION_URL) ? "noreferrer" : undefined}
+        className="mt-5 inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-white px-4 text-sm font-extrabold text-ink transition-colors hover:bg-brand-50"
+      >
+        Get extension
+        <ExternalLink className="size-4" aria-hidden="true" />
+      </a>
     </section>
   );
+}
+
+function metricsFor(tracker: TrackerPage): Metric[] {
+  return [
+    {
+      label: "Tracked roles",
+      value: `${tracker.summary.tracked}`,
+      hint: "Everything saved or applied",
+      Icon: ClipboardList,
+      href: "/dashboard/tracker",
+    },
+    {
+      label: "Active pipeline",
+      value: `${tracker.summary.activePipeline}`,
+      hint: "Applied, replies, interviews, offers",
+      Icon: Workflow,
+      href: "/dashboard/tracker",
+      tone: "green",
+    },
+    {
+      label: "Saved to review",
+      value: `${tracker.summary.needsReview}`,
+      hint: "Roles waiting for a decision",
+      Icon: FileCheck2,
+      href: "/dashboard/tracker",
+      tone: "amber",
+    },
+  ];
 }
 
 export default async function DashboardPage() {
@@ -423,46 +487,76 @@ export default async function DashboardPage() {
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  const [applications, queue, stats, tracker, hasActivePlan] = await Promise.all([
-    getDashboardApplications({ limit: 5 }),
-    getDashboardQueue(),
-    getDashboardStats(),
-    getTrackerPage({ limit: 5, sort: "recent" }),
+
+  const [tracker, jobBoard, hasActivePlan, setup] = await Promise.all([
+    getTrackerPage({ limit: 6, sort: "recent" }),
+    getJobBoardListings({ pageSize: "4", hideTracked: "1", sort: "recent" }),
     user ? hasActiveSubscription(supabase, user.id) : Promise.resolve(false),
+    user
+      ? getSetupStatus(supabase, user.id)
+      : Promise.resolve({ completed: false, resumeReady: false, updatedAt: null }),
   ]);
 
   return (
     <div className="space-y-5">
       <section className="rounded-[2rem] bg-white p-5 shadow-[0_24px_64px_-48px_rgba(7,26,51,0.48),0_8px_22px_-18px_rgba(15,23,42,0.16)] sm:p-7">
-        <div className="flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between">
+        <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
           <div>
-            <h1 className="text-4xl font-extrabold tracking-[-0.04em] text-ink sm:text-5xl">
-              Dashboard
+            <h1 className="text-4xl font-extrabold tracking-[-0.035em] text-ink sm:text-5xl">
+              Your job search command center
             </h1>
-            <p className="mt-2 max-w-2xl text-base font-semibold leading-7 text-muted">
-              Review today&apos;s queue and keep the tracker moving from one place.
+            <p className="mt-3 max-w-3xl text-base font-semibold leading-7 text-muted">
+              Find relevant roles, save the ones worth pursuing, and keep every application moving through your tracker.
             </p>
           </div>
           <UserProfileBadge user={user} />
         </div>
 
-        <div className="mt-7 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          {statTiles(stats, queue, tracker).map((tile) => (
-            <StatCard key={tile.label} {...tile} />
+        <div className="mt-7 grid gap-4 md:grid-cols-3">
+          {metricsFor(tracker).map((metric) => (
+            <MetricCard key={metric.label} metric={metric} />
           ))}
         </div>
       </section>
 
-      <div className="grid gap-5 xl:grid-cols-[minmax(0,1.45fr)_minmax(22rem,0.8fr)]">
+      <section className="grid gap-4 lg:grid-cols-3">
+        <PrimaryActionCard
+          href="/dashboard/jobs"
+          Icon={Search}
+          title="Find jobs"
+          description="Search current roles, filter by company or location, and hide jobs already in your tracker."
+          action="Open job board"
+        />
+        <PrimaryActionCard
+          href="/dashboard/tracker"
+          Icon={Workflow}
+          title="Manage tracker"
+          description="Move applications through saved, applied, interview, offer, and closed stages."
+          action="Open tracker"
+        />
+        <PrimaryActionCard
+          href={hasActivePlan ? "/dashboard/onboarding" : "/pricing"}
+          Icon={Sparkles}
+          title={hasActivePlan ? "Refresh setup" : "Unlock setup"}
+          description={
+            hasActivePlan
+              ? "Keep your resume, profile, and reusable form answers current for the extension."
+              : "Upgrade when you want profile setup, resume tailoring, and reusable answers."
+          }
+          action={hasActivePlan ? "Open setup" : "View pricing"}
+        />
+      </section>
+
+      <div className="grid gap-5 xl:grid-cols-[minmax(0,1.5fr)_minmax(22rem,0.8fr)]">
         <div className="space-y-5">
-          <TodayFocus queue={queue} />
-          <RecentApplications applications={applications} />
+          <FreshJobs jobs={jobBoard.jobs} total={jobBoard.total} />
+          <RecentTracker items={tracker.items} />
         </div>
 
         <aside className="space-y-5">
-          {!hasActivePlan && <ProUpgradeCard />}
-          <PipelineSnapshot tracker={tracker} stats={stats} />
-          <RecentTracker items={tracker.items} />
+          <ExtensionCard />
+          <SetupReadiness setup={setup} hasActivePlan={hasActivePlan} />
+          <PipelineOverview tracker={tracker} />
         </aside>
       </div>
     </div>

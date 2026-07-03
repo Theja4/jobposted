@@ -26,8 +26,10 @@ import {
   Loader2,
   MapPin,
   MessageSquareText,
+  MousePointerClick,
   Pencil,
   Settings,
+  ShieldCheck,
   Sparkles,
   StickyNote,
   Upload,
@@ -47,6 +49,7 @@ import type {
   ExtensionJobState,
   ExtensionMessageResponse,
   ExtensionResumeOption,
+  ExtensionTrackerPagination,
   ExtensionTrackerItem,
   MasterProfileEducation,
   MasterProfileExperience,
@@ -56,9 +59,11 @@ import type {
   ExtensionSettings,
   MasterProfile,
 } from "@jobposted/shared";
+import { DEFAULT_EXTENSION_SETTINGS } from "@jobposted/shared";
 import { JOBPOSTED_WEB_ORIGIN, REZOOMED_BUILDER_IMPORT_PATH, REZOOMED_WEB_ORIGIN } from "../src/config/env";
 import { detectAdapter } from "../src/adapters";
 import { PanelStyles } from "../src/content/panel-styles";
+import { installAnswerAssist } from "../src/content/answer-assist";
 import { fillCurrentStep, humanDelay } from "../src/autofill/engine";
 import type { FieldDescriptor } from "../src/autofill/types";
 import {
@@ -813,7 +818,61 @@ function noParsedFieldsRecord(platform: ExtensionPlatform, stepName: string, vis
   };
 }
 
+function isElementVisibleForGate(element: HTMLElement) {
+  if (element.closest("[hidden], [aria-hidden='true']")) return false;
+  const style = window.getComputedStyle?.(element);
+  return !(style && (style.display === "none" || style.visibility === "hidden" || style.opacity === "0"));
+}
+
+function visibleGateText(element: HTMLElement) {
+  return [
+    element instanceof HTMLInputElement ? element.value : "",
+    element.textContent,
+    element.getAttribute("aria-label"),
+    element.getAttribute("title"),
+    element.getAttribute("data-automation-id"),
+  ]
+    .map(str)
+    .filter(Boolean)
+    .join(" ");
+}
+
+function workdayAccountGateRecord(platform: ExtensionPlatform, stepName: string): ExtensionFieldFillRecord | null {
+  if (platform !== "workday" && !isWorkdayPage(window.location.href, document)) return null;
+  const controls = Array.from(
+    document.querySelectorAll<HTMLElement>("button, a, input[type='button'], input[type='submit'], [role='button']"),
+  ).filter(isElementVisibleForGate);
+  const controlText = controls.map(visibleGateText).join(" ");
+  const pageText = str(document.body?.textContent).slice(0, 4000);
+  const text = `${controlText} ${pageText}`.replace(/\s+/g, " ").toLowerCase();
+  const hasGateAction = /\b(sign in|signin|log in|login|create account|register|use existing account|candidate home)\b/.test(text);
+  const looksLikeApplicationGate = /\b(application|apply|account|candidate)\b/.test(text);
+  if (!hasGateAction || !looksLikeApplicationGate) return null;
+
+  return {
+    signature: `jobposted-workday-account-gate:${stepName}:${window.location.href}`,
+    label: "Workday account step",
+    required: true,
+    canonicalKey: "unknown",
+    status: "needs_user",
+    confidence: 0.9,
+    source: "adapter",
+    error: "Sign in or create your Workday account, then Retry.",
+  };
+}
+
 function summarizeNoParsedFieldsResult(platform: ExtensionPlatform, stepName: string): ExtensionAutofillRunResult {
+  const gateRecord = workdayAccountGateRecord(platform, stepName);
+  if (gateRecord) {
+    return summarizeRunResult({
+      platform,
+      stepName,
+      fields: [gateRecord],
+      tracker: null,
+      trackerError: gateRecord.error,
+    });
+  }
+
   const visibleControls = countVisibleApplicationControls(document);
   const record = noParsedFieldsRecord(platform, stepName, visibleControls);
   return summarizeRunResult({
@@ -1326,6 +1385,8 @@ function InPagePanel({ initiallyCollapsed = false }: { initiallyCollapsed?: bool
   const [jobComplete, setJobComplete] = useState<Extract<JobOutcome, { kind: "tailor" | "cover-letter" }> | null>(null);
   const jobResultRef = useRef<JobOutcome | null>(null);
   const [tab, setTab] = useState<"autofill" | "profile" | "tracker">("autofill");
+  const [showSettings, setShowSettings] = useState(false);
+  const [settings, setSettings] = useState<ExtensionSettings>(DEFAULT_EXTENSION_SETTINGS);
   const [autoTrack, setAutoTrack] = useState(true);
   const [identity, setIdentity] = useState<ResolvedJobContext | null>(null);
   // `identityEdit` is the transient draft shown only while the edit form is open;
@@ -1456,6 +1517,14 @@ function InPagePanel({ initiallyCollapsed = false }: { initiallyCollapsed?: bool
     if (response.ok && response.type === "SETTINGS_SET") setAutoTrack(response.settings.autoTrackAutofill);
   }
 
+  async function updateSettings(partial: Partial<ExtensionSettings>) {
+    const response = await message<ExtensionMessageResponse>({ type: "SETTINGS_SET", settings: partial });
+    if (response.ok && response.type === "SETTINGS_SET") {
+      setSettings(response.settings);
+      setAutoTrack(response.settings.autoTrackAutofill);
+    }
+  }
+
   async function refreshProfile() {
     const statusResponse = await message<ExtensionMessageResponse>({ type: "AUTH_STATUS" });
     if (!statusResponse.ok || statusResponse.type !== "AUTH_STATUS" || !statusResponse.authenticated) {
@@ -1474,7 +1543,10 @@ function InPagePanel({ initiallyCollapsed = false }: { initiallyCollapsed?: bool
     refreshIdentity();
     void (async () => {
       const response = await message<ExtensionMessageResponse>({ type: "SETTINGS_GET" });
-      if (response.ok && response.type === "SETTINGS_GET") setAutoTrack(response.settings.autoTrackAutofill);
+      if (response.ok && response.type === "SETTINGS_GET") {
+        setAutoTrack(response.settings.autoTrackAutofill);
+        setSettings(response.settings);
+      }
     })();
     return () => {
       if (toastTimerRef.current != null) window.clearTimeout(toastTimerRef.current);
@@ -1493,9 +1565,9 @@ function InPagePanel({ initiallyCollapsed = false }: { initiallyCollapsed?: bool
 
   // Warm the tracker cache as soon as the panel is open, regardless of the active
   // tab, so the first visit to Track paints instantly instead of waiting on the
-  // network. Only fetches once per page session; TrackerTab revalidates thereafter.
+  // network. TrackerTab still revalidates thereafter.
   useEffect(() => {
-    if (!collapsed && trackerCache === null) void loadTrackerItems();
+    if (!collapsed && !cachedTrackerPage(trackerFilter, 0)) void loadTrackerPage(trackerFilter, 0);
   }, [collapsed]);
 
   // Recover a tailor/cover run that the background worker carried out while this panel
@@ -1911,45 +1983,80 @@ function InPagePanel({ initiallyCollapsed = false }: { initiallyCollapsed?: bool
   const groups = groupedFields(fields);
   const filling = panelStatusIsRunning(status);
   const filledCount = fields.filter((field) => field.status === "filled").length;
+  const fullTrackerUrl = `${JOBPOSTED_WEB_ORIGIN}/dashboard/tracker`;
 
   return (
     <aside className="jp-panel" aria-label="JobPosted autofill panel">
       <div className="jp-panel-col">
       <header className="jp-panel-header">
-        <div className="jp-brand">
-          <span className="jp-brand-mark">
-            <img src={assetUrl("brand/jobposted-mark.png")} alt="" />
-          </span>
-          <div>
-            <strong>JobPosted</strong>
-            <span className="jp-status" data-s={status}>
-              <i aria-hidden="true" />
-              {status === "done" && result
-                ? doneSummary
-                : status === "scanning" || status === "planning"
-                  ? "Scanning this page…"
-                  : status === "filling"
-                    ? "Autofilling…"
-                    : status === "error"
-                      ? "Needs your review"
-                      : "Application copilot"}
-            </span>
-          </div>
-        </div>
-        <div className="jp-header-actions">
-          <button type="button" className="jp-text-action" onClick={() => window.open("mailto:feedback@jobposted.app", "_blank")}>
-            Feedback
-          </button>
-          <button type="button" className="jp-icon-action" title="Settings" onClick={() => void message({ type: "OPEN_OPTIONS" })}>
-            <Settings aria-hidden="true" />
-          </button>
-          <button type="button" className="jp-icon-action" title="Collapse" onClick={() => setCollapsed(true)}>
-            <ChevronRight aria-hidden="true" />
-          </button>
-        </div>
+        {showSettings ? (
+          <>
+            <div className="jp-brand">
+              <button type="button" className="jp-icon-action jp-run-back" title="Back" onClick={() => setShowSettings(false)}>
+                <ChevronLeft aria-hidden="true" />
+              </button>
+              <div>
+                <strong>Settings</strong>
+                <span className="jp-status">Privacy and fill behavior</span>
+              </div>
+            </div>
+            <div className="jp-header-actions" />
+          </>
+        ) : (
+          <>
+            <div className="jp-brand">
+              <span className="jp-brand-mark">
+                <img src={assetUrl("brand/jobposted-mark.png")} alt="" />
+              </span>
+              <div>
+                <strong>JobPosted</strong>
+                {status !== "idle" ? (
+                  <span className="jp-status" data-s={status}>
+                    <i aria-hidden="true" />
+                    {status === "done" && result
+                      ? doneSummary
+                      : status === "scanning" || status === "planning"
+                        ? "Scanning this page…"
+                        : status === "filling"
+                          ? "Autofilling…"
+                          : "Needs your review"}
+                  </span>
+                ) : null}
+              </div>
+            </div>
+            <div className="jp-header-actions">
+              {tab === "tracker" ? (
+                <button
+                  type="button"
+                  className="jp-text-action jp-full-tracker-action"
+                  onClick={() => void message({ type: "OPEN_TAB", url: fullTrackerUrl })}
+                >
+                  <ExternalLink aria-hidden="true" />
+                  <span>Open full tracker</span>
+                </button>
+              ) : (
+                <>
+                  <button type="button" className="jp-text-action" onClick={() => window.open("mailto:feedback@jobposted.app", "_blank")}>
+                    Feedback
+                  </button>
+                  <button type="button" className="jp-icon-action" title="Settings" onClick={() => setShowSettings(true)}>
+                    <Settings aria-hidden="true" />
+                  </button>
+                </>
+              )}
+              <button type="button" className="jp-icon-action" title="Collapse" onClick={() => setCollapsed(true)}>
+                <ChevronRight aria-hidden="true" />
+              </button>
+            </div>
+          </>
+        )}
       </header>
 
       <div className="jp-panel-scroll">
+        {showSettings ? (
+          <SettingsView settings={settings} onChange={updateSettings} />
+        ) : (
+        <>
         {authError ? (
           <section className="jp-message jp-message-warn jp-rise">
             <AlertTriangle aria-hidden="true" />
@@ -2151,6 +2258,8 @@ function InPagePanel({ initiallyCollapsed = false }: { initiallyCollapsed?: bool
         ) : null}
         </>
         ) : null}
+        </>
+        )}
       </div>
 
       {toast ? (
@@ -2160,7 +2269,7 @@ function InPagePanel({ initiallyCollapsed = false }: { initiallyCollapsed?: bool
         </div>
       ) : null}
 
-      {tab === "autofill" && (synced || trackerQueued || resultError) ? (
+      {!showSettings && tab === "autofill" && (synced || trackerQueued || resultError) ? (
       <footer className="jp-panel-footer">
         {synced ? (
           <div className="jp-synced jp-rise">
@@ -2208,6 +2317,7 @@ function InPagePanel({ initiallyCollapsed = false }: { initiallyCollapsed?: bool
       ) : null}
       </div>
 
+      {!showSettings ? (
       <nav className="jp-rail" role="tablist" aria-label="Panel sections">
         <button
           type="button"
@@ -2240,7 +2350,108 @@ function InPagePanel({ initiallyCollapsed = false }: { initiallyCollapsed?: bool
           <span>Profile</span>
         </button>
       </nav>
+      ) : null}
     </aside>
+  );
+}
+
+function SettingsView({
+  settings,
+  onChange,
+}: {
+  settings: ExtensionSettings;
+  onChange: (partial: Partial<ExtensionSettings>) => void | Promise<void>;
+}) {
+  return (
+    <div className="jp-settings">
+      <section className="jp-settings-card">
+        <h2 className="jp-settings-title">Submission policy</h2>
+        <div className="jp-settings-policy">
+          <span className="jp-settings-policy-icon">
+            <MousePointerClick aria-hidden="true" />
+          </span>
+          <div>
+            <span className="jp-settings-row-label">Fill, stop at Submit</span>
+            <span className="jp-settings-row-desc">
+              JobPosted fills known fields and can move through steps, but you review everything and click the final
+              submit button yourself. Always.
+            </span>
+          </div>
+        </div>
+      </section>
+
+      <section className="jp-settings-card">
+        <h2 className="jp-settings-title">Privacy and fill behavior</h2>
+        <SettingsToggle
+          label="Fill demographics"
+          description="Off by default. Voluntary EEO and self-ID fields are skipped unless you enable this."
+          checked={settings.demographicsEnabled}
+          onChange={(value) => void onChange({ demographicsEnabled: value })}
+        />
+        <SettingsToggle
+          label="Overwrite filled fields"
+          description="When off, JobPosted leaves values you already typed alone."
+          checked={settings.overwriteFilledFields}
+          onChange={(value) => void onChange({ overwriteFilledFields: value })}
+        />
+        <SettingsToggle
+          label="Generic fallback"
+          description="Allow autofill on supported job sites that don't have a dedicated adapter."
+          checked={settings.enableGenericFallback}
+          onChange={(value) => void onChange({ enableGenericFallback: value })}
+        />
+        <SettingsToggle
+          label="Autofill adds to tracker"
+          description="Autofilling a page also records the job in your application tracker."
+          checked={settings.autoTrackAutofill}
+          onChange={(value) => void onChange({ autoTrackAutofill: value })}
+        />
+        <SettingsToggle
+          label="Auto-advance steps"
+          description="Fill & Continue may click Next between steps at a human pace."
+          checked={settings.autoAdvance}
+          onChange={(value) => void onChange({ autoAdvance: value })}
+          last
+        />
+      </section>
+
+      <section className="jp-settings-note">
+        <ShieldCheck aria-hidden="true" />
+        <p>No employer, Workday, or LinkedIn passwords are stored. JobPosted only runs inside sessions you already opened in Chrome.</p>
+      </section>
+    </div>
+  );
+}
+
+function SettingsToggle({
+  label,
+  description,
+  checked,
+  onChange,
+  last,
+}: {
+  label: string;
+  description: string;
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+  last?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      className={`jp-settings-row${last ? " jp-settings-row-last" : ""}`}
+      onClick={() => onChange(!checked)}
+    >
+      <span className="jp-settings-row-text">
+        <span className="jp-settings-row-label">{label}</span>
+        <span className="jp-settings-row-desc">{description}</span>
+      </span>
+      <span className={`jp-switch${checked ? " jp-settings-switch-on" : ""}`} aria-hidden="true">
+        <span className="jp-switch-knob" />
+      </span>
+    </button>
   );
 }
 
@@ -2875,78 +3086,167 @@ function relativeDay(iso: string): string {
   return `${Math.floor(days / 30)} mo ago`;
 }
 
-// Tracker list cache — shared across TrackerTab remounts (every tab switch fully
-// unmounts the tab) and a panel-open prefetch, so the list renders instantly and
-// only shows a spinner on the very first load of the page session. Every mount
-// still revalidates against the database in the background. In-flight dedup keeps
-// the prefetch and the tab open from firing two concurrent requests.
-let trackerCache: ExtensionTrackerItem[] | null = null;
-let trackerInFlight: Promise<{ items: ExtensionTrackerItem[] | null; error: string | null }> | null = null;
+const TRACKER_PAGE_SIZE = 20;
+
+type TrackerPageState = {
+  items: ExtensionTrackerItem[];
+  pagination: ExtensionTrackerPagination;
+};
+
+// Tracker page cache — shared across TrackerTab remounts (every tab switch fully
+// unmounts the tab) and a panel-open prefetch, so the active page renders
+// instantly and only shows a spinner on the very first load of the page session.
+// Every mount still revalidates against the database in the background.
+const trackerPageCache = new Map<string, TrackerPageState>();
+const trackerInFlight = new Map<string, Promise<{ page: TrackerPageState | null; error: string | null }>>();
 // Remember the last-selected stage filter across TrackerTab remounts (a tab switch
 // fully unmounts the tab) so returning to Track lands on the same column — Applied
 // stays on Applied, Interview on Interview, etc. — instead of snapping back to Saved.
 let trackerFilter = "inbox";
 
-function loadTrackerItems(): Promise<{ items: ExtensionTrackerItem[] | null; error: string | null }> {
-  if (trackerInFlight) return trackerInFlight;
-  trackerInFlight = (async () => {
+function trackerPageKey(stage: string, offset: number) {
+  return `${stage}:${offset}`;
+}
+
+function cachedTrackerPage(stage: string, offset: number) {
+  return trackerPageCache.get(trackerPageKey(stage, offset)) ?? null;
+}
+
+function loadTrackerPage(stage = trackerFilter, offset = 0): Promise<{ page: TrackerPageState | null; error: string | null }> {
+  const key = trackerPageKey(stage, offset);
+  const existing = trackerInFlight.get(key);
+  if (existing) return existing;
+  const request = (async () => {
     try {
-      const response = await message<ExtensionMessageResponse>({ type: "TRACKER_LIST" });
+      const response = await message<ExtensionMessageResponse>({
+        type: "TRACKER_LIST",
+        stage,
+        limit: TRACKER_PAGE_SIZE,
+        offset,
+      });
       if (response.ok && response.type === "TRACKER_LIST") {
-        trackerCache = response.items;
-        return { items: response.items, error: null };
+        const page = { items: response.items, pagination: response.pagination };
+        trackerPageCache.set(key, page);
+        return { page, error: null };
       }
-      return { items: null, error: response.ok ? null : response.error };
+      return { page: null, error: response.ok ? null : response.error };
     } finally {
-      trackerInFlight = null;
+      trackerInFlight.delete(key);
     }
   })();
-  return trackerInFlight;
+  trackerInFlight.set(key, request);
+  return request;
+}
+
+function visibleTrackerPages(current: number, total: number): Array<number | "ellipsis"> {
+  if (total <= 7) return Array.from({ length: total }, (_, index) => index + 1);
+  const pages = new Set([1, total, current, current - 1, current + 1]);
+  if (current <= 3) {
+    pages.add(2);
+    pages.add(3);
+    pages.add(4);
+  }
+  if (current >= total - 2) {
+    pages.add(total - 1);
+    pages.add(total - 2);
+    pages.add(total - 3);
+  }
+
+  const sorted = [...pages]
+    .filter((page) => page >= 1 && page <= total)
+    .sort((a, b) => a - b);
+  const result: Array<number | "ellipsis"> = [];
+  for (const page of sorted) {
+    const previous = result[result.length - 1];
+    if (typeof previous === "number" && page - previous > 1) result.push("ellipsis");
+    result.push(page);
+  }
+  return result;
 }
 
 function TrackerTab({ onOpen }: { onOpen: (url: string) => void }) {
   // Seed from the cache so a return visit paints immediately instead of spinning.
-  const [items, setItems] = useState<ExtensionTrackerItem[] | null>(trackerCache);
+  const [page, setPage] = useState<TrackerPageState | null>(() => cachedTrackerPage(trackerFilter, 0));
   const [error, setError] = useState<string | null>(null);
   // Seed from the remembered filter so a return visit restores the last column.
   const [filter, setFilterState] = useState<string>(trackerFilter);
+  const [offset, setOffset] = useState(page?.pagination.offset ?? 0);
   const setFilter = (key: string) => {
     trackerFilter = key;
     setFilterState(key);
+    setOffset(0);
   };
 
   useEffect(() => {
     let cancelled = false;
-    void loadTrackerItems().then(({ items: fresh, error: err }) => {
+    const cached = cachedTrackerPage(filter, offset);
+    if (cached) setPage(cached);
+    else setPage(null);
+    void loadTrackerPage(filter, offset).then(({ page: fresh, error: err }) => {
       if (cancelled) return;
       if (fresh) {
-        setItems(fresh);
+        setPage(fresh);
         setError(null);
       } else {
         setError(err);
         // Keep showing cached rows on a failed refresh; only fall to the empty
         // state when there was nothing cached to begin with.
-        setItems((prev) => prev ?? []);
+        setPage((prev) => prev ?? { items: [], pagination: { limit: TRACKER_PAGE_SIZE, offset, total: 0, hasMore: false } });
       }
     });
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [filter, offset]);
 
-  const list = items ?? [];
-  const filtered = list.filter((item) => trackerStageKey(item.stage) === filter);
+  const list = page?.items ?? [];
+  const pagination = page?.pagination ?? { limit: TRACKER_PAGE_SIZE, offset, total: 0, hasMore: false };
+  const pageNumber = Math.floor(pagination.offset / Math.max(pagination.limit, 1)) + 1;
+  const pageCount = Math.max(1, Math.ceil(pagination.total / Math.max(pagination.limit, 1)));
+  const showingStart = pagination.total === 0 ? 0 : pagination.offset + 1;
+  const showingEnd = Math.min(pagination.offset + list.length, pagination.total);
+  const pageItems = visibleTrackerPages(pageNumber, pageCount);
   const trackerFilterIndex = Math.max(0, TRACKER_FILTERS.findIndex((entry) => entry.key === filter));
 
   function applyUpdate(updated: ExtensionTrackerItem) {
-    setItems((prev) => {
-      const next = prev ? prev.map((item) => (item.id === updated.id ? updated : item)) : prev;
-      if (next) trackerCache = next;
-      return next;
+    const updatedStage = trackerStageKey(updated.stage);
+    trackerPageCache.forEach((cached, key) => {
+      const hasItem = cached.items.some((item) => item.id === updated.id);
+      if (!hasItem) return;
+      const nextItems =
+        key.startsWith(`${updatedStage}:`)
+          ? cached.items.map((item) => (item.id === updated.id ? updated : item))
+          : cached.items.filter((item) => item.id !== updated.id);
+      trackerPageCache.set(key, {
+        items: nextItems,
+        pagination: {
+          ...cached.pagination,
+          total: key.startsWith(`${updatedStage}:`) ? cached.pagination.total : Math.max(0, cached.pagination.total - 1),
+        },
+      });
+    });
+    setPage((prev) => {
+      if (!prev) return prev;
+      if (updatedStage !== filter) {
+        return {
+          items: prev.items.filter((item) => item.id !== updated.id),
+          pagination: { ...prev.pagination, total: Math.max(0, prev.pagination.total - 1) },
+        };
+      }
+      return { ...prev, items: prev.items.map((item) => (item.id === updated.id ? updated : item)) };
     });
   }
 
-  if (items === null) {
+  function goToPage(nextOffset: number) {
+    setOffset(Math.max(0, nextOffset));
+  }
+
+  function goToPageNumber(nextPage: number) {
+    const safePage = Math.max(1, Math.min(pageCount, nextPage));
+    goToPage((safePage - 1) * pagination.limit);
+  }
+
+  if (page === null) {
     return (
       <div className="jp-tracker-empty">
         <Loader2 className="jp-spin" aria-hidden="true" />
@@ -2980,19 +3280,73 @@ function TrackerTab({ onOpen }: { onOpen: (url: string) => void }) {
         </div>
       ) : null}
 
-      {filtered.length === 0 ? (
+      {list.length === 0 ? (
         <div className="jp-tracker-empty">
           <ListChecks aria-hidden="true" />
-          <strong>{list.length === 0 ? "No tracked jobs yet" : "Nothing here"}</strong>
-          <span>{list.length === 0 ? "Autofill or save a job and it’ll show up here." : "No applications in this status."}</span>
+          <strong>{pagination.total === 0 ? "No tracked jobs yet" : "Nothing here"}</strong>
+          <span>{pagination.total === 0 ? "Autofill or save a job and it’ll show up here." : "No applications on this page."}</span>
         </div>
       ) : (
         <div className="jp-tk-list">
-          {filtered.map((item) => (
+          {list.map((item) => (
             <TrackerCard key={item.id} item={item} onOpen={onOpen} onUpdate={applyUpdate} />
           ))}
         </div>
       )}
+
+      {pagination.total > pagination.limit ? (
+        <div className="jp-tk-pagination" aria-label="Tracker pages">
+          <span className="jp-tk-page-summary">
+            {showingStart}-{showingEnd} of {pagination.total} · Page {pageNumber} of {pageCount}
+          </span>
+          <div className="jp-tk-page-controls">
+            {pageNumber > 1 ? (
+              <button
+                type="button"
+                className="jp-tk-page-arrow"
+                onClick={() => goToPageNumber(pageNumber - 1)}
+                aria-label="Previous tracker page"
+              >
+                <ChevronLeft aria-hidden="true" />
+              </button>
+            ) : (
+              <span className="jp-tk-page-arrow jp-tk-page-arrow-hidden" aria-hidden="true" />
+            )}
+            <div className="jp-tk-page-numbers">
+              {pageItems.map((item, index) =>
+                item === "ellipsis" ? (
+                  <span key={`ellipsis-${index}`} className="jp-tk-page-ellipsis" aria-hidden="true">
+                    ...
+                  </span>
+                ) : (
+                  <button
+                    key={item}
+                    type="button"
+                    className={`jp-tk-page-number${item === pageNumber ? " jp-tk-page-number-on" : ""}`}
+                    aria-current={item === pageNumber ? "page" : undefined}
+                    onClick={() => goToPageNumber(item)}
+                    disabled={item === pageNumber}
+                  >
+                    {item}
+                  </button>
+                ),
+              )}
+            </div>
+            {pageNumber < pageCount ? (
+              <button
+                type="button"
+                className="jp-tk-page-arrow"
+                onClick={() => goToPageNumber(pageNumber + 1)}
+                aria-label="Next tracker page"
+              >
+                <ChevronRight aria-hidden="true" />
+              </button>
+            ) : (
+              <span className="jp-tk-page-arrow jp-tk-page-arrow-hidden" aria-hidden="true" />
+            )}
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -3341,8 +3695,13 @@ function JobIdentityCard({
           </span>
         ) : null}
         {needsReview ? (
-          <button type="button" className="jp-job-review" onClick={onEditStart}>
-            <AlertTriangle aria-hidden="true" /> Confirm details before saving
+          <button
+            type="button"
+            className="jp-job-review"
+            title="JobPosted guessed the job title and company from this page and may have gotten them wrong. Tap to correct them before this application is saved to your tracker."
+            onClick={onEditStart}
+          >
+            <AlertTriangle aria-hidden="true" /> Check the job title and company
           </button>
         ) : null}
       </div>
@@ -3524,6 +3883,7 @@ export default defineContentScript({
     const formPresent = applicationFormLikelyPresent();
     mountInPagePanel({ autoOpen: formPresent });
     if (!formPresent) void autoOpenWhenApplicationFormAppears();
+    installAnswerAssist();
     watchContextInvalidation();
   },
 });

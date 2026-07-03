@@ -1,4 +1,5 @@
 import type {
+  ExtensionAnswerDraftRequest,
   ExtensionApplicationResponse,
   ExtensionApplicationUpsert,
   ExtensionAutofillPlan,
@@ -10,12 +11,14 @@ import type {
   ExtensionResumeOption,
   ExtensionResumeResponse,
   ExtensionTailorResponse,
+  ExtensionTrackerPagination,
   ExtensionTrackerItem,
   MasterProfile,
   ReusableAnswer,
 } from "@jobposted/shared";
 import {
   API_ANSWERS_PATH,
+  API_ANSWER_DRAFT_PATH,
   API_APPLICATIONS_PATH,
   API_RESUMES_PATH,
   API_COVER_LETTER_PATH,
@@ -51,6 +54,7 @@ function timeoutForPath(path: string) {
   // generous client budgets so we never abort before the server returns its
   // plan (or its fast deterministic fallback) and mis-report a "request_timeout".
   if (path === API_AUTOFILL_PLAN_PATH) return 35_000;
+  if (path === API_ANSWER_DRAFT_PATH) return 35_000;
   if (path === API_TAILOR_PATH || path === API_COVER_LETTER_PATH) return 90_000;
   return DEFAULT_TIMEOUT_MS;
 }
@@ -201,9 +205,34 @@ export async function generateCoverLetterForJob(
   });
 }
 
+export async function fetchTrackerPage(options: {
+  stage?: string;
+  limit?: number;
+  offset?: number;
+} = {}): Promise<{ items: ExtensionTrackerItem[]; pagination: ExtensionTrackerPagination }> {
+  const params = new URLSearchParams();
+  if (options.stage) params.set("stage", options.stage);
+  if (typeof options.limit === "number") params.set("limit", String(options.limit));
+  if (typeof options.offset === "number") params.set("offset", String(options.offset));
+  const path = params.size > 0 ? `${API_APPLICATIONS_PATH}?${params.toString()}` : API_APPLICATIONS_PATH;
+  const response = await authedFetch<{
+    ok: true;
+    items: ExtensionTrackerItem[];
+    pagination?: ExtensionTrackerPagination;
+  }>(path);
+  return {
+    items: response.items ?? [],
+    pagination: response.pagination ?? {
+      limit: response.items?.length ?? 0,
+      offset: 0,
+      total: response.items?.length ?? 0,
+      hasMore: false,
+    },
+  };
+}
+
 export async function fetchTrackerItems(): Promise<ExtensionTrackerItem[]> {
-  const response = await authedFetch<{ ok: true; items: ExtensionTrackerItem[] }>(API_APPLICATIONS_PATH);
-  return response.items ?? [];
+  return (await fetchTrackerPage()).items;
 }
 
 export async function updateTrackerItem(payload: {
@@ -230,6 +259,14 @@ export async function uploadResume(payload: { name: string; dataBase64: string }
     body: JSON.stringify(payload),
   });
   return response.resume ?? null;
+}
+
+export async function draftAnswer(payload: ExtensionAnswerDraftRequest): Promise<string> {
+  const response = await authedFetch<{ ok: true; answer: string }>(API_ANSWER_DRAFT_PATH, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+  return response.answer;
 }
 
 export async function saveAnswer(answer: ReusableAnswer): Promise<void> {

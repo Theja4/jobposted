@@ -1,7 +1,8 @@
 import { createHash } from "node:crypto";
-import { NextResponse } from "next/server";
+import { after, NextResponse } from "next/server";
 import {
   resolveCompanyAssetsFromJobUrl,
+  type CompanyAssets,
   type ExtensionApplicationUpsert,
   type ExtensionTrackerItem,
 } from "@jobposted/shared";
@@ -81,13 +82,98 @@ function sourceJobId(jobUrl: string, fallback: string) {
   return createHash("sha256").update(jobUrl || fallback).digest("hex").slice(0, 32);
 }
 
-function errorMessage(error: unknown) {
-  if (!error || typeof error !== "object") return "Unknown error.";
-  const record = error as Record<string, unknown>;
-  return asString(record.message) || asString(record.details) || asString(record.hint) || "Unknown error.";
-}
+const TRACKER_SAVE_ERROR = "Couldn't save to your tracker. Try Retry.";
+const TRACKER_UPDATE_ERROR = "Couldn't update your tracker. Try Retry.";
+const TRACKER_DEFAULT_LIMIT = 20;
+const TRACKER_MAX_LIMIT = 100;
+const EMPTY_COMPANY_ASSETS: CompanyAssets = {
+  companyDomain: null,
+  companyLogoUrl: null,
+  companyLogoResolvedAt: null,
+};
 
 type SchemaScopedClient = { from: (table: string) => any };
+
+function parseIntParam(value: string | null, fallback: number, min: number, max: number) {
+  const parsed = Number(value ?? "");
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.max(min, Math.min(max, Math.trunc(parsed)));
+}
+
+function statusesForTrackerStage(stage: string) {
+  if (stage === "inbox") return ["saved", "queued", "submitting", "filled", "ready_for_review"];
+  if (stage === "applied") return ["submitted", "applied", "viewed", "reply"];
+  if (stage === "interview") return ["interview"];
+  if (stage === "offer") return ["offer"];
+  if (stage === "closed") return ["rejected", "failed", "closed"];
+  if (stage.startsWith("custom:")) return [stage];
+  return null;
+}
+
+function applyStageFilter<T extends { in: (column: string, values: string[]) => T }>(query: T, stage: string | null) {
+  const statuses = stage ? statusesForTrackerStage(stage) : null;
+  return statuses ? query.in("status", statuses) : query;
+}
+
+async function resolveAndPersistCompanyAssets(args: {
+  client: SchemaScopedClient;
+  writeClient: SchemaScopedClient | null;
+  userId: string;
+  applicationId: string | null;
+  jobId: string | null;
+  jobUrl: string;
+  company: string;
+}) {
+  if (!args.jobUrl || (!args.applicationId && !args.jobId)) return;
+  try {
+    const companyAssets = await resolveCompanyAssetsFromJobUrl(
+      { applyUrl: args.jobUrl, companyName: args.company },
+      { timeoutMs: 2500 },
+    );
+    if (!companyAssets.companyDomain && !companyAssets.companyLogoUrl) return;
+
+    if (args.jobId && args.writeClient) {
+      const jobPatch: Record<string, unknown> = {};
+      if (companyAssets.companyDomain) jobPatch.company_domain = companyAssets.companyDomain;
+      if (companyAssets.companyLogoUrl) {
+        jobPatch.company_logo_url = companyAssets.companyLogoUrl;
+        jobPatch.company_logo_resolved_at = companyAssets.companyLogoResolvedAt ?? new Date().toISOString();
+      }
+      const { error: logoUpdateError } = await args.writeClient.from("jobs").update(jobPatch).eq("id", args.jobId);
+      if (logoUpdateError) console.error("extension job logo update failed", logoUpdateError);
+    }
+
+    if (args.applicationId) {
+      const { data, error: readError } = await args.client
+        .from("applications")
+        .select("field_map")
+        .eq("id", args.applicationId)
+        .eq("user_id", args.userId)
+        .maybeSingle();
+      if (readError) {
+        console.error("extension application asset lookup failed", readError);
+        return;
+      }
+      const fieldMap =
+        data?.field_map && typeof data.field_map === "object" && !Array.isArray(data.field_map)
+          ? (data.field_map as Record<string, unknown>)
+          : {};
+      const nextFieldMap = {
+        ...fieldMap,
+        ...(companyAssets.companyDomain ? { companyDomain: companyAssets.companyDomain } : {}),
+        ...(companyAssets.companyLogoUrl ? { companyLogoUrl: companyAssets.companyLogoUrl } : {}),
+      };
+      const { error: updateError } = await args.client
+        .from("applications")
+        .update({ field_map: nextFieldMap })
+        .eq("id", args.applicationId)
+        .eq("user_id", args.userId);
+      if (updateError) console.error("extension application asset update failed", updateError);
+    }
+  } catch (error) {
+    console.error("extension company asset resolution failed", error);
+  }
+}
 
 async function findExistingJobId(client: SchemaScopedClient, userId: string, jobUrl: string) {
   const candidates = jobUrlCandidates(jobUrl);
@@ -172,9 +258,7 @@ export async function POST(request: Request) {
     const jobUrl = canonicalizeJobUrl(asString(payload.jobUrl));
     const company = asString(payload.company) || "Unknown company";
     const role = asString(payload.role) || "Unknown role";
-    const companyAssets = jobUrl
-      ? await resolveCompanyAssetsFromJobUrl({ applyUrl: jobUrl, companyName: company }, { timeoutMs: 2500 })
-      : { companyDomain: null, companyLogoUrl: null, companyLogoResolvedAt: null };
+    const companyAssets = EMPTY_COMPANY_ASSETS;
     let jobId = asString(payload.jobId) || null;
     const { data: profile } = await auth.supabase
       .from("profiles")
@@ -192,17 +276,6 @@ export async function POST(request: Request) {
       jobId = await findExistingJobId(supabase, auth.user.id, jobUrl);
     }
 
-    if (jobId && writeClient && (companyAssets.companyDomain || companyAssets.companyLogoUrl)) {
-      const jobPatch: Record<string, unknown> = {};
-      if (companyAssets.companyDomain) jobPatch.company_domain = companyAssets.companyDomain;
-      if (companyAssets.companyLogoUrl) {
-        jobPatch.company_logo_url = companyAssets.companyLogoUrl;
-        jobPatch.company_logo_resolved_at = companyAssets.companyLogoResolvedAt ?? new Date().toISOString();
-      }
-      const { error: logoUpdateError } = await writeClient.from("jobs").update(jobPatch).eq("id", jobId);
-      if (logoUpdateError) console.error("extension job logo update failed", logoUpdateError);
-    }
-
     if (!jobId && writeClient) {
       const { data: job, error: jobError } = await writeClient
         .from("jobs")
@@ -212,13 +285,6 @@ export async function POST(request: Request) {
             source_job_id: sourceJobId(jobUrl, `${payload.platform}:${company}:${role}`),
             ats_type: payload.platform,
             company,
-            ...(companyAssets.companyDomain ? { company_domain: companyAssets.companyDomain } : {}),
-            ...(companyAssets.companyLogoUrl
-              ? {
-                  company_logo_url: companyAssets.companyLogoUrl,
-                  company_logo_resolved_at: companyAssets.companyLogoResolvedAt ?? new Date().toISOString(),
-                }
-              : {}),
             title: role,
             location: null,
             remote: "unknown",
@@ -281,9 +347,20 @@ export async function POST(request: Request) {
       .single();
     if (applicationError) {
       console.error("extension application upsert failed", applicationError);
-      return extensionError(`Could not sync the application: ${errorMessage(applicationError)}`, 500);
+      return extensionError(TRACKER_SAVE_ERROR, 500);
     }
     const savedApplication = application as { id: string; job_id: string | null } | null;
+    after(() =>
+      resolveAndPersistCompanyAssets({
+        client: supabase,
+        writeClient,
+        userId: auth.user.id,
+        applicationId: savedApplication?.id ?? null,
+        jobId: savedApplication?.job_id ?? jobId,
+        jobUrl,
+        company,
+      }),
+    );
 
     return NextResponse.json({
       ok: true,
@@ -300,19 +377,35 @@ export async function POST(request: Request) {
 export async function GET(request: Request) {
   try {
     const auth = await getExtensionAuthContext(request);
-    const { data, error } = await auth.supabase
+    const url = new URL(request.url);
+    const limit = parseIntParam(url.searchParams.get("limit"), TRACKER_DEFAULT_LIMIT, 1, TRACKER_MAX_LIMIT);
+    const offset = parseIntParam(url.searchParams.get("offset"), 0, 0, 1_000_000);
+    const stageParam = url.searchParams.get("stage");
+    const stage = stageParam ? trackerStageFromInput(stageParam, "inbox") : null;
+    let query = auth.supabase
       .from("applications")
-      .select(TRACKER_SELECT)
+      .select(TRACKER_SELECT, { count: "exact" })
       .eq("user_id", auth.user.id)
-      .order("created_at", { ascending: false })
-      .limit(200);
+      .order("created_at", { ascending: false });
+    query = applyStageFilter(query, stage);
+    const { data, error, count } = await query.range(offset, offset + limit - 1);
     if (error) {
       console.error("extension tracker list failed", error);
       return extensionError("Could not load your tracker.", 500);
     }
     const rows = Array.isArray(data) ? data : [];
     const items = rows.map((row) => toExtensionTrackerItem(row as Record<string, unknown>));
-    return NextResponse.json({ ok: true, items });
+    const total = Math.max(0, count ?? rows.length);
+    return NextResponse.json({
+      ok: true,
+      items,
+      pagination: {
+        limit,
+        offset,
+        total,
+        hasMore: offset + rows.length < total,
+      },
+    });
   } catch (error) {
     return authErrorResponse(error);
   }
@@ -351,7 +444,7 @@ export async function PATCH(request: Request) {
       .maybeSingle();
     if (error) {
       console.error("extension tracker update failed", error);
-      return extensionError(`Could not update the application: ${errorMessage(error)}`, 500);
+      return extensionError(TRACKER_UPDATE_ERROR, 500);
     }
     const item = data ? toExtensionTrackerItem(data as Record<string, unknown>) : null;
     return NextResponse.json({ ok: true, item });

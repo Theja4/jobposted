@@ -7,6 +7,8 @@ import type {
   ReusableAnswer,
 } from "@jobposted/shared";
 import { onboardingCompletion, sanitizeOnboardingConfig } from "@/lib/onboarding/model";
+import { findResumeDocuments, signedResumeUrl } from "@/lib/extension/resume";
+import { reportError } from "@/lib/observability/report";
 
 type UnknownRecord = Record<string, unknown>;
 
@@ -268,4 +270,82 @@ export function toReusableAnswer(value: unknown): ReusableAnswer | null {
   const answer = asString(record.value);
   if (!key || !prompt || !answer) return null;
   return { key, prompt, value: answer };
+}
+
+/**
+ * Load a user's full MasterProfile (profile row, saved answers, onboarding config, active resume
+ * base version, and signed resume/cover-letter URLs) from Supabase. Shared by the extension routes
+ * that need the profile to plan autofills or draft answers.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export async function loadMasterProfile(args: {
+  supabase: any;
+  user: { id: string; email?: string | null };
+}): Promise<MasterProfile> {
+  const { supabase, user } = args;
+  const [
+    { data: profileRow, error: profileError },
+    { data: answerRows },
+    { data: onboardingRow, error: onboardingError },
+  ] = await Promise.all([
+    supabase.from("profiles").select("*").eq("id", user.id).maybeSingle(),
+    supabase
+      .from("profile_answers")
+      .select("key,prompt,value")
+      .eq("user_id", user.id)
+      .order("updated_at", { ascending: false }),
+    supabase
+      .from("onboarding_configurations")
+      .select("data,completed_at,updated_at")
+      .eq("user_id", user.id)
+      .order("completed_at", { ascending: false })
+      .order("updated_at", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+  ]);
+
+  if (profileError) throw profileError;
+  if (onboardingError) {
+    await reportError("extension autofill onboarding profile fetch failed", onboardingError, { userId: user.id });
+  }
+
+  const activeResumeVersionId =
+    profileRow &&
+    typeof profileRow === "object" &&
+    "active_resume_version_id" in profileRow &&
+    typeof profileRow.active_resume_version_id === "string"
+      ? profileRow.active_resume_version_id
+      : "";
+  const { data: resumeBase } = await (activeResumeVersionId
+    ? supabase
+        .from("resume_base_versions")
+        .select("content,created_at")
+        .eq("user_id", user.id)
+        .eq("id", activeResumeVersionId)
+        .maybeSingle()
+    : supabase
+        .from("resume_base_versions")
+        .select("content,created_at")
+        .eq("user_id", user.id)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle());
+
+  const docs = await findResumeDocuments({ supabase, userId: user.id });
+  const [resumeUrl, coverLetterUrl] = await Promise.all([
+    signedResumeUrl(supabase, docs.resume?.storage_path),
+    signedResumeUrl(supabase, docs.coverLetter?.storage_path),
+  ]);
+
+  return buildMasterProfile({
+    authEmail: user.email,
+    profileRow: asRecord(profileRow),
+    resumeContent: resumeBase && typeof resumeBase === "object" && "content" in resumeBase ? resumeBase.content : null,
+    answers: Array.isArray(answerRows) ? answerRows : [],
+    onboardingData: onboardingRow && typeof onboardingRow === "object" && "data" in onboardingRow ? onboardingRow.data : null,
+    resumeUrl,
+    resumeName: docs.resume?.display_name ?? null,
+    coverLetterUrl,
+    coverLetterName: docs.coverLetter?.display_name ?? null,
+  });
 }

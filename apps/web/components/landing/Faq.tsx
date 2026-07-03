@@ -27,7 +27,7 @@ const FAQS = [
   },
   {
     q: "Which platforms does it support?",
-    a: "At launch: Greenhouse, Lever, and Ashby for direct ATS flows, plus LinkedIn and Workday through your own browser session.",
+    a: "JobPosted handles most public ATS forms through the browser extension, with extra care for Workday's multi-step flow. Login-gated sites stay inside your own browser session.",
   },
   {
     q: "Do you guarantee a number of applications?",

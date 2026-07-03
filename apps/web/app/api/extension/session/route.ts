@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { extensionError } from "@/lib/extension/auth";
+import { checkRateLimit, clientIp, RATE_LIMITS, rateLimitResponse } from "@/lib/rate-limit";
 
 export const runtime = "nodejs";
 
@@ -13,6 +14,15 @@ export async function POST(request: Request) {
   const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
   if (!url || !anonKey) {
     return extensionError("Supabase is not configured.", 503);
+  }
+
+  const rateLimit = await checkRateLimit({
+    scope: "extension_session:ip",
+    key: clientIp(request),
+    ...RATE_LIMITS.extensionSession,
+  });
+  if (!rateLimit.allowed) {
+    return rateLimitResponse(rateLimit, "Extension session refresh is temporarily rate limited. Try again shortly.");
   }
 
   const body = await request.json().catch(() => null);

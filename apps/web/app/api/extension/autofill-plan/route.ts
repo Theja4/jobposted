@@ -6,8 +6,7 @@ import type {
   MasterProfile,
 } from "@jobposted/shared";
 import { authErrorResponse, extensionError, getExtensionAuthContext } from "@/lib/extension/auth";
-import { buildMasterProfile } from "@/lib/extension/profile";
-import { findResumeDocuments, signedResumeUrl } from "@/lib/extension/resume";
+import { loadMasterProfile } from "@/lib/extension/profile";
 import { callGatewayJSON, gatewayConfigured } from "@/lib/ai/gateway";
 import { reportError } from "@/lib/observability/report";
 import { checkRateLimit, RATE_LIMITS, rateLimitResponse } from "@/lib/rate-limit";
@@ -31,7 +30,7 @@ export const runtime = "nodejs";
 // the extension sees a 504/abort instead of the plan or its fallback.
 export const maxDuration = 30;
 
-const DEFAULT_AUTOFILL_MODEL = "inception/mercury-2";
+const DEFAULT_AUTOFILL_MODEL = "grok-4-fast-non-reasoning";
 
 const SYSTEM_PROMPT = `You are JobPosted's application-form autofill planner.
 Return only JSON matching the schema. Plan one action per supplied fieldId.
@@ -138,78 +137,6 @@ function parsePayload(value: unknown): ExtensionAutofillPlanRequest | null {
     stepName: asString(body.stepName).slice(0, 180) || null,
     fields,
   };
-}
-
-async function loadMasterProfile(args: {
-  supabase: SupabaseClient;
-  user: { id: string; email?: string | null };
-}): Promise<MasterProfile> {
-  const { supabase, user } = args;
-  const [
-    { data: profileRow, error: profileError },
-    { data: answerRows },
-    { data: onboardingRow, error: onboardingError },
-  ] = await Promise.all([
-    supabase.from("profiles").select("*").eq("id", user.id).maybeSingle(),
-    supabase
-      .from("profile_answers")
-      .select("key,prompt,value")
-      .eq("user_id", user.id)
-      .order("updated_at", { ascending: false }),
-    supabase
-      .from("onboarding_configurations")
-      .select("data,completed_at,updated_at")
-      .eq("user_id", user.id)
-      .order("completed_at", { ascending: false })
-      .order("updated_at", { ascending: false })
-      .limit(1)
-      .maybeSingle(),
-  ]);
-
-  if (profileError) throw profileError;
-  if (onboardingError) {
-    await reportError("extension autofill onboarding profile fetch failed", onboardingError, { userId: user.id });
-  }
-
-  const activeResumeVersionId =
-    profileRow &&
-    typeof profileRow === "object" &&
-    "active_resume_version_id" in profileRow &&
-    typeof profileRow.active_resume_version_id === "string"
-      ? profileRow.active_resume_version_id
-      : "";
-  const { data: resumeBase } = await (activeResumeVersionId
-    ? supabase
-        .from("resume_base_versions")
-        .select("content,created_at")
-        .eq("user_id", user.id)
-        .eq("id", activeResumeVersionId)
-        .maybeSingle()
-    : supabase
-        .from("resume_base_versions")
-        .select("content,created_at")
-        .eq("user_id", user.id)
-        .order("created_at", { ascending: false })
-        .limit(1)
-        .maybeSingle());
-
-  const docs = await findResumeDocuments({ supabase, userId: user.id });
-  const [resumeUrl, coverLetterUrl] = await Promise.all([
-    signedResumeUrl(supabase, docs.resume?.storage_path),
-    signedResumeUrl(supabase, docs.coverLetter?.storage_path),
-  ]);
-
-  return buildMasterProfile({
-    authEmail: user.email,
-    profileRow: asRecord(profileRow),
-    resumeContent: resumeBase && typeof resumeBase === "object" && "content" in resumeBase ? resumeBase.content : null,
-    answers: Array.isArray(answerRows) ? answerRows : [],
-    onboardingData: onboardingRow && typeof onboardingRow === "object" && "data" in onboardingRow ? onboardingRow.data : null,
-    resumeUrl,
-    resumeName: docs.resume?.display_name ?? null,
-    coverLetterUrl,
-    coverLetterName: docs.coverLetter?.display_name ?? null,
-  });
 }
 
 /**

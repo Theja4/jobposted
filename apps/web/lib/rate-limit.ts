@@ -30,6 +30,14 @@ export const RATE_LIMITS = {
     limit: positiveIntEnv("RATE_LIMIT_FIELD_MAP_PER_HOUR", 120),
     windowSeconds: 60 * 60,
   },
+  answerDraft: {
+    limit: positiveIntEnv("RATE_LIMIT_ANSWER_DRAFT_PER_HOUR", 60),
+    windowSeconds: 60 * 60,
+  },
+  extensionSession: {
+    limit: positiveIntEnv("RATE_LIMIT_EXTENSION_SESSION_PER_HOUR", 120),
+    windowSeconds: 60 * 60,
+  },
   waitlist: {
     limit: positiveIntEnv("RATE_LIMIT_WAITLIST_PER_HOUR", 10),
     windowSeconds: 60 * 60,

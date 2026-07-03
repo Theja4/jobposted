@@ -1710,6 +1710,10 @@ describe("fillWorkdayExperience — blank repeater pages", () => {
       <div data-automation-id="formField-firstYearAttended"><input data-automation-id="dateSectionYear-input" aria-label="Year" /></div>
       <div data-automation-id="formField-lastYearAttended"><input data-automation-id="dateSectionYear-input" aria-label="Year" /></div>
     </section>`;
+  const LANGUAGE_ROW_TEMPLATE = `<section role="group" data-row="language">
+      <div data-automation-id="formField-language"><div data-automation-id="multiSelectContainer"><div data-automation-id="multiselectInputContainer"><input /></div></div></div>
+      <div data-automation-id="formField-proficiency"><button type="button" aria-haspopup="listbox">Select One</button></div>
+    </section>`;
 
   function wireAddButton(
     document: Document,
@@ -1848,6 +1852,18 @@ describe("fillWorkdayExperience — blank repeater pages", () => {
         "Mathematics",
       ]);
     });
+    wireAddButton(document, bySection("languages"), LANGUAGE_ROW_TEMPLATE, (row) => {
+      wireTypeahead(document, row.querySelector("[data-automation-id='formField-language']") as HTMLElement, [
+        "English",
+        "Hindi",
+        "French",
+      ]);
+      wireDegree(document, row.querySelector("[data-automation-id='formField-proficiency'] button") as HTMLElement, [
+        "Native",
+        "Fluent",
+        "Conversational",
+      ]);
+    });
     wireTypeahead(document, document.querySelector("[data-automation-id='formField-skills']") as HTMLElement, [
       "TypeScript",
       "React",
@@ -1892,6 +1908,7 @@ describe("fillWorkdayExperience — blank repeater pages", () => {
       },
     ],
     skills: ["TypeScript"],
+    answers: [{ key: "screening.languages", prompt: "Which languages do you speak fluently?", value: "English, Hindi" }],
   };
 
   it("clicks Add and fills a fresh Work Experience and Education row", async () => {
@@ -1927,7 +1944,17 @@ describe("fillWorkdayExperience — blank repeater pages", () => {
     expect(selectedItems(document.querySelector("[data-automation-id='formField-skills']") as HTMLElement)).toEqual([
       "TypeScript",
     ]);
-    expect(clicks).toEqual({ work: 1, education: 1, languages: 0 });
+    const languageRows = Array.from(document.querySelectorAll<HTMLElement>("[data-row='language']"));
+    expect(languageRows).toHaveLength(2);
+    expect(languageRows.map((row) => selectedItems(row.querySelector("[data-automation-id='formField-language']") as HTMLElement))).toEqual([
+      ["English"],
+      ["Hindi"],
+    ]);
+    expect(languageRows.map((row) => row.querySelector("[data-automation-id='formField-proficiency'] button")?.textContent)).toEqual([
+      "Fluent",
+      "Fluent",
+    ]);
+    expect(clicks).toEqual({ work: 1, education: 1, languages: 2 });
   });
 
   it("re-finds replaced Add Another buttons and fills multiple Work Experience and Education rows", async () => {
@@ -2479,6 +2506,7 @@ describe("fillWorkdayExperience — blank repeater pages", () => {
 
     expect(document.querySelectorAll("[data-row='work']").length).toBe(1);
     expect(document.querySelectorAll("[data-row='education']").length).toBe(1);
-    expect(clicks).toEqual({ work: 1, education: 1, languages: 0 });
-  });
+    expect(document.querySelectorAll("[data-row='language']").length).toBe(2);
+    expect(clicks).toEqual({ work: 1, education: 1, languages: 2 });
+  }, 12000);
 });

@@ -15,11 +15,12 @@ import {
 import { EXTENSION_BRIDGE_PATH, JOBPOSTED_WEB_ORIGIN } from "../src/config/env";
 import {
   createAutofillPlan,
+  draftAnswer,
   ExtensionHttpError,
   fetchProfile,
   fetchResume,
   fetchResumeOptions,
-  fetchTrackerItems,
+  fetchTrackerPage,
   generateCoverLetterForJob,
   mapField,
   saveAnswer,
@@ -772,7 +773,14 @@ async function handleMessage(message: ExtensionMessage, tabId?: number): Promise
       await writeJobState(tabId, null);
       return { ok: true, type: "JOB_STATE_CLEAR" };
     case "TRACKER_LIST":
-      return { ok: true, type: "TRACKER_LIST", items: await fetchTrackerItems() };
+      {
+        const page = await fetchTrackerPage({
+          stage: message.stage,
+          limit: message.limit,
+          offset: message.offset,
+        });
+        return { ok: true, type: "TRACKER_LIST", items: page.items, pagination: page.pagination };
+      }
     case "TRACKER_UPDATE":
       return {
         ok: true,
@@ -810,6 +818,8 @@ async function handleMessage(message: ExtensionMessage, tabId?: number): Promise
     case "ANSWER_SAVE":
       await saveAnswer(message.answer);
       return { ok: true, type: "ANSWER_SAVE" };
+    case "ANSWER_DRAFT":
+      return { ok: true, type: "ANSWER_DRAFT", answer: await draftAnswer(message.payload) };
     case "SETTINGS_GET":
       return { ok: true, type: "SETTINGS_GET", settings: await readSettings() };
     case "SETTINGS_SET":

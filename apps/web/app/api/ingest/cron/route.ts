@@ -3,7 +3,7 @@ import { cronHandler } from "@jobposted/ingest";
 import { reportError } from "@/lib/observability/report";
 
 export const runtime = "nodejs";
-export const maxDuration = 60;
+export const maxDuration = 300;
 export const dynamic = "force-dynamic";
 
 function authorized(request: Request) {

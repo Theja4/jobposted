@@ -132,11 +132,17 @@ export function gatewayConfigured(): boolean {
 function getProviderConfigs(modelOverride?: string): ProviderConfig[] {
   const foundryEndpoint = env("AZURE_AI_FOUNDRY_ENDPOINT", "MICROSOFT_FOUNDRY_ENDPOINT", "FOUNDRY_ENDPOINT");
   const foundryKey = env("AZURE_AI_FOUNDRY_API_KEY", "MICROSOFT_FOUNDRY_API_KEY", "FOUNDRY_API_KEY");
-  const foundryModels = resolveFoundryModels();
+  // A per-call override that names a bare Foundry deployment (e.g. "grok-4-fast-non-reasoning",
+  // "gpt-5.4-nano") runs first on Foundry, with the configured chain kept as fallback. Provider
+  // ids that carry a "/" (e.g. "inception/mercury-2", "google/gemini-2.5-flash") are OpenRouter
+  // models, so they route there instead and leave the Foundry chain untouched.
+  const overrideIsOpenRouterModel = Boolean(modelOverride && modelOverride.includes("/"));
+  const foundryOverride = modelOverride && !overrideIsOpenRouterModel ? modelOverride : "";
+  const foundryModels = foundryOverride ? uniq([foundryOverride, ...resolveFoundryModels()]) : resolveFoundryModels();
 
   const siteUrl = env("OPENROUTER_SITE_URL", "NEXT_PUBLIC_SITE_URL") || "https://jobposted.app";
   const openRouterKey = env("OPENROUTER_API_KEY", "ANTHROPIC_AUTH_TOKEN");
-  const openRouterModel = modelOverride || env("OPENROUTER_MODEL") || DEFAULT_OPENROUTER_MODEL;
+  const openRouterModel = (overrideIsOpenRouterModel ? modelOverride : "") || env("OPENROUTER_MODEL") || DEFAULT_OPENROUTER_MODEL;
 
   const available: Partial<Record<ProviderName, ProviderConfig[]>> = {};
 

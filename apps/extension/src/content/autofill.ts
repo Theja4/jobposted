@@ -450,7 +450,7 @@ function uploadFileLabelText(element: HTMLElement) {
   return "";
 }
 
-function labelFor(element: HTMLElement): string {
+export function labelFor(element: HTMLElement): string {
   const doc = element.ownerDocument;
   const aria = visibleText(element.getAttribute("aria-label"));
   if (aria) return aria;
@@ -1497,6 +1497,39 @@ function educationValueForField(field: PageField, profile: MasterProfile) {
   return null;
 }
 
+function experiencePlanFieldKey(field: Pick<ExtensionAutofillPageField, "label" | "section" | "repeater">) {
+  const label = normalize(field.label);
+  const section = normalize(field.section ?? "");
+  const inExperience = field.repeater === "experience" || /\b(experience|employment|work history|job history)\b/.test(section);
+  if (!inExperience) return null;
+  if (/\b(company|employer|organization|organisation)\b/.test(label)) return "company" as const;
+  if (/\b(title|role|position|job title)\b/.test(label)) return "title" as const;
+  if (/\b(location|city|office)\b/.test(label)) return "location" as const;
+  if (/\b(start|from)\b/.test(label)) return "start" as const;
+  if (/\b(end|to|until)\b/.test(label)) return "end" as const;
+  if (/\b(current|present|currently work|still work)\b/.test(label)) return "current" as const;
+  if (/\b(description|responsibilit|achievement|summary)\b/.test(label)) return "description" as const;
+  return null;
+}
+
+function profileExperienceForField(field: PageField, profile: MasterProfile) {
+  return profile.experience[field.repeaterIndex ?? 0] ?? profile.experience[0] ?? null;
+}
+
+function experienceValueForField(field: PageField, profile: MasterProfile) {
+  const experience = profileExperienceForField(field, profile);
+  if (!experience) return null;
+  const key = experiencePlanFieldKey(field);
+  if (key === "company") return clean(experience.company);
+  if (key === "title") return clean(experience.title);
+  if (key === "location") return clean(experience.location);
+  if (key === "start") return clean(experience.startDate);
+  if (key === "end") return experience.current ? "" : clean(experience.endDate);
+  if (key === "current") return Boolean(experience.current);
+  if (key === "description") return experience.bullets.map(clean).filter(Boolean).join("\n");
+  return null;
+}
+
 function bestOptionMatch<T>(wanted: string, options: T[], label: (option: T) => string) {
   let best: { option: T; score: number } | null = null;
   for (const option of options) {
@@ -1564,6 +1597,31 @@ function educationPlanItemForField(field: PageField, profile: MasterProfile): Ex
   };
 }
 
+function experiencePlanItemForField(field: PageField, profile: MasterProfile): ExtensionAutofillPlanItem | null {
+  const value = experienceValueForField(field, profile);
+  if (value === null || value === "") return null;
+  const key = experiencePlanFieldKey(field);
+  if (key === "current" && typeof value === "boolean") {
+    return {
+      fieldId: field.fieldId,
+      action: value ? "check" : "uncheck",
+      value,
+      confidence: 0.9,
+      note: "Profile work experience value.",
+    };
+  }
+  if (typeof value !== "string") return null;
+  const option = isSelectableField(field) ? bestOptionMatch(value, field.options, (item) => item)?.option ?? value : null;
+  return {
+    fieldId: field.fieldId,
+    action: isSelectableField(field) ? "select" : "fill",
+    value,
+    optionLabel: option,
+    confidence: option ? 0.88 : 0.84,
+    note: "Profile work experience value.",
+  };
+}
+
 function educationPlanItemTarget(item: ExtensionAutofillPlanItem) {
   return clean(item.optionLabel) || (typeof item.value === "string" ? clean(item.value) : "");
 }
@@ -1588,7 +1646,7 @@ export function mergeProfileEducationPlan(fields: PageField[], plan: ExtensionAu
   const replacements = new Map<string, ExtensionAutofillPlanItem>();
   const fieldById = new Map(fields.map((field) => [field.fieldId, field]));
   for (const field of fields) {
-    const item = educationPlanItemForField(field, profile);
+    const item = educationPlanItemForField(field, profile) ?? experiencePlanItemForField(field, profile);
     if (item) replacements.set(field.fieldId, item);
   }
   if (replacements.size === 0) return plan;
@@ -1597,8 +1655,11 @@ export function mergeProfileEducationPlan(fields: PageField[], plan: ExtensionAu
   const deferredSchoolFields: ExtensionAutofillPlanItem[] = [];
   const mergedFields = plan.fields.flatMap((item) => {
     const field = fieldById.get(item.fieldId);
-    const candidate = field && educationPlanFieldKey(field) ? replacements.get(item.fieldId) : null;
-    const replacement = field && candidate && shouldUseEducationReplacement(field, item, candidate) ? candidate : null;
+    const candidate = field && (educationPlanFieldKey(field) || experiencePlanFieldKey(field)) ? replacements.get(item.fieldId) : null;
+    const replacement =
+      field && candidate && (!educationPlanFieldKey(field) || shouldUseEducationReplacement(field, item, candidate))
+        ? candidate
+        : null;
     if (replacement) {
       mergedIds.add(item.fieldId);
       if (educationPlanFieldKey(field ?? { label: "", section: null, repeater: null }) === "school") {
@@ -1607,7 +1668,7 @@ export function mergeProfileEducationPlan(fields: PageField[], plan: ExtensionAu
       }
       return [replacement];
     }
-    if (field && educationPlanFieldKey(field)) mergedIds.add(item.fieldId);
+    if (field && (educationPlanFieldKey(field) || experiencePlanFieldKey(field))) mergedIds.add(item.fieldId);
     return [item];
   });
   for (const field of fields) {
@@ -1686,7 +1747,7 @@ function recordFor(
   };
 }
 
-function nativeValueSetter(element: HTMLInputElement | HTMLTextAreaElement, value: string) {
+export function nativeValueSetter(element: HTMLInputElement | HTMLTextAreaElement, value: string) {
   const proto = element instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
   const setter = Object.getOwnPropertyDescriptor(proto, "value")?.set;
   setter?.call(element, value);
@@ -1699,7 +1760,7 @@ function nativeCheckedSetter(element: HTMLInputElement, value: boolean) {
   if (element.checked !== value) element.checked = value;
 }
 
-function dispatchFieldEvents(element: HTMLElement) {
+export function dispatchFieldEvents(element: HTMLElement) {
   element.dispatchEvent(new Event("input", { bubbles: true }));
   element.dispatchEvent(new Event("change", { bubbles: true }));
   const FocusEventCtor = element.ownerDocument.defaultView?.FocusEvent ?? Event;

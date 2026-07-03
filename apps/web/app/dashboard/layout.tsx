@@ -42,7 +42,7 @@ export default async function DashboardLayout({ children }: { children: ReactNod
                   <Settings2 className="size-4" aria-hidden="true" />
                 </span>
                 <p className="text-sm font-extrabold leading-5">
-                  Finish your setup to start auto applying.
+                  Finish setup so the extension can reuse your resume, profile, and saved answers.
                 </p>
               </div>
               <Link
