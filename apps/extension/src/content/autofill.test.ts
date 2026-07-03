@@ -91,6 +91,39 @@ describe("content autofill extraction", () => {
     expect(JSON.stringify(compact)).not.toContain("<form");
   });
 
+  it("excludes the extension's own injected UI (panel + answer-assist toolbar) from discovery", () => {
+    const doc = installDom(`<!doctype html>
+      <form>
+        <label for="cl">Cover letter</label>
+        <textarea id="cl"></textarea>
+      </form>`);
+    const form = doc.querySelector("form")!;
+
+    // Answer-assist toolbar: a <jobposted-answer-assist> host whose shadow root holds the tone <select>.
+    const toolbar = doc.createElement("jobposted-answer-assist");
+    const toolbarShadow = toolbar.attachShadow({ mode: "open" });
+    toolbarShadow.innerHTML =
+      "<select><option>Default tone</option><option>Professional</option><option>Confident</option></select>" +
+      '<button type="button">Quick answer</button>';
+    form.appendChild(toolbar);
+
+    // Docked panel: #jobposted-autofill-panel-host whose shadow root holds its own controls. Its label
+    // resolves to "JobPosted" — the exact stray field this regression guards against.
+    const panel = doc.createElement("div");
+    panel.id = "jobposted-autofill-panel-host";
+    const panelShadow = panel.attachShadow({ mode: "open" });
+    panelShadow.innerHTML = '<input aria-label="JobPosted" /><select><option>a</option><option>b</option></select>';
+    form.appendChild(panel);
+
+    const compact = compactFields(extractPageFields(doc));
+
+    // The real page field is still discovered…
+    expect(compact.some((field) => /cover letter/i.test(field.label))).toBe(true);
+    // …but none of our own injected controls leak in.
+    expect(compact.some((field) => /jobposted/i.test(field.label))).toBe(false);
+    expect(JSON.stringify(compact)).not.toContain("Professional");
+  });
+
   it("applies a page-level plan to native inputs", async () => {
     const doc = installDom(`<!doctype html>
       <form>

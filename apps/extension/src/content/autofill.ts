@@ -78,12 +78,19 @@ function isShadowRoot(node: Node | null | undefined): node is ShadowRoot {
   return Boolean(node && node.nodeType === 11 /* DOCUMENT_FRAGMENT_NODE */ && "host" in node);
 }
 
-/** querySelectorAll across the root and every open shadow root beneath it. */
+/** Our own injected UI hosts — the docked panel (#jobposted-autofill-panel-host) and the
+ *  answer-assist toolbars (<jobposted-answer-assist>). Field discovery must never descend into
+ *  these or it lists our own controls (e.g. the tone <select>) as page fields. */
+function isJobPostedHost(element: Element): boolean {
+  return element.id === "jobposted-autofill-panel-host" || element.tagName.startsWith("JOBPOSTED-");
+}
+
+/** querySelectorAll across the root and every open shadow root beneath it (skipping our own UI). */
 function queryAllDeep(root: ParentNode, selector: string): HTMLElement[] {
   const results = Array.from(root.querySelectorAll<HTMLElement>(selector));
   for (const host of Array.from(root.querySelectorAll<HTMLElement>("*"))) {
     const shadow = host.shadowRoot;
-    if (shadow) results.push(...queryAllDeep(shadow, selector));
+    if (shadow && !isJobPostedHost(host)) results.push(...queryAllDeep(shadow, selector));
   }
   return results;
 }
@@ -273,7 +280,12 @@ function textById(anchor: Element, id: string | null) {
 }
 
 function isInsideJobPostedPanel(element: Element) {
-  return Boolean(element.closest("#jobposted-autofill-panel-host"));
+  // closest() can't climb out of a shadow root to reach the host, so walk up through shadow
+  // boundaries and match any of our own UI hosts on the way.
+  for (let node: HTMLElement | null = element as HTMLElement; node; node = parentThroughShadow(node)) {
+    if (isJobPostedHost(node)) return true;
+  }
+  return false;
 }
 
 function isVisible(element: HTMLElement) {
