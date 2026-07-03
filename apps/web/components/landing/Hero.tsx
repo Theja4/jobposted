@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
   motion,
   useMotionValue,
@@ -13,6 +13,69 @@ import Link from "next/link";
 import { ArrowRight, LayoutGrid, MousePointer2, Send } from "lucide-react";
 import { useAuthUser } from "@/components/auth/useAuthUser";
 import { AnimatedGetStartedButton } from "./AnimatedGetStartedButton";
+
+const FLOATING_COMPANY_LOGOS = [
+  {
+    name: "Microsoft",
+    src: "/brand/company-logos/microsoft.svg",
+    position: "left-[8%] top-[19%] lg:left-[12%] xl:left-[18%]",
+    iconClassName: "size-9",
+    rotate: -5,
+    drift: 10,
+    duration: 7.6,
+    delay: 0,
+  },
+  {
+    name: "Google",
+    src: "/brand/company-logos/google.svg",
+    position: "right-[7%] top-[30%] lg:right-[10%]",
+    iconClassName: "size-10",
+    rotate: 6,
+    drift: 12,
+    duration: 8.2,
+    delay: 0.18,
+  },
+  {
+    name: "Apple",
+    src: "/brand/company-logos/apple.svg",
+    position: "left-[7%] top-[62%] lg:left-[9%]",
+    iconClassName: "size-9",
+    rotate: -3,
+    drift: 9,
+    duration: 7.2,
+    delay: 0.34,
+  },
+  {
+    name: "OpenAI",
+    src: "/brand/company-logos/openai.svg",
+    position: "right-[25%] top-[48%] lg:right-[28%]",
+    iconClassName: "size-9",
+    rotate: 4,
+    drift: 11,
+    duration: 7.8,
+    delay: 0.12,
+  },
+  {
+    name: "Anthropic",
+    src: "/brand/company-logos/anthropic.svg",
+    position: "top-[43%] left-[9%] lg:left-[12%]",
+    iconClassName: "size-10",
+    rotate: 7,
+    drift: 10,
+    duration: 8.6,
+    delay: 0.48,
+  },
+  {
+    name: "Airbnb",
+    src: "/brand/company-logos/airbnb.svg",
+    position: "right-[8%] top-[50%] lg:right-[13%]",
+    iconClassName: "size-10",
+    rotate: -7,
+    drift: 13,
+    duration: 8,
+    delay: 0.62,
+  },
+] as const;
 
 /**
  * Scroll-driven hero: a stack of rounded cards peeks below the headline, then the
@@ -60,8 +123,11 @@ export function Hero() {
 
   if (reduce) {
     return (
-      <section className="relative px-3 pt-20 sm:px-5">
-        <HeadlineBlock />
+      <section className="relative overflow-hidden px-3 pt-20 sm:px-5">
+        <FirstViewportBackdrop reduce={reduce} />
+        <div className="relative z-10">
+          <HeadlineBlock />
+        </div>
         <div className="relative mt-14 h-[86svh] overflow-hidden rounded-[3rem]">
           <HeroScene p={still} />
         </div>
@@ -72,6 +138,7 @@ export function Hero() {
   return (
     <section ref={ref} className="relative h-[300svh]">
       <div className="sticky top-0 h-[100svh] overflow-clip">
+        <FirstViewportBackdrop opacity={headOpacity} reduce={reduce} />
         <motion.div
           style={{
             y: headY,
@@ -109,65 +176,286 @@ export function Hero() {
   );
 }
 
-function HeadlineBlock() {
-  return (
-    <div className="mx-auto flex w-full max-w-3xl flex-col items-center px-5 pt-24 text-center sm:pt-28">
-      <h1 className="text-5xl leading-[1.02] font-extrabold tracking-[-0.04em] text-balance text-ink sm:text-6xl lg:text-7xl">
-        <span className="block">Your job applications</span>
-        <span className="mt-2 block sm:mt-3">
-          <AutomatedWord />
-        </span>
-      </h1>
+function FirstViewportBackdrop({
+  opacity,
+  reduce,
+}: {
+  opacity?: MotionValue<number>;
+  reduce: boolean | null;
+}) {
+  const staticMotion = Boolean(reduce);
 
-      <p className="mt-6 max-w-xl text-base leading-7 text-pretty text-muted sm:text-lg">
-        JobPosted finds matching roles, tailors your resume to each one, and fills out the
-        application in one click — you just review and submit.
+  return (
+    <motion.div
+      style={opacity ? { opacity } : undefined}
+      className="pointer-events-none absolute inset-0 z-0 hidden overflow-hidden sm:block"
+    >
+      <div
+        aria-hidden="true"
+        className="absolute inset-x-0 top-0 h-[92svh] bg-[linear-gradient(to_right,rgba(31,100,224,0.055)_1px,transparent_1px),linear-gradient(to_bottom,rgba(31,100,224,0.055)_1px,transparent_1px)] bg-[size:4rem_4rem] [mask-image:linear-gradient(180deg,transparent_0%,black_16%,black_78%,transparent_100%)]"
+      />
+      <div
+        aria-hidden="true"
+        className="absolute inset-x-0 top-0 h-[92svh] bg-[radial-gradient(circle_at_50%_44%,rgba(255,255,255,0.98)_0%,rgba(255,255,255,0.86)_35%,rgba(255,255,255,0)_66%)]"
+      />
+
+      <p className="sr-only">
+        Example company logos shown: Microsoft, Google, Apple, OpenAI, Anthropic, and Airbnb.
       </p>
 
-      <HeroCtas />
+      {FLOATING_COMPANY_LOGOS.map((logo) => (
+        <motion.div
+          key={logo.name}
+          aria-hidden="true"
+          className={`absolute grid size-16 place-items-center rounded-2xl bg-white/95 shadow-[0_10px_24px_rgba(16,47,102,0.13)] backdrop-blur-sm ${logo.position}`}
+          initial={staticMotion ? false : { opacity: 0, y: 16, rotate: logo.rotate - 2, scale: 0.92 }}
+          animate={
+            staticMotion
+              ? { opacity: 1, rotate: logo.rotate }
+              : {
+                  opacity: 1,
+                  y: [0, -logo.drift, 0],
+                  rotate: [logo.rotate, logo.rotate + 1.1, logo.rotate],
+                  scale: 1,
+                }
+          }
+          transition={
+            staticMotion
+              ? { duration: 0 }
+              : {
+                  opacity: { duration: 0.45, delay: logo.delay, ease: [0.22, 1, 0.36, 1] },
+                  scale: { duration: 0.45, delay: logo.delay, ease: [0.22, 1, 0.36, 1] },
+                  y: {
+                    duration: logo.duration,
+                    delay: logo.delay,
+                    repeat: Infinity,
+                    ease: "easeInOut",
+                  },
+                  rotate: {
+                    duration: logo.duration,
+                    delay: logo.delay,
+                    repeat: Infinity,
+                    ease: "easeInOut",
+                  },
+                }
+          }
+        >
+          <img
+            src={logo.src}
+            alt=""
+            aria-hidden="true"
+            className={`${logo.iconClassName} object-contain`}
+            decoding="async"
+          />
+        </motion.div>
+      ))}
+    </motion.div>
+  );
+}
+
+/** Shared expo-out ease for the headline choreography. */
+const HEADLINE_EASE: [number, number, number, number] = [0.16, 1, 0.3, 1];
+
+function HeadlineBlock() {
+  const reduce = useReducedMotion();
+
+  return (
+    <div className="mx-auto flex w-full max-w-3xl flex-col items-center px-5 pt-24 text-center sm:pt-28">
+      <h1 className="text-[2.5rem] leading-[1.06] font-extrabold tracking-[-0.04em] text-balance text-ink sm:text-6xl lg:text-7xl">
+        <MaskedLine reduce={reduce} delay={0}>
+          Your job search,
+        </MaskedLine>
+        <MaskedLine reduce={reduce} delay={0.09}>
+          on <AutofilledWord reduce={reduce} word="autopilot" />
+        </MaskedLine>
+      </h1>
+
+      <motion.p
+        initial={reduce ? false : { opacity: 0, y: 14 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.6, delay: 0.24, ease: HEADLINE_EASE }}
+        className="mt-6 max-w-xl text-center text-lg leading-8 text-balance text-muted sm:mt-7 sm:text-xl sm:leading-9"
+      >
+        From autofill to tracking, JobPosted does the boring work. You just{" "}
+        <PencilScribble reduce={reduce}>take the interviews.</PencilScribble>
+      </motion.p>
+
+      <motion.div
+        initial={reduce ? false : { opacity: 0, y: 14 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.6, delay: 0.36, ease: HEADLINE_EASE }}
+        className="flex w-full justify-center"
+      >
+        <HeroCtas />
+      </motion.div>
     </div>
   );
 }
 
-function AutomatedWord() {
-  const reduce = useReducedMotion();
+/** One headline line rising out of a clip mask; padding keeps descenders unclipped. */
+function MaskedLine({
+  children,
+  delay,
+  reduce,
+}: {
+  children: ReactNode;
+  delay: number;
+  reduce: boolean | null;
+}) {
+  if (reduce) return <span className="block">{children}</span>;
+
+  // Top padding keeps the sparkles around "autopilot" inside the clip window;
+  // bottom padding does the same for descenders. Negative margins cancel both.
+  return (
+    <span className="-mt-[0.5em] -mb-[0.12em] block overflow-hidden pt-[0.5em] pb-[0.12em]">
+      <motion.span
+        className="block will-change-transform"
+        initial={{ y: "120%" }}
+        animate={{ y: "0%" }}
+        transition={{ duration: 0.8, delay, ease: HEADLINE_EASE }}
+      >
+        {children}
+      </motion.span>
+    </span>
+  );
+}
+
+/** Four-point star glint, sized/positioned in em so it scales with the headline. */
+const SPARKLES = [
+  {
+    position: "-top-[0.24em] -right-[0.48em]",
+    size: "h-[0.32em] w-[0.32em]",
+    color: "#f8b84e",
+    delay: 0,
+    twinkle: 3.2,
+  },
+  {
+    position: "-top-[0.4em] left-[0.08em]",
+    size: "h-[0.18em] w-[0.18em]",
+    color: "#fcd28f",
+    delay: 0.14,
+    twinkle: 2.6,
+  },
+  {
+    position: "top-[0.52em] -right-[0.6em]",
+    size: "h-[0.14em] w-[0.14em]",
+    color: "#f8b84e",
+    delay: 0.26,
+    twinkle: 3.8,
+  },
+] as const;
+
+const SPARKLE_PATH =
+  "M12 0C13.1 7.7 16.3 10.9 24 12C16.3 13.1 13.1 16.3 12 24C10.9 16.3 7.7 13.1 0 12C7.7 10.9 10.9 7.7 12 0Z";
+
+/**
+ * "autopilot" populates like a form field being autofilled: characters cascade in,
+ * then a small constellation of gold glints pops and keeps a slow twinkle.
+ */
+function AutofilledWord({ word, reduce }: { word: string; reduce: boolean | null }) {
+  const start = 0.46;
+  const wordDone = start + word.length * 0.026 + 0.12;
+
+  if (reduce) {
+    return (
+      <span className="relative inline-block whitespace-nowrap text-brand-600">
+        {word}
+        {SPARKLES.map((sparkle, i) => (
+          <span
+            key={i}
+            aria-hidden
+            className={`absolute ${sparkle.position} ${sparkle.size}`}
+          >
+            <svg viewBox="0 0 24 24" className="h-full w-full" fill={sparkle.color}>
+              <path d={SPARKLE_PATH} />
+            </svg>
+          </span>
+        ))}
+      </span>
+    );
+  }
 
   return (
-    <span className="relative inline-flex justify-center align-baseline text-brand-700 [perspective:900px]">
-      <motion.span
-        initial={reduce ? false : { opacity: 0, y: "0.5em", rotateX: -72, filter: "blur(5px)" }}
-        animate={{ opacity: 1, y: 0, rotateX: 0, filter: "blur(0px)" }}
-        transition={{ duration: 0.55, ease: [0.22, 1, 0.36, 1] }}
-        className="relative inline-block origin-center whitespace-nowrap pr-[0.03em] font-serif italic tracking-[-0.035em] text-brand-700 [transform-style:preserve-3d]"
-      >
-        automated
-        <svg
+    <span className="relative inline-block whitespace-nowrap text-brand-600">
+      <span className="sr-only">{word}</span>
+      <span aria-hidden className="relative">
+        {word.split("").map((char, i) => (
+          <motion.span
+            key={i}
+            className="inline-block"
+            initial={{ opacity: 0, y: "0.28em" }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.3, delay: start + i * 0.026, ease: HEADLINE_EASE }}
+          >
+            {char}
+          </motion.span>
+        ))}
+      </span>
+      {SPARKLES.map((sparkle, i) => (
+        <motion.span
+          key={i}
           aria-hidden
-          viewBox="0 0 180 24"
-          className="pointer-events-none absolute -bottom-[0.16em] left-1/2 h-[0.24em] w-[108%] -translate-x-1/2 overflow-visible"
-          preserveAspectRatio="none"
+          className={`absolute ${sparkle.position} ${sparkle.size}`}
+          initial={{ opacity: 0, scale: 0 }}
+          animate={{ opacity: 1, scale: [0, 1.3, 1] }}
+          transition={{ duration: 0.5, delay: wordDone + sparkle.delay, ease: HEADLINE_EASE }}
         >
-          <motion.path
-            d="M7 15 C43 23, 76 5, 116 13 S160 19, 173 9"
-            fill="none"
-            stroke="#f8b84e"
-            strokeWidth="9"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            initial={reduce ? false : { pathLength: 0, opacity: 0 }}
-            animate={{ pathLength: 1, opacity: 1 }}
-            transition={{ duration: 0.5, delay: 0.35, ease: [0.22, 1, 0.36, 1] }}
-          />
-          <path
-            d="M8 16 C45 21, 77 8, 117 14 S160 18, 172 10"
-            fill="none"
-            stroke="#174fb8"
-            strokeWidth="2"
-            strokeLinecap="round"
-            opacity="0.22"
-          />
-        </svg>
-      </motion.span>
+          <motion.svg
+            viewBox="0 0 24 24"
+            className="h-full w-full"
+            fill={sparkle.color}
+            animate={{ scale: [1, 0.68, 1], opacity: [1, 0.55, 1], rotate: [0, 14, 0] }}
+            transition={{
+              duration: sparkle.twinkle,
+              delay: wordDone + sparkle.delay + 0.5,
+              repeat: Infinity,
+              ease: "easeInOut",
+            }}
+          >
+            <path d={SPARKLE_PATH} />
+          </motion.svg>
+        </motion.span>
+      ))}
+    </span>
+  );
+}
+
+/**
+ * Hand-drawn pencil underline: two light graphite passes that draw in after the
+ * subhead settles. The emphasis, without touching the font weight.
+ */
+function PencilScribble({ children, reduce }: { children: ReactNode; reduce: boolean | null }) {
+  return (
+    <span className="relative inline-block whitespace-nowrap">
+      {children}
+      <svg
+        aria-hidden
+        viewBox="0 0 200 12"
+        preserveAspectRatio="none"
+        className="pointer-events-none absolute -bottom-[0.24em] left-0 h-[0.34em] w-full overflow-visible text-ink/70"
+      >
+        <motion.path
+          d="M3 7.5 C38 5.4, 74 9.2, 112 7 C142 5.4, 172 8.6, 197 6.2"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          initial={reduce ? false : { pathLength: 0 }}
+          animate={{ pathLength: 1 }}
+          transition={{ duration: 0.45, delay: 0.6, ease: HEADLINE_EASE }}
+        />
+        <motion.path
+          d="M6 10 C52 7.8, 108 10.6, 194 8.4"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.4"
+          strokeLinecap="round"
+          opacity="0.45"
+          initial={reduce ? false : { pathLength: 0 }}
+          animate={{ pathLength: 1 }}
+          transition={{ duration: 0.35, delay: 0.85, ease: HEADLINE_EASE }}
+        />
+      </svg>
     </span>
   );
 }

@@ -16,6 +16,9 @@ export const REZOOMED_URL =
 export const REZOOMED_ACCOUNT_URL =
   process.env.NEXT_PUBLIC_REZOOMED_ACCOUNT_URL?.trim() || `${REZOOMED_URL}/dashboard/account`;
 
+export const CHROME_EXTENSION_URL =
+  process.env.NEXT_PUBLIC_CHROME_EXTENSION_URL?.trim() || "/get-started";
+
 /** Normalized origin (no trailing slash). Falls back to localhost for local dev. */
 export function getSiteUrl(): string {
   const raw = process.env.NEXT_PUBLIC_SITE_URL?.trim();

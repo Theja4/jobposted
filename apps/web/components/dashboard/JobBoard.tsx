@@ -4,9 +4,7 @@ import { useEffect, useMemo, useState, useTransition, type ReactNode } from "rea
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   ArrowDownWideNarrow,
-  ArrowUpRight,
   Briefcase,
-  CheckCircle2,
   ChevronLeft,
   ChevronRight,
   DollarSign,
@@ -255,15 +253,9 @@ function JobListItem({
 
 function JobDetail({
   job,
-  applying,
-  tracked,
-  onApply,
   onTailor,
 }: {
   job: JobListing | null;
-  applying: boolean;
-  tracked: boolean;
-  onApply: (job: JobListing) => void;
   onTailor: (job: JobListing) => void;
 }) {
   if (!job) {
@@ -308,19 +300,6 @@ function JobDetail({
             <span>{relativeDate(job.postedOn)}</span>
           </div>
         </div>
-        {job.applyUrl && (
-          <a
-            href={job.applyUrl}
-            target="_blank"
-            rel="noreferrer"
-            className={cn(
-              "inline-flex h-10 shrink-0 items-center justify-center gap-2 rounded-xl px-3 text-sm font-black",
-              JOB_BUTTON_CLASS,
-            )}
-          >
-            Open <ExternalLink className="size-4" />
-          </a>
-        )}
       </div>
 
       <div className="mt-5 grid gap-2 sm:grid-cols-3">
@@ -361,24 +340,20 @@ function JobDetail({
           <FileText className="size-4" />
           Tailor resume
         </button>
-        <button
-          type="button"
-          onClick={() => onApply(job)}
-          disabled={applying || tracked}
-          className={cn(
-            "inline-flex h-11 items-center justify-center gap-2 rounded-xl px-4 text-sm font-black disabled:pointer-events-none disabled:bg-brand-100 disabled:text-brand-700",
-            JOB_PRIMARY_BUTTON_CLASS,
-          )}
-        >
-          {applying ? (
-            <Loader2 className="size-4 animate-spin" />
-          ) : tracked ? (
-            <CheckCircle2 className="size-4" />
-          ) : (
-            <ArrowUpRight className="size-4" />
-          )}
-          {tracked ? "Tracked" : "Track and open"}
-        </button>
+        {job.applyUrl && (
+          <a
+            href={job.applyUrl}
+            target="_blank"
+            rel="noreferrer"
+            className={cn(
+              "inline-flex h-11 items-center justify-center gap-2 rounded-xl px-4 text-sm font-black",
+              JOB_PRIMARY_BUTTON_CLASS,
+            )}
+          >
+            <ExternalLink className="size-4" />
+            Open
+          </a>
+        )}
       </div>
     </section>
   );
@@ -495,9 +470,6 @@ export function JobBoard({
   const [advancedOpen, setAdvancedOpen] = useState(hasAdvancedFilters);
   const [selectedId, setSelectedId] = useState(jobs[0]?.id ?? "");
   const [tailorJob, setTailorJob] = useState<JobListing | null>(null);
-  const [applyingId, setApplyingId] = useState<string | null>(null);
-  const [trackedIds, setTrackedIds] = useState<Set<string>>(() => new Set());
-  const [applyError, setApplyError] = useState<string | null>(null);
   const tokens = useMemo(() => queryTokens(filters.query), [filters.query]);
   const activeFilterCount = [
     filters.query,
@@ -617,47 +589,6 @@ export function JobBoard({
     });
   }
 
-  async function applyFromBoard(job: JobListing) {
-    if (applyingId) return;
-    setApplyingId(job.id);
-    setApplyError(null);
-    const applyWindow = job.applyUrl ? window.open("", "_blank", "noopener,noreferrer") : null;
-    try {
-      const response = await fetch("/api/tracker/applications", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          source: "job_board",
-          sourceJobId: job.id,
-          jobId: job.canSaveTailoredResume ? job.id : undefined,
-          role: job.title,
-          company: job.company,
-          location: job.location,
-          jobUrl: job.applyUrl ?? undefined,
-          stage: "applied",
-          notes: `${job.level} ${job.type}`,
-        }),
-      });
-      const body = (await response.json()) as { ok: boolean; message?: string };
-      if (!response.ok || !body.ok) {
-        throw new Error(body.message || "Could not add this role to the tracker.");
-      }
-      setTrackedIds((current) => new Set(current).add(job.id));
-      if (job.applyUrl) {
-        if (applyWindow) {
-          applyWindow.location.href = job.applyUrl;
-        } else {
-          window.open(job.applyUrl, "_blank", "noopener,noreferrer");
-        }
-      }
-    } catch (err) {
-      applyWindow?.close();
-      setApplyError(err instanceof Error ? err.message : "Could not add this role to the tracker.");
-    } finally {
-      setApplyingId(null);
-    }
-  }
-
   return (
     <div className="space-y-3 lg:flex lg:min-h-0 lg:flex-1 lg:flex-col lg:gap-3 lg:space-y-0 lg:overflow-hidden">
       <section className={cn("shrink-0 rounded-xl p-2", JOB_PANEL_CLASS)}>
@@ -756,16 +687,6 @@ export function JobBoard({
                   {activeFilterCount}
                 </span>
               )}
-            </button>
-
-            <button
-              type="submit"
-              className={cn(
-                "inline-flex h-11 items-center justify-center rounded-xl px-4 text-sm font-black",
-                JOB_PRIMARY_BUTTON_CLASS,
-              )}
-            >
-              Apply
             </button>
           </div>
 
@@ -902,12 +823,6 @@ export function JobBoard({
         </div>
       )}
 
-      {applyError && (
-        <p className="shrink-0 rounded-xl bg-red-50 px-4 py-3 text-sm font-bold text-red-600 shadow-[0_12px_24px_-20px_rgba(220,38,38,0.35)]">
-          {applyError}
-        </p>
-      )}
-
       {jobs.length === 0 ? (
         <section className={cn("rounded-2xl p-10 text-center", JOB_PANEL_CLASS)}>
           <span className={cn("mx-auto grid size-12 place-items-center rounded-2xl bg-brand-50 text-brand-700", JOB_CHIP_SHADOW_CLASS)}>
@@ -1022,13 +937,7 @@ export function JobBoard({
           </section>
 
           <div data-lenis-prevent className="lg:min-h-0 lg:overflow-y-auto lg:overscroll-contain">
-            <JobDetail
-              job={selectedJob}
-              applying={Boolean(selectedJob && applyingId === selectedJob.id)}
-              tracked={Boolean(selectedJob && trackedIds.has(selectedJob.id))}
-              onApply={applyFromBoard}
-              onTailor={setTailorJob}
-            />
+            <JobDetail job={selectedJob} onTailor={setTailorJob} />
           </div>
         </div>
       )}

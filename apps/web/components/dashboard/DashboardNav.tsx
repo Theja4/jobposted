@@ -11,8 +11,9 @@ import {
   Workflow,
 } from "lucide-react";
 import { Logo } from "@/components/landing/Logo";
+import { ChromeLogo } from "@/components/icons/ChromeLogo";
 import { cn } from "@/lib/cn";
-import { SignOutButton } from "./SignOutButton";
+import { CHROME_EXTENSION_URL } from "@/lib/site";
 
 const NAV_LINKS = [
   { href: "/dashboard", label: "Dashboard", exact: true, icon: LayoutDashboard },
@@ -66,14 +67,22 @@ export function DashboardNav({ hasActivePlan }: DashboardNavProps) {
         </div>
 
         {hasActivePlan ? (
-          <SignOutButton className="h-11 shrink-0 rounded-lg px-2.5 text-xs text-coral shadow-[0_10px_20px_-17px_rgba(255,102,94,0.42),0_2px_8px_-7px_rgba(15,23,42,0.12)] transition-[background-color,color,box-shadow] hover:bg-coral/10 hover:text-coral hover:shadow-[0_14px_26px_-19px_rgba(255,102,94,0.5)] max-[720px]:hidden" />
+          <a
+            href={CHROME_EXTENSION_URL}
+            target={/^https?:\/\//i.test(CHROME_EXTENSION_URL) ? "_blank" : undefined}
+            rel={/^https?:\/\//i.test(CHROME_EXTENSION_URL) ? "noreferrer" : undefined}
+            className="inline-flex h-11 shrink-0 items-center justify-center gap-2 rounded-lg bg-ink px-3.5 text-xs font-extrabold text-white shadow-[0_14px_26px_-18px_rgba(11,18,32,0.55),0_3px_10px_-8px_rgba(15,23,42,0.18)] transition-[background-color,box-shadow,transform] duration-150 hover:-translate-y-0.5 hover:bg-ink/90 hover:shadow-[0_18px_32px_-20px_rgba(11,18,32,0.6)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink max-[720px]:hidden"
+          >
+            <ChromeLogo className="size-4" />
+            Get extension
+          </a>
         ) : (
           <Link
             href="/pricing"
-            className="inline-flex h-11 shrink-0 items-center justify-center gap-2 rounded-lg bg-brand-600 px-3.5 text-xs font-extrabold text-white shadow-[0_14px_26px_-18px_rgba(31,100,224,0.7),0_3px_10px_-8px_rgba(15,23,42,0.18)] transition-[background-color,box-shadow,transform] duration-150 hover:-translate-y-0.5 hover:bg-brand-700 hover:shadow-[0_18px_32px_-20px_rgba(31,100,224,0.78)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 max-[720px]:hidden"
+            className="inline-flex h-11 shrink-0 items-center justify-center gap-2 rounded-lg bg-ink px-3.5 text-xs font-extrabold text-white shadow-[0_14px_26px_-18px_rgba(11,18,32,0.55),0_3px_10px_-8px_rgba(15,23,42,0.18)] transition-[background-color,box-shadow,transform] duration-150 hover:-translate-y-0.5 hover:bg-ink/90 hover:shadow-[0_18px_32px_-20px_rgba(11,18,32,0.6)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink max-[720px]:hidden"
           >
             <Crown className="size-4" aria-hidden="true" />
-            Upgrade
+            Upgrade to Pro
           </Link>
         )}
       </nav>

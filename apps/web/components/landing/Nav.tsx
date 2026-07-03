@@ -5,7 +5,6 @@ import { NavAuthButtons } from "@/components/auth/NavAuthButtons";
 const LINKS = [
   { href: "/#features", label: "Features" },
   { href: "/#how-it-works", label: "How it works" },
-  { href: "/#extension", label: "Extension", isNew: true },
   { href: "/#analytics", label: "Results" },
   { href: "/#trust", label: "Control" },
   { href: "/pricing", label: "Pricing" },

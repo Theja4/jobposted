@@ -1,6 +1,10 @@
-import Link from "next/link";
-import { ArrowRight } from "lucide-react";
+import { Download } from "lucide-react";
 import { Reveal } from "@/components/ui/Reveal";
+import { CHROME_EXTENSION_URL } from "@/lib/site";
+
+const chromeExtensionLinkProps = /^https?:\/\//i.test(CHROME_EXTENSION_URL)
+  ? ({ target: "_blank", rel: "noreferrer" } as const)
+  : {};
 
 export function FinalCta() {
   return (
@@ -19,20 +23,22 @@ export function FinalCta() {
           <div className="relative z-10 grid items-center gap-12 lg:grid-cols-[1.05fr_0.95fr]">
             <div>
               <h2 className="max-w-xl text-4xl font-extrabold tracking-[-0.035em] text-balance sm:text-5xl">
-                Better-matched applications. Less pointless work.
+                Tailored applications. Less pointless work.
               </h2>
               <p className="mt-5 max-w-md text-base leading-7 text-pretty text-white/80 sm:text-lg">
-                Create your account, set your preferences, and JobPosted starts preparing tailored
-                applications for review. Then log in to decide what gets submitted.
+                Install the extension, connect your account, and let JobPosted prepare tailored
+                applications for review. You decide what gets submitted.
               </p>
               <div className="mt-8 flex">
-                <Link
-                  href={{ pathname: "/get-started" }}
+                <a
+                  href={CHROME_EXTENSION_URL}
+                  aria-label="Download the JobPosted Chrome extension"
+                  {...chromeExtensionLinkProps}
                   className="group inline-flex h-13 items-center justify-center gap-2 rounded-full bg-white px-8 text-base font-bold text-brand-800 shadow-[0_14px_30px_rgba(7,26,51,0.25)] transition-[transform,background-color,box-shadow] duration-150 ease-out hover:-translate-y-0.5 hover:bg-sky-50 active:translate-y-0"
                 >
-                  Get started
-                  <ArrowRight className="size-4 transition-transform duration-200 group-hover:translate-x-0.5" />
-                </Link>
+                  <Download className="size-4" />
+                  Download Chrome extension
+                </a>
               </div>
             </div>
 

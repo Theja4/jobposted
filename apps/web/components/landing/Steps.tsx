@@ -214,6 +214,7 @@ export function Steps() {
                         step={step}
                         side={popupSide}
                         reduceMotion={Boolean(reduceMotion)}
+                        onClose={() => setActiveStep(null)}
                       />
                     )}
                   </AnimatePresence>
@@ -232,17 +233,19 @@ function FeatureDetails({
   step,
   side,
   reduceMotion,
+  onClose,
 }: {
   step: Step;
   side: "left" | "center" | "right";
   reduceMotion: boolean;
+  onClose: () => void;
 }) {
   const desktopPosition =
     side === "right"
       ? "lg:absolute lg:left-[calc(100%+1rem)] lg:top-0"
       : side === "left"
         ? "lg:absolute lg:right-[calc(100%+1rem)] lg:top-0"
-        : "lg:absolute lg:left-[calc(50%_-_14rem)] lg:top-5";
+        : "lg:absolute lg:left-[calc(50%_-_14rem)] lg:-top-3";
   const initialX = side === "right" ? -30 : side === "left" ? 30 : 0;
 
   return (
@@ -278,6 +281,18 @@ function FeatureDetails({
         className="pointer-events-none absolute -bottom-20 -left-16 size-48 rounded-full bg-white/10 blur-3xl"
       />
 
+      <button
+        type="button"
+        onClick={onClose}
+        aria-label={`Close ${step.label} details`}
+        className={cn(
+          "absolute right-4 bottom-4 z-20 grid size-11 place-items-center rounded-full bg-white text-brand-700 ring-1 ring-white/25 ring-inset transition duration-300",
+          "hover:scale-105 focus-visible:outline-white active:scale-95",
+        )}
+      >
+        <X className="size-5" />
+      </button>
+
       <div className="relative z-10 flex items-start gap-3">
         <FeatureIllustration visual={step.detail.visual} className="h-20 w-24" />
         <div className="min-w-0">
@@ -288,7 +303,7 @@ function FeatureDetails({
         </div>
       </div>
 
-      <ul className="relative z-10 mt-5 grid gap-2">
+      <ul className="relative z-10 mt-5 grid gap-2 pr-14">
         {step.detail.bullets.map((bullet) => (
           <li key={bullet} className="flex items-center gap-2 text-sm font-bold text-white/88">
             <span className="size-1.5 rounded-full bg-white" />
