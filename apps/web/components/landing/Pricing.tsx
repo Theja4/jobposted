@@ -7,28 +7,22 @@ import type {
   BillingTenure,
 } from "@/lib/billing/plans";
 import { BILLING_PLANS } from "@/lib/billing/plans";
-import { AnimatePresence, motion } from "framer-motion";
-import {
-  Check,
-  Loader2,
-  ShieldCheck,
-  Sparkles,
-} from "lucide-react";
+import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
+import { ArrowRight, Check, Loader2, LockKeyhole, ShieldCheck } from "lucide-react";
 import { useMemo, useState } from "react";
-import { Reveal } from "@/components/ui/Reveal";
-import { buttonClasses } from "@/components/ui/button";
 import { track } from "@/lib/analytics";
 import { cn } from "@/lib/cn";
+import { SUPPORT_EMAIL } from "@/lib/site";
 
 type PricingProps = {
   pricing: BillingPricingView;
 };
 
-const FEATURE_ROWS = [
-  "Up to 20 applications a day",
-  "Resume tailoring and profile setup",
-  "Review queue and application tracker",
-  "Browser extension support",
+const INCLUSIONS = [
+  "20 prepared applications each day",
+  "A tailored resume for every role",
+  "Application form autofill",
+  "Review queue and job tracker",
 ] as const;
 
 export function Pricing({ pricing }: PricingProps) {
@@ -38,136 +32,154 @@ export function Pricing({ pricing }: PricingProps) {
     [pricing.options, tenure],
   );
   const plan = BILLING_PLANS[pricing.planId];
+  const reduceMotion = useReducedMotion();
 
   return (
-    <section
-      id="pricing"
-      className="relative isolate overflow-hidden bg-[linear-gradient(180deg,#ffffff_0%,#f0f9ff_42%,#f7fbff_78%,#ffffff_100%)] px-5 py-20 sm:py-24"
-    >
-      <div
-        aria-hidden
-        className="pointer-events-none absolute inset-0 -z-10 bg-[radial-gradient(circle_at_18%_18%,rgba(22,199,212,0.18),transparent_26%),radial-gradient(circle_at_82%_22%,rgba(31,100,224,0.16),transparent_30%),radial-gradient(circle_at_50%_100%,rgba(47,125,244,0.14),transparent_34%)]"
-      />
-
+    <section id="pricing" className="relative px-5 pb-8 pt-20 sm:pb-12 sm:pt-24 lg:pt-28">
       <div className="mx-auto w-full max-w-6xl">
-        <Reveal className="mx-auto max-w-3xl text-center">
-          <div className="mx-auto inline-flex items-center gap-2 rounded-full bg-white/80 px-4 py-2 text-sm font-bold text-brand-800 shadow-[0_12px_24px_-18px_rgba(16,47,102,0.38)] backdrop-blur-xl">
-            <ShieldCheck className="size-4" />
-            One plan. Regional pricing soon.
+        <div className="grid items-end gap-8 border-b border-zinc-200 pb-10 lg:grid-cols-[1fr_25rem] lg:gap-16 lg:pb-14">
+          <div>
+            <p className="text-sm font-semibold text-brand-700">JobPosted membership</p>
+            <h1 className="mt-4 max-w-3xl text-5xl font-extrabold leading-[0.98] tracking-[-0.04em] text-balance text-ink sm:text-6xl lg:text-[5.25rem]">
+              Apply better.<br />Not everywhere.
+            </h1>
           </div>
-          <h2 className="mt-5 text-4xl font-extrabold text-balance text-ink sm:text-6xl">
-            Simple pricing for a serious job search.
-          </h2>
-          <p className="mx-auto mt-4 max-w-2xl text-pretty text-base leading-7 text-muted sm:text-lg">
-            Use the same JobPosted workspace with monthly flexibility or a lower quarterly runway.
-            Local currency products are selected automatically when they are configured.
+          <p className="max-w-[38rem] text-lg leading-8 text-muted lg:pb-1">
+            One plan for a focused job search. We prepare the application; you review it before
+            anything is submitted.
           </p>
-        </Reveal>
+        </div>
 
-        <Reveal delay={0.08}>
-          <div className="mx-auto mt-12 grid max-w-5xl gap-5 lg:grid-cols-[0.95fr_1.05fr] lg:items-stretch">
-            <section className="relative overflow-hidden rounded-[1.25rem] bg-brand-600 p-6 text-white shadow-[0_28px_70px_-38px_rgba(31,100,224,0.78)] sm:p-7">
-              <div
-                aria-hidden
-                className="absolute inset-x-0 top-0 h-1/2 bg-[linear-gradient(180deg,rgba(255,255,255,0.24),rgba(255,255,255,0))]"
-              />
-              <div className="relative flex h-full flex-col">
-                <h3 className="text-3xl font-extrabold text-white">{plan.label}</h3>
-                <p className="mt-2 max-w-sm text-sm leading-6 text-white/78">
-                  Prepared applications, tailored resumes, and a tracker built around review before
-                  submit.
+        <div className="grid gap-0 lg:grid-cols-[minmax(0,1fr)_25rem]">
+          <div className="border-b border-zinc-200 py-10 lg:border-b-0 lg:border-r lg:py-14 lg:pr-16">
+            <div className="flex items-baseline justify-between gap-6">
+              <h2 className="text-2xl font-bold tracking-[-0.025em] text-ink">What’s included</h2>
+              <span className="hidden text-sm font-medium text-muted sm:block">Every membership</span>
+            </div>
+
+            <ul className="mt-7 border-t border-zinc-200">
+              {INCLUSIONS.map((item, index) => (
+                <li
+                  key={item}
+                  className="flex items-center gap-4 border-b border-zinc-200 py-5 text-base font-semibold text-ink sm:text-lg"
+                >
+                  <span className="grid size-7 shrink-0 place-items-center rounded-full bg-brand-50 text-brand-700">
+                    <Check className="size-4" strokeWidth={2.5} />
+                  </span>
+                  <span>{item}</span>
+                  <span className="ml-auto text-sm font-medium tabular-nums text-zinc-400">
+                    0{index + 1}
+                  </span>
+                </li>
+              ))}
+            </ul>
+
+            <div className="mt-9 flex max-w-2xl items-start gap-4">
+              <ShieldCheck className="mt-0.5 size-6 shrink-0 text-brand-700" />
+              <div>
+                <h3 className="font-bold text-ink">Copilot, not autopilot.</h3>
+                <p className="mt-1 text-sm leading-6 text-muted">
+                  JobPosted can match, tailor, and fill. The final submit stays with you.
                 </p>
+              </div>
+            </div>
+          </div>
 
-                <div className="mt-7 grid rounded-2xl bg-white/12 p-1 text-sm font-bold text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.2)] sm:grid-cols-2">
-                  {pricing.options.map((option) => (
-                    <button
-                      key={option.tenure}
-                      type="button"
-                      onClick={() => setTenure(option.tenure)}
-                      aria-pressed={tenure === option.tenure}
+          <aside className="py-10 lg:py-14 lg:pl-10" aria-label="Choose billing schedule">
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <p className="text-sm font-semibold text-muted">{plan.label}</p>
+                <h2 className="mt-1 text-xl font-bold text-ink">Choose your billing</h2>
+              </div>
+              <span className="rounded-full bg-brand-50 px-3 py-1 text-xs font-bold text-brand-700">
+                {pricing.currencyCode}
+              </span>
+            </div>
+
+            <div className="mt-6 border-y border-zinc-200">
+              {pricing.options.map((option) => {
+                const active = tenure === option.tenure;
+                return (
+                  <button
+                    key={option.tenure}
+                    type="button"
+                    onClick={() => setTenure(option.tenure)}
+                    aria-pressed={active}
+                    className={cn(
+                      "group flex w-full items-center gap-3 border-b border-zinc-200 px-1 py-4 text-left last:border-b-0",
+                      "transition-colors duration-150 hover:bg-zinc-50 focus-visible:outline-offset-4",
+                    )}
+                  >
+                    <span
+                      aria-hidden
                       className={cn(
-                        "relative min-h-12 rounded-xl px-4 py-2 transition-colors duration-200",
-                        tenure === option.tenure
-                          ? "bg-white text-brand-700 shadow-[0_10px_20px_-14px_rgba(7,26,51,0.42)]"
-                          : "text-white/78 hover:bg-white/10 hover:text-white",
+                        "grid size-5 shrink-0 place-items-center rounded-full border transition-colors",
+                        active ? "border-brand-600 bg-brand-600" : "border-zinc-300 bg-white",
                       )}
                     >
-                      {option.label}
-                      {option.highlighted ? (
-                        <span className="ml-2 rounded-full bg-mint/18 px-2 py-0.5 text-[11px] text-white">
-                          Best value
-                        </span>
-                      ) : null}
-                    </button>
-                  ))}
-                </div>
-
-                <div className="mt-8 flex items-end gap-2">
-                  <span className="inline-grid min-w-[9rem]">
-                    <AnimatePresence mode="wait" initial={false}>
-                      <motion.span
-                        key={`${selected.tenure}-${selected.priceLabel}`}
-                        className="text-5xl font-extrabold text-white sm:text-6xl"
-                        initial={{ opacity: 0, y: 10, filter: "blur(3px)" }}
-                        animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
-                        exit={{ opacity: 0, y: -8, filter: "blur(3px)" }}
-                        transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
-                      >
-                        {selected.priceLabel}
-                      </motion.span>
-                    </AnimatePresence>
-                  </span>
-                  <span className="pb-2 text-sm font-semibold text-white/72">{selected.cadence}</span>
-                </div>
-
-                <PlanCheckoutButton
-                  planId={pricing.planId}
-                  tenure={selected.tenure}
-                  region={pricing.region}
-                  currencyCode={pricing.currencyCode}
-                  className="mt-8"
-                >
-                  Continue to checkout
-                </PlanCheckoutButton>
-
-                {pricing.note ? (
-                  <p className="mt-4 rounded-2xl bg-white/12 px-4 py-3 text-xs font-semibold leading-5 text-white/78">
-                    {pricing.note}
-                  </p>
-                ) : null}
-              </div>
-            </section>
-
-            <section className="rounded-[1.25rem] bg-white/82 p-6 shadow-[0_24px_60px_-42px_rgba(16,47,102,0.42)] backdrop-blur-xl sm:p-7">
-              <div className="flex items-center gap-3">
-                <span className="grid size-11 shrink-0 place-items-center rounded-2xl bg-brand-50 text-brand-700 shadow-[0_10px_18px_-14px_rgba(31,100,224,0.5)]">
-                  <Sparkles className="size-5" />
-                </span>
-                <div>
-                  <h3 className="text-xl font-extrabold text-ink">Everything included</h3>
-                  <p className="text-sm font-semibold text-muted">
-                    Same features across monthly and quarterly billing.
-                  </p>
-                </div>
-              </div>
-
-              <ul className="mt-7 grid gap-3">
-                {FEATURE_ROWS.map((feature) => (
-                  <li
-                    key={feature}
-                    className="flex items-start gap-3 rounded-2xl bg-brand-50/72 px-4 py-3 text-sm font-bold text-ink shadow-[0_10px_22px_-18px_rgba(31,100,224,0.26)]"
-                  >
-                    <span className="mt-0.5 grid size-5 shrink-0 place-items-center rounded-full bg-white text-brand-700">
-                      <Check className="size-3.5" strokeWidth={3} />
+                      <span className={cn("size-1.5 rounded-full bg-white", !active && "opacity-0")} />
                     </span>
-                    <span>{feature}</span>
-                  </li>
-                ))}
-              </ul>
+                    <span className="min-w-0">
+                      <span className="block text-sm font-bold text-ink">{option.label}</span>
+                      <span className="block text-xs font-medium text-muted">
+                        {option.highlighted
+                          ? "Lower cost over three months"
+                          : "Pay one month at a time"}
+                      </span>
+                    </span>
+                    <span className="ml-auto text-right">
+                      <span className="block text-lg font-extrabold tabular-nums text-ink">
+                        {option.priceLabel}
+                      </span>
+                      <span className="block text-xs font-medium text-muted">{option.cadence}</span>
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
 
-            </section>
-          </div>
-        </Reveal>
+            <div className="mt-7 min-h-[5.25rem]">
+              <AnimatePresence mode="wait" initial={false}>
+                <motion.div
+                  key={`${selected.tenure}-${selected.priceLabel}`}
+                  initial={reduceMotion ? false : { opacity: 0, y: 6 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={reduceMotion ? undefined : { opacity: 0, y: -4 }}
+                  transition={{ duration: 0.16, ease: [0.22, 1, 0.36, 1] }}
+                >
+                  <div className="flex items-end gap-2">
+                    <span className="text-4xl font-extrabold tracking-[-0.035em] tabular-nums text-ink">
+                      {selected.priceLabel}
+                    </span>
+                    <span className="pb-1 text-sm font-medium text-muted">{selected.cadence}</span>
+                  </div>
+                </motion.div>
+              </AnimatePresence>
+            </div>
+
+            <PlanCheckoutButton
+              planId={pricing.planId}
+              tenure={selected.tenure}
+              region={pricing.region}
+              currencyCode={pricing.currencyCode}
+            />
+
+            <p className="mt-4 flex items-center justify-center gap-2 text-xs font-medium text-muted">
+              <LockKeyhole className="size-3.5" />
+              Secure checkout. Cancel before your next renewal.
+            </p>
+          </aside>
+        </div>
+
+        <div className="flex flex-col gap-3 border-t border-zinc-200 py-7 text-sm text-muted sm:flex-row sm:items-center sm:justify-between">
+          <p>Regional pricing is applied automatically when available.</p>
+          <a
+            href={`mailto:${SUPPORT_EMAIL}`}
+            className="font-semibold text-ink underline decoration-zinc-300 underline-offset-4 hover:decoration-brand-600"
+          >
+            Questions? Talk to us.
+          </a>
+        </div>
       </div>
     </section>
   );
@@ -178,15 +190,11 @@ function PlanCheckoutButton({
   tenure,
   region,
   currencyCode,
-  className,
-  children,
 }: {
   planId: BillingPlanId;
   tenure: BillingTenure;
   region: BillingRegion;
   currencyCode: string;
-  className?: string;
-  children: React.ReactNode;
 }) {
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
@@ -210,10 +218,7 @@ function PlanCheckoutButton({
       } | null;
 
       if (response.status === 401) {
-        const params = new URLSearchParams({
-          mode: "signup",
-          next: "/pricing",
-        });
+        const params = new URLSearchParams({ mode: "signup", next: "/pricing" });
         window.location.assign(`/get-started?${params.toString()}`);
         return;
       }
@@ -230,21 +235,24 @@ function PlanCheckoutButton({
   }
 
   return (
-    <div className={className}>
+    <div>
       <button
         type="button"
         onClick={startCheckout}
         disabled={loading}
-        className={buttonClasses("secondary", "lg", "w-full")}
+        className="flex h-13 w-full items-center justify-center gap-2 rounded-xl bg-brand-600 px-6 text-base font-bold text-white shadow-sm shadow-brand-600/20 transition-[transform,background-color] duration-150 hover:-translate-y-0.5 hover:bg-brand-700 active:translate-y-0 active:bg-brand-800 disabled:pointer-events-none disabled:opacity-60"
       >
         {loading ? <Loader2 className="size-4 animate-spin" /> : null}
-        {loading ? "Opening checkout" : children}
+        <span>{loading ? "Opening checkout" : "Start with JobPosted"}</span>
+        {!loading ? <ArrowRight className="size-4" /> : null}
       </button>
-      {message ? (
-        <p className="mt-2 rounded-xl bg-white px-3 py-2 text-xs font-bold text-coral shadow-[0_10px_22px_-18px_rgba(15,23,42,0.35)]">
-          {message}
-        </p>
-      ) : null}
+      <div aria-live="polite">
+        {message ? (
+          <p className="mt-3 rounded-xl bg-red-50 px-3 py-2 text-sm font-semibold text-red-700">
+            {message}
+          </p>
+        ) : null}
+      </div>
     </div>
   );
 }
