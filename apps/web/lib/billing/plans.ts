@@ -30,7 +30,6 @@ export type BillingPricingView = {
   countryCode: string | null;
   currencyCode: string;
   localPricingReady: boolean;
-  note: string | null;
   options: BillingPricingOption[];
 };
 

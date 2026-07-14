@@ -19,10 +19,10 @@ type PricingProps = {
 };
 
 const INCLUSIONS = [
-  "20 prepared applications each day",
+  "Job board curated from the top 80 ATS systems",
   "A tailored resume for every role",
   "Application form autofill",
-  "Review queue and job tracker",
+  "Job tracker",
 ] as const;
 
 export function Pricing({ pricing }: PricingProps) {
@@ -166,13 +166,12 @@ export function Pricing({ pricing }: PricingProps) {
 
             <p className="mt-4 flex items-center justify-center gap-2 text-xs font-medium text-muted">
               <LockKeyhole className="size-3.5" />
-              Secure checkout. Cancel before your next renewal.
+              Secure checkout.
             </p>
           </aside>
         </div>
 
-        <div className="flex flex-col gap-3 border-t border-zinc-200 py-7 text-sm text-muted sm:flex-row sm:items-center sm:justify-between">
-          <p>Regional pricing is applied automatically when available.</p>
+        <div className="flex flex-col gap-3 border-t border-zinc-200 py-7 text-sm text-muted sm:flex-row sm:items-center sm:justify-end">
           <a
             href={`mailto:${SUPPORT_EMAIL}`}
             className="font-semibold text-ink underline decoration-zinc-300 underline-offset-4 hover:decoration-brand-600"

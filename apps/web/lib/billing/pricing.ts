@@ -45,10 +45,6 @@ export function getPricingViewForCountry(countryCode: string | null | undefined)
     countryCode: country,
     currencyCode: localPricingReady ? regionMeta.currencyCode : BILLING_REGIONS.us.currencyCode,
     localPricingReady,
-    note:
-      region !== "us" && !localPricingReady
-        ? `${regionMeta.label} pricing is coming soon. Checkout falls back to USD until local Creem products are added.`
-        : null,
     options: BILLING_TENURES.map((tenure) => ({
       tenure,
       label: BILLING_TENURE_META[tenure].label,
