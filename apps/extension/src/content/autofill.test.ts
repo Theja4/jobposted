@@ -150,6 +150,54 @@ describe("content autofill extraction", () => {
     expect((doc.querySelector("#email") as HTMLInputElement).value).toBe("asha@example.com");
   });
 
+  it("stops the fill loop before mutating later fields when cancellation is signaled", async () => {
+    const doc = installDom(`<!doctype html>
+      <form>
+        <label for="first">First name</label>
+        <input id="first" />
+        <label for="last">Last name</label>
+        <input id="last" />
+      </form>`);
+    const fields = extractPageFields(doc);
+    const plan: ExtensionAutofillPlanItem[] = fields.map((field) => ({
+      fieldId: field.fieldId,
+      action: "fill",
+      value: /first/i.test(field.label) ? "Asha" : "Raman",
+      optionLabel: null,
+      confidence: 0.95,
+      note: "test plan",
+    }));
+    let stopped = false;
+    const records = await applyAutofillPlan({
+      fields,
+      plan,
+      getResume: async () => null,
+      shouldStop: () => stopped,
+      strategy: {
+        id: "greenhouse",
+        async fillField({ field, item }) {
+          if (!/first/i.test(field.label)) return null;
+          (field.element as HTMLInputElement).value = String(item.value);
+          stopped = true;
+          return {
+            signature: field.fieldId,
+            label: field.label,
+            required: field.required,
+            canonicalKey: "identity.firstName",
+            status: "filled",
+            confidence: item.confidence,
+            source: "adapter",
+            valuePreview: String(item.value),
+          };
+        },
+      },
+    });
+
+    expect(records).toHaveLength(1);
+    expect((doc.querySelector("#first") as HTMLInputElement).value).toBe("Asha");
+    expect((doc.querySelector("#last") as HTMLInputElement).value).toBe("");
+  });
+
   it("labels Greenhouse upload file inputs from the upload label instead of the Attach label", () => {
     const doc = installDom(`<!doctype html>
       <form>

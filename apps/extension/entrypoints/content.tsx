@@ -80,7 +80,15 @@ import { strategyForPlatform } from "../src/content/fill-strategy";
 import { isApplicationHostUrl, shouldDeferToEmbeddedApplication } from "../src/content/embedded-application";
 import { companyLogoUrlFor } from "../src/content/company-logo";
 import { isGreenhousePage, isLeverPage } from "../src/content/open-ats";
-import { isWorkdayPage, workdayCompany, workdayJobHeading, workdayStepName } from "../src/content/workday";
+import {
+  detectWorkdayAccountGate,
+  isWorkdayPage,
+  prefillWorkdayGateEmail,
+  workdayApplyFlowPresent,
+  workdayCompany,
+  workdayJobHeading,
+  workdayStepName,
+} from "../src/content/workday";
 import {
   JOB_CONTEXT_CONFIDENCE_THRESHOLD,
   resolveJobContext,
@@ -133,6 +141,7 @@ const CONTENT_MATCHES = [
 ].filter((value, index, all) => all.indexOf(value) === index);
 
 const CONTENT_AUTOFILL_MESSAGE = "JOBPOSTED_AUTOFILL_CURRENT_PAGE";
+const CONTENT_AUTOFILL_CANCEL_MESSAGE = "JOBPOSTED_CANCEL_AUTOFILL_CURRENT_PAGE";
 const CONTENT_DISCOVER_MESSAGE = "JOBPOSTED_DISCOVER_CURRENT_PAGE";
 const CONTENT_TRACK_MESSAGE = "JOBPOSTED_TRACK_CURRENT_PAGE";
 const CONTENT_JOB_CONTEXT_MESSAGE = "JOBPOSTED_JOB_CONTEXT";
@@ -797,6 +806,43 @@ function summarizeRunResult(args: {
   };
 }
 
+interface ActiveContentAutofillRun {
+  runId: string;
+  cancelled: boolean;
+  platform: ExtensionPlatform;
+  stepName: string;
+  discoveredFields: PageField[];
+  records: ExtensionFieldFillRecord[];
+}
+
+const ACTIVE_CONTENT_AUTOFILL_RUNS = new Map<string, ActiveContentAutofillRun>();
+
+function unfilledDiscoveredRecords(state: ActiveContentAutofillRun) {
+  const seen = new Set(state.records.map((record) => record.signature));
+  return state.discoveredFields
+    .filter((field) => !seen.has(field.fieldId))
+    .map((field): ExtensionFieldFillRecord => ({
+      signature: field.fieldId,
+      label: field.label,
+      required: field.required,
+      canonicalKey: "unknown",
+      status: field.required ? "needs_user" : "skipped",
+      confidence: 0,
+      source: "skip",
+      error: field.required ? "Autofill stopped before this field could be filled." : "Autofill stopped before this optional field.",
+    }));
+}
+
+function activeAutofillSnapshot(state: ActiveContentAutofillRun, trackerError?: string | null) {
+  return summarizeRunResult({
+    platform: state.platform,
+    stepName: state.stepName,
+    fields: [...state.records, ...unfilledDiscoveredRecords(state)],
+    tracker: null,
+    trackerError: trackerError ?? "Autofill stopped. Review the fields that still need you.",
+  });
+}
+
 function noParsedFieldsMessage(visibleControls: number) {
   if (visibleControls > 0) {
     return `Found ${visibleControls} visible form controls, but no application questions were parsed. This run did not autofill anything.`;
@@ -818,58 +864,51 @@ function noParsedFieldsRecord(platform: ExtensionPlatform, stepName: string, vis
   };
 }
 
-function isElementVisibleForGate(element: HTMLElement) {
-  if (element.closest("[hidden], [aria-hidden='true']")) return false;
-  const style = window.getComputedStyle?.(element);
-  return !(style && (style.display === "none" || style.visibility === "hidden" || style.opacity === "0"));
-}
-
-function visibleGateText(element: HTMLElement) {
-  return [
-    element instanceof HTMLInputElement ? element.value : "",
-    element.textContent,
-    element.getAttribute("aria-label"),
-    element.getAttribute("title"),
-    element.getAttribute("data-automation-id"),
-  ]
-    .map(str)
-    .filter(Boolean)
-    .join(" ");
-}
-
-function workdayAccountGateRecord(platform: ExtensionPlatform, stepName: string): ExtensionFieldFillRecord | null {
-  if (platform !== "workday" && !isWorkdayPage(window.location.href, document)) return null;
-  const controls = Array.from(
-    document.querySelectorAll<HTMLElement>("button, a, input[type='button'], input[type='submit'], [role='button']"),
-  ).filter(isElementVisibleForGate);
-  const controlText = controls.map(visibleGateText).join(" ");
-  const pageText = str(document.body?.textContent).slice(0, 4000);
-  const text = `${controlText} ${pageText}`.replace(/\s+/g, " ").toLowerCase();
-  const hasGateAction = /\b(sign in|signin|log in|login|create account|register|use existing account|candidate home)\b/.test(text);
-  const looksLikeApplicationGate = /\b(application|apply|account|candidate)\b/.test(text);
-  if (!hasGateAction || !looksLikeApplicationGate) return null;
-
-  return {
+function workdayAccountGateRecords(
+  platform: ExtensionPlatform,
+  stepName: string,
+  profile?: MasterProfile | null,
+): ExtensionFieldFillRecord[] {
+  if (platform !== "workday" && !isWorkdayPage(window.location.href, document)) return [];
+  const gate = detectWorkdayAccountGate(document, window.location.href);
+  if (!gate) return [];
+  const records: ExtensionFieldFillRecord[] = [];
+  const emailFilled = prefillWorkdayGateEmail(document, profile?.identity.email, window.location.href);
+  if (gate.emailInput && profile?.identity.email) {
+    records.push({
+      signature: `jobposted-workday-account-gate-email:${window.location.href}`,
+      label: "Workday account email",
+      required: false,
+      canonicalKey: "identity.email",
+      status: emailFilled || str(gate.emailInput.value) === profile.identity.email ? "filled" : "skipped",
+      confidence: 0.94,
+      source: "adapter",
+      valuePreview: profile.identity.email,
+      error: emailFilled ? undefined : "Email is ready for you to review.",
+    });
+  }
+  records.push({
     signature: `jobposted-workday-account-gate:${stepName}:${window.location.href}`,
-    label: "Workday account step",
+    label: "Workday account required",
     required: true,
     canonicalKey: "unknown",
     status: "needs_user",
-    confidence: 0.9,
+    confidence: 0.95,
     source: "adapter",
-    error: "Sign in or create your Workday account, then Retry.",
-  };
+    error: "This company requires a Workday account. Create it or sign in; JobPosted will continue when the application opens.",
+  });
+  return records;
 }
 
 function summarizeNoParsedFieldsResult(platform: ExtensionPlatform, stepName: string): ExtensionAutofillRunResult {
-  const gateRecord = workdayAccountGateRecord(platform, stepName);
-  if (gateRecord) {
+  const gateRecords = workdayAccountGateRecords(platform, stepName);
+  if (gateRecords.length > 0) {
     return summarizeRunResult({
       platform,
       stepName,
-      fields: [gateRecord],
+      fields: gateRecords,
       tracker: null,
-      trackerError: gateRecord.error,
+      trackerError: gateRecords.at(-1)?.error,
     });
   }
 
@@ -1066,10 +1105,26 @@ async function runAutofillPage(args: {
     return summarizeRunResult({ platform: detectPlatform(), stepName: detectStepName(), fields: [] });
   }
 
+  const initialPlatform = detectPlatform();
+  if (initialPlatform === "workday" && detectWorkdayAccountGate(document, window.location.href)) {
+    args.onStatus?.("scanning");
+    const { profile } = await loadAutofillPrereqs(args.forceGenericFallback);
+    const stepName = detectStepName();
+    const records = workdayAccountGateRecords(initialPlatform, stepName, profile);
+    for (const record of records) args.onField?.(record);
+    return summarizeRunResult({
+      platform: initialPlatform,
+      stepName,
+      fields: records,
+      tracker: null,
+      trackerError: records.at(-1)?.error,
+    });
+  }
+
   // Workday's multi-step "My Experience" UI needs the dedicated adapter; every
   // other ATS goes straight to the AI-driven extract -> plan -> apply engine so the
   // legacy heuristic matcher can't fill one field and shadow the AI result.
-  if (detectPlatform() === "workday") {
+  if (initialPlatform === "workday") {
     const adapterResult = await runAdapterAutofillPage(args);
     if (adapterResult) return adapterResult;
   }
@@ -1086,12 +1141,29 @@ async function runAutofillPage(args: {
   if (args.shouldStop?.()) return summarizeRunResult({ platform, stepName, fields: [] });
 
   const discovered = await extractFieldsWithRetry(document);
-  const fields = discovered.filter((field) => {
+  let fields = discovered.filter((field) => {
     if (settings.overwriteFilledFields) return true;
     return !field.currentValue || field.type === "file" || field.type === "checkbox" || field.type === "radio";
   });
   args.onFieldsDiscovered?.(fields);
-  if (fields.length === 0) return summarizeNoParsedFieldsResult(platform, stepName);
+  const structuredRecords: ExtensionFieldFillRecord[] = [];
+  const structured = await strategy?.fillStructuredFields?.({
+    doc: document,
+    fields,
+    profile,
+    shouldStop: args.shouldStop,
+    onFieldStart: args.onFieldStart,
+    onField: (record) => {
+      structuredRecords.push(record);
+      args.onField?.(record);
+    },
+  });
+  if (structured) fields = fields.filter((field) => !structured.claimedFieldIds.has(field.fieldId));
+  if (args.shouldStop?.()) return summarizeRunResult({ platform, stepName, fields: structuredRecords });
+  if (fields.length === 0) {
+    if (structuredRecords.length > 0) return summarizeRunResult({ platform, stepName, fields: structuredRecords });
+    return summarizeNoParsedFieldsResult(platform, stepName);
+  }
 
   args.onStatus?.("planning");
   const plan = mergeProfileEducationPlan(fields, await planCurrentPage({ platform, stepName, fields, profile }), profile);
@@ -1118,7 +1190,7 @@ async function runAutofillPage(args: {
   };
 
   args.onStatus?.("filling");
-  const records = await applyAutofillPlan({
+  const planRecords = await applyAutofillPlan({
     fields,
     plan: plan.fields,
     getResume,
@@ -1127,6 +1199,7 @@ async function runAutofillPage(args: {
     onFieldStart: (field) => args.onFieldStart?.(field),
     onField: args.onField,
   });
+  const records = [...structuredRecords, ...planRecords];
 
   let tracker: ExtensionApplicationResponse | null = null;
   let trackerError: string | null = null;
@@ -1188,6 +1261,7 @@ function installAutofillCommandListener() {
       continueSteps?: unknown;
       forceGenericFallback?: unknown;
       suppressAutoTrack?: unknown;
+      runId?: unknown;
     };
 
     // Autofill/discovery/track runs can take up to a minute; by the time they
@@ -1203,6 +1277,26 @@ function installAutofillCommandListener() {
         // Message port already closed — the caller went away; nothing to deliver.
       }
     };
+
+    if (request.type === CONTENT_AUTOFILL_CANCEL_MESSAGE) {
+      const runId = typeof request.runId === "string" ? request.runId : "";
+      const activeRun = runId ? ACTIVE_CONTENT_AUTOFILL_RUNS.get(runId) : null;
+      if (!activeRun) {
+        respond({
+          ok: true,
+          type: "AUTOFILL_ACTIVE_TAB",
+          result: summarizeRunResult({ platform: detectPlatform(), stepName: detectStepName(), fields: [] }),
+        } satisfies ExtensionMessageResponse);
+        return true;
+      }
+      activeRun.cancelled = true;
+      respond({
+        ok: true,
+        type: "AUTOFILL_ACTIVE_TAB",
+        result: activeAutofillSnapshot(activeRun),
+      } satisfies ExtensionMessageResponse);
+      return true;
+    }
 
     if (request.type === CONTENT_TRACK_MESSAGE) {
       void trackCurrentPage()
@@ -1256,19 +1350,46 @@ function installAutofillCommandListener() {
     }
 
     if (request.type !== CONTENT_AUTOFILL_MESSAGE) return false;
+    const runId =
+      typeof request.runId === "string" && request.runId
+        ? request.runId
+        : `content:${Date.now()}:${Math.random().toString(36).slice(2)}`;
+    const activeRun: ActiveContentAutofillRun = {
+      runId,
+      cancelled: false,
+      platform: detectPlatform(),
+      stepName: detectStepName(),
+      discoveredFields: [],
+      records: [],
+    };
+    ACTIVE_CONTENT_AUTOFILL_RUNS.set(runId, activeRun);
     void runAutofillPage({
       continueSteps: request.continueSteps === true,
       forceGenericFallback: request.forceGenericFallback === true,
       suppressAutoTrack: request.suppressAutoTrack === true,
+      shouldStop: () => activeRun.cancelled,
+      onFieldsDiscovered: (fields) => {
+        activeRun.discoveredFields = fields;
+      },
+      onField: (record) => {
+        activeRun.records.push(record);
+      },
     })
       .then((result) => {
-        respond({ ok: true, type: "AUTOFILL_ACTIVE_TAB", result } satisfies ExtensionMessageResponse);
+        respond({
+          ok: true,
+          type: "AUTOFILL_ACTIVE_TAB",
+          result: activeRun.cancelled ? activeAutofillSnapshot(activeRun) : result,
+        } satisfies ExtensionMessageResponse);
       })
       .catch((error: unknown) => {
         respond({
           ok: false,
           error: error instanceof Error ? error.message : "Autofill failed.",
         } satisfies ExtensionMessageResponse);
+      })
+      .finally(() => {
+        ACTIVE_CONTENT_AUTOFILL_RUNS.delete(runId);
       });
     return true;
   });
@@ -1324,6 +1445,10 @@ function fieldsFromRunResult(result: ExtensionAutofillRunResult): PanelField[] {
 
 function parserFailedResult(result: ExtensionAutofillRunResult) {
   return result.fields.some((field) => field.signature.startsWith("jobposted-parser-empty:"));
+}
+
+function workdayGateResult(result: ExtensionAutofillRunResult | null) {
+  return Boolean(result?.fields.some((field) => field.signature.startsWith("jobposted-workday-account-gate:")));
 }
 
 function fieldsFromDiscovery(result: ExtensionAutofillDiscoveryResult): PanelField[] {
@@ -1753,6 +1878,29 @@ function InPagePanel({ initiallyCollapsed = false }: { initiallyCollapsed?: bool
     };
   }, [trackerQueued]);
 
+  useEffect(() => {
+    if (status !== "done" || !workdayGateResult(result)) return;
+    let cancelled = false;
+    let intervalId: number | null = null;
+    const resumeIfReady = () => {
+      if (cancelled) return;
+      if (!workdayApplyFlowPresent(document) || detectWorkdayAccountGate(document, window.location.href)) return;
+      cancelled = true;
+      if (intervalId != null) window.clearInterval(intervalId);
+      showToast("Workday application opened. Continuing autofill.");
+      void runPanelAutofill();
+    };
+    const observer = new MutationObserver(resumeIfReady);
+    if (document.body) observer.observe(document.body, { childList: true, subtree: true, attributes: true });
+    intervalId = window.setInterval(resumeIfReady, 750);
+    resumeIfReady();
+    return () => {
+      cancelled = true;
+      observer.disconnect();
+      if (intervalId != null) window.clearInterval(intervalId);
+    };
+  }, [result, status]);
+
   const progress = useMemo(() => {
     if (fields.length === 0) return 0;
     const completed = fields.filter((field) => ["filled", "skipped", "needs_user", "failed"].includes(field.status)).length;
@@ -1762,8 +1910,11 @@ function InPagePanel({ initiallyCollapsed = false }: { initiallyCollapsed?: bool
   const requiredTotal = fields.filter((field) => field.required).length;
   const requiredFilled = fields.filter((field) => field.required && field.status === "filled").length;
   const fillPercent = requiredTotal > 0 ? Math.round((requiredFilled / requiredTotal) * 100) : result && result.total > 0 ? Math.round((result.filled / result.total) * 100) : 0;
+  const pausedForWorkdayGate = workdayGateResult(result);
   const doneSummary =
-    requiredTotal > 0
+    pausedForWorkdayGate
+      ? "Waiting for Workday sign-in"
+      : requiredTotal > 0
       ? `${requiredFilled}/${requiredTotal} required filled · ${fillPercent}%`
       : result && result.total > 0
         ? `${result.filled}/${result.total} fields filled · ${fillPercent}%`
@@ -1858,7 +2009,11 @@ function InPagePanel({ initiallyCollapsed = false }: { initiallyCollapsed?: bool
         setTrackerQueued(autoTrack && !persisted && Boolean(tracker?.queued));
         setLastRunStatus("done");
         updateStatus("done");
-        showToast("Autofill complete. Review, then submit when ready.");
+        showToast(
+          workdayGateResult(runResult)
+            ? "Sign in or create the Workday account. Autofill will continue when the application opens."
+            : "Autofill complete. Review, then submit when ready.",
+        );
       }
       void refreshProfile();
     } catch (caught) {
@@ -2218,7 +2373,7 @@ function InPagePanel({ initiallyCollapsed = false }: { initiallyCollapsed?: bool
                   <ChevronLeft aria-hidden="true" />
                 </button>
               ) : null}
-              <strong>{status === "done" ? "All set" : status === "error" ? "Needs review" : "Autofilling"}</strong>
+              <strong>{status === "done" ? (pausedForWorkdayGate ? "Paused" : "All set") : status === "error" ? "Needs review" : "Autofilling"}</strong>
               {fields.length > 0 ? (
                 <span className="jp-run-count" aria-label={`${filledCount} of ${fields.length} fields filled`}>
                   {filledCount}

@@ -2,11 +2,14 @@ import { parseHTML } from "linkedom";
 import { describe, expect, it } from "vitest";
 import {
   hasWorkdayDom,
+  detectWorkdayAccountGate,
   isWorkdayHost,
   isWorkdayPage,
+  prefillWorkdayGateEmail,
   workdayCompany,
   ensureWorkdayRepeaterRows,
   fillWorkdaySkills,
+  workdayApplyFlowPresent,
   workdayJobHeading,
   workdayRepeaterHint,
   workdayStepName,
@@ -46,6 +49,59 @@ describe("Workday content helpers", () => {
     expect(workdayStepName(doc)).toBe("My Information");
     expect(workdayJobHeading(doc)).toBe("Senior Engineer");
     expect(workdayCompany(doc)).toBe("Acme");
+  });
+
+  it("detects the Workday sign-in/create-account gate and can prefill email only", () => {
+    const doc = documentFrom(`<!doctype html>
+      <main data-automation-id="candidateHome">
+        <h1>Sign in to continue your application</h1>
+        <label for="email">Email Address</label>
+        <input id="email" data-automation-id="email" autocomplete="email" />
+        <label for="password">Password</label>
+        <input id="password" data-automation-id="password" type="password" />
+        <button data-automation-id="signInSubmitButton">Sign In</button>
+        <button data-automation-id="createAccountLink">Create Account</button>
+      </main>`);
+
+    const gate = detectWorkdayAccountGate(doc, "https://acme.wd5.myworkdayjobs.com/en-US/jobs/login");
+
+    expect(gate).toBeTruthy();
+    expect(gate?.hasSignIn).toBe(true);
+    expect(gate?.hasCreateAccount).toBe(true);
+    expect(prefillWorkdayGateEmail(doc, "asha@example.com", "https://acme.wd5.myworkdayjobs.com/en-US/jobs/login")).toBe(true);
+    expect((doc.querySelector("#email") as HTMLInputElement).value).toBe("asha@example.com");
+    expect((doc.querySelector("#password") as HTMLInputElement).value).toBe("");
+  });
+
+  it("does not classify an active Workday apply flow as an account gate", () => {
+    const doc = documentFrom(`<!doctype html>
+      <main data-automation-id="workdayApplication">
+        <div data-automation-id="progressBarActiveStep">My Information</div>
+        <div data-automation-id="email"><input type="email" /></div>
+        <button data-automation-id="pageFooterNextButton">Save and Continue</button>
+      </main>`);
+
+    expect(workdayApplyFlowPresent(doc)).toBe(true);
+    expect(detectWorkdayAccountGate(doc, "https://acme.wd5.myworkdayjobs.com/jobs/apply")).toBeNull();
+  });
+
+  it("exposes the auto-resume condition when the gate clears", () => {
+    const doc = documentFrom(`<!doctype html>
+      <main>
+        <input id="email" autocomplete="email" />
+        <input id="password" type="password" />
+        <button>Create Account</button>
+      </main>`);
+
+    expect(detectWorkdayAccountGate(doc, "https://acme.wd5.myworkdayjobs.com/jobs/login")).toBeTruthy();
+    doc.body.innerHTML = `
+      <main data-automation-id="workdayApplication">
+        <div data-automation-id="progressBarActiveStep">My Information</div>
+        <button data-automation-id="pageFooterNextButton">Save and Continue</button>
+      </main>`;
+
+    expect(workdayApplyFlowPresent(doc)).toBe(true);
+    expect(detectWorkdayAccountGate(doc, "https://acme.wd5.myworkdayjobs.com/jobs/apply")).toBeNull();
   });
 
   it("keeps Workday repeater detection close to automation ids", () => {

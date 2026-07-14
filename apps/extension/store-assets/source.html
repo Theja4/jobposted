@@ -1,0 +1,1791 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>JobPosted Chrome Store Assets</title>
+    <style>
+      @font-face {
+        font-family: "Plus Jakarta Sans";
+        font-style: normal;
+        font-weight: 400 800;
+        font-display: swap;
+        src: url("../public/fonts/plus-jakarta-sans-latin.woff2") format("woff2");
+      }
+
+      :root {
+        --brand-50: #eff6ff;
+        --brand-100: #dbeafe;
+        --brand-200: #bfdbfe;
+        --brand-500: #2f7df4;
+        --brand-600: #1f64e0;
+        --brand-700: #174fb8;
+        --brand-900: #102f66;
+        --ink: #0b1220;
+        --muted: #526173;
+        --navy: #071a33;
+        --panel: #f7fbff;
+        --line: #e6ecf5;
+        --mint: #18b981;
+        --amber: #b45309;
+        --coral: #f58abb;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        width: 1280px;
+        min-width: 1280px;
+        height: 800px;
+        margin: 0;
+        overflow: hidden;
+        background: #ffffff;
+        color: var(--ink);
+        font-family:
+          "Plus Jakarta Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+        -webkit-font-smoothing: antialiased;
+        text-rendering: optimizeLegibility;
+      }
+
+      body {
+        position: relative;
+      }
+
+      .slide {
+        position: relative;
+        display: none;
+        width: 1280px;
+        height: 800px;
+        padding: 72px 70px 58px;
+        overflow: hidden;
+        background:
+          radial-gradient(circle at 80% 18%, rgba(96, 165, 250, 0.22), transparent 34%),
+          radial-gradient(circle at 26% 78%, rgba(22, 199, 212, 0.12), transparent 28%),
+          linear-gradient(135deg, #ffffff 0%, #f7fbff 54%, #eff6ff 100%);
+      }
+
+      .slide[data-active="true"] {
+        display: grid;
+        grid-template-columns: 515px 1fr;
+        gap: 52px;
+        align-items: center;
+      }
+
+      .slide::before,
+      .slide::after {
+        content: "";
+        position: absolute;
+        border-radius: 999px;
+        pointer-events: none;
+      }
+
+      .slide::before {
+        width: 720px;
+        height: 720px;
+        right: -210px;
+        top: -270px;
+        background: rgba(219, 234, 254, 0.6);
+        filter: blur(8px);
+      }
+
+      .slide::after {
+        width: 540px;
+        height: 540px;
+        right: 150px;
+        bottom: -300px;
+        background: rgba(22, 199, 212, 0.08);
+        filter: blur(12px);
+      }
+
+      .copy,
+      .visual {
+        position: relative;
+        z-index: 1;
+      }
+
+      .brand-pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 12px;
+        height: 42px;
+        margin-bottom: 34px;
+        padding: 5px 14px 5px 7px;
+        border: 1px solid rgba(191, 219, 254, 0.76);
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.82);
+        box-shadow: 0 12px 28px rgba(16, 47, 102, 0.08);
+        color: var(--brand-700);
+        font-size: 14px;
+        font-weight: 800;
+      }
+
+      .brand-pill img {
+        width: 30px;
+        height: 30px;
+        object-fit: contain;
+      }
+
+      .hero-icon {
+        display: grid;
+        width: 66px;
+        height: 66px;
+        margin-bottom: 30px;
+        place-items: center;
+        border: 2px solid rgba(31, 100, 224, 0.2);
+        border-radius: 18px;
+        background: #ffffff;
+        color: var(--brand-600);
+        box-shadow: 0 16px 34px rgba(16, 47, 102, 0.12);
+      }
+
+      .hero-icon svg {
+        width: 34px;
+        height: 34px;
+        stroke-width: 2.4;
+      }
+
+      h1 {
+        max-width: 540px;
+        margin: 0;
+        color: #08111f;
+        font-size: 67px;
+        font-weight: 800;
+        letter-spacing: -0.035em;
+        line-height: 1.03;
+        text-wrap: balance;
+      }
+
+      .underlined {
+        position: relative;
+        display: inline-block;
+        white-space: nowrap;
+      }
+
+      .underlined::after {
+        content: "";
+        position: absolute;
+        left: 0.02em;
+        right: -0.03em;
+        bottom: 0.03em;
+        z-index: -1;
+        height: 0.18em;
+        border-radius: 999px;
+        background: linear-gradient(90deg, rgba(47, 125, 244, 0.28), rgba(22, 199, 212, 0.3));
+      }
+
+      .lede {
+        max-width: 500px;
+        margin: 30px 0 0;
+        color: #233149;
+        font-size: 26px;
+        font-weight: 500;
+        line-height: 1.35;
+        letter-spacing: 0;
+      }
+
+      .support-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        max-width: 480px;
+        margin-top: 38px;
+      }
+
+      .support-chip {
+        display: inline-flex;
+        min-height: 34px;
+        align-items: center;
+        gap: 7px;
+        border: 1px solid rgba(191, 219, 254, 0.8);
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.86);
+        color: var(--brand-700);
+        padding: 0 13px;
+        font-size: 14px;
+        font-weight: 800;
+        box-shadow: 0 8px 18px rgba(16, 47, 102, 0.06);
+      }
+
+      .support-chip::before {
+        content: "";
+        width: 7px;
+        height: 7px;
+        border-radius: 99px;
+        background: var(--mint);
+      }
+
+      .visual {
+        min-height: 650px;
+      }
+
+      .screen-cluster {
+        position: relative;
+        width: 610px;
+        height: 650px;
+        margin-left: auto;
+      }
+
+      .browser {
+        position: absolute;
+        overflow: hidden;
+        border: 1px solid rgba(191, 219, 254, 0.74);
+        border-radius: 22px;
+        background: rgba(255, 255, 255, 0.88);
+        box-shadow:
+          0 34px 70px rgba(16, 47, 102, 0.17),
+          inset 0 1px 0 rgba(255, 255, 255, 0.9);
+      }
+
+      .browser::before {
+        content: "";
+        position: absolute;
+        inset: 0 0 auto;
+        height: 46px;
+        background: linear-gradient(180deg, #ffffff, #f7fbff);
+        border-bottom: 1px solid var(--line);
+      }
+
+      .browser-dots {
+        position: absolute;
+        top: 18px;
+        left: 22px;
+        display: flex;
+        gap: 7px;
+        z-index: 2;
+      }
+
+      .browser-dots i {
+        width: 9px;
+        height: 9px;
+        border-radius: 50%;
+        background: #c9d5e7;
+      }
+
+      .ats-page {
+        left: 8px;
+        top: 26px;
+        width: 435px;
+        height: 578px;
+        transform: rotate(-2deg);
+      }
+
+      .ats-content {
+        position: absolute;
+        inset: 72px 28px 28px;
+      }
+
+      .ats-kicker {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        height: 30px;
+        border-radius: 999px;
+        background: #ecfdf5;
+        color: #047857;
+        padding: 0 12px;
+        font-size: 12px;
+        font-weight: 800;
+      }
+
+      .ats-kicker::before {
+        content: "";
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: var(--mint);
+      }
+
+      .ats-title {
+        margin-top: 18px;
+        color: var(--ink);
+        font-size: 24px;
+        font-weight: 800;
+        letter-spacing: -0.02em;
+      }
+
+      .ats-sub {
+        margin-top: 7px;
+        color: var(--muted);
+        font-size: 13px;
+        font-weight: 700;
+      }
+
+      .field-stack {
+        display: grid;
+        gap: 13px;
+        margin-top: 24px;
+      }
+
+      .field {
+        display: grid;
+        gap: 7px;
+      }
+
+      .field label {
+        color: #33405a;
+        font-size: 12px;
+        font-weight: 800;
+      }
+
+      .input-line {
+        height: 38px;
+        border: 1px solid #dce8fe;
+        border-radius: 12px;
+        background: #ffffff;
+        box-shadow: inset 0 0 0 1px rgba(239, 246, 255, 0.9);
+      }
+
+      .input-line.filled {
+        position: relative;
+        border-color: rgba(31, 100, 224, 0.32);
+        background: linear-gradient(90deg, rgba(239, 246, 255, 0.86), #ffffff);
+      }
+
+      .input-line.filled::before {
+        content: "";
+        position: absolute;
+        left: 12px;
+        right: 64px;
+        top: 15px;
+        height: 7px;
+        border-radius: 999px;
+        background: rgba(31, 100, 224, 0.24);
+      }
+
+      .panel {
+        position: absolute;
+        right: 0;
+        top: 0;
+        width: 386px;
+        border: 1px solid rgba(191, 219, 254, 0.88);
+        border-radius: 22px;
+        background: #ffffff;
+        box-shadow:
+          0 38px 78px rgba(16, 47, 102, 0.2),
+          inset 0 1px 0 rgba(255, 255, 255, 0.95);
+      }
+
+      .panel-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 17px 18px;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .panel-brand {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+
+      .panel-brand img {
+        width: 34px;
+        height: 34px;
+        object-fit: contain;
+      }
+
+      .panel-brand strong {
+        display: block;
+        font-size: 16px;
+        font-weight: 800;
+      }
+
+      .status-line {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        color: var(--brand-700);
+        font-size: 11px;
+        font-weight: 800;
+      }
+
+      .status-line i {
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: var(--mint);
+      }
+
+      .gear {
+        display: grid;
+        width: 34px;
+        height: 34px;
+        place-items: center;
+        border: 1px solid var(--line);
+        border-radius: 11px;
+        color: var(--brand-700);
+        background: #f8fbff;
+      }
+
+      .panel-body {
+        display: grid;
+        gap: 14px;
+        padding: 17px;
+      }
+
+      .job-card,
+      .doc-card,
+      .tracker-card {
+        border: 1px solid rgba(191, 219, 254, 0.72);
+        border-radius: 16px;
+        background: #ffffff;
+        box-shadow: 0 6px 10px rgba(16, 47, 102, 0.06);
+      }
+
+      .job-card {
+        display: grid;
+        grid-template-columns: 42px 1fr auto;
+        gap: 12px;
+        align-items: center;
+        padding: 13px;
+      }
+
+      .logo-tile {
+        display: grid;
+        width: 42px;
+        height: 42px;
+        place-items: center;
+        border-radius: 13px;
+        background: var(--brand-50);
+        color: var(--brand-700);
+        font-size: 16px;
+        font-weight: 900;
+      }
+
+      .job-card strong {
+        display: block;
+        color: var(--ink);
+        font-size: 14px;
+        font-weight: 900;
+        letter-spacing: -0.01em;
+      }
+
+      .job-card span {
+        display: block;
+        margin-top: 3px;
+        color: var(--muted);
+        font-size: 11px;
+        font-weight: 700;
+      }
+
+      .match-pill {
+        display: inline-flex;
+        align-items: center;
+        height: 28px;
+        border-radius: 999px;
+        background: #ecfdf5;
+        color: #047857;
+        padding: 0 9px;
+        font-size: 12px;
+        font-weight: 900;
+      }
+
+      .primary-button {
+        display: flex;
+        min-height: 58px;
+        align-items: center;
+        justify-content: center;
+        gap: 10px;
+        border-radius: 15px;
+        background: var(--brand-600);
+        color: #ffffff;
+        font-size: 17px;
+        font-weight: 900;
+        box-shadow: 0 18px 38px rgba(31, 100, 224, 0.24);
+      }
+
+      .primary-button svg,
+      .ghost-button svg {
+        width: 19px;
+        height: 19px;
+      }
+
+      .progress-row {
+        display: grid;
+        gap: 8px;
+      }
+
+      .progress-row strong {
+        display: flex;
+        justify-content: space-between;
+        color: #33405a;
+        font-size: 12px;
+        font-weight: 900;
+      }
+
+      .progress-bar {
+        height: 8px;
+        overflow: hidden;
+        border-radius: 999px;
+        background: var(--brand-100);
+      }
+
+      .progress-bar span {
+        display: block;
+        height: 100%;
+        border-radius: inherit;
+        background: linear-gradient(90deg, var(--brand-700), var(--brand-500));
+      }
+
+      .check-list {
+        display: grid;
+        gap: 8px;
+      }
+
+      .check-item {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        min-height: 34px;
+        border-radius: 11px;
+        background: #f8fbff;
+        padding: 0 10px;
+        color: #33405a;
+        font-size: 12px;
+        font-weight: 800;
+      }
+
+      .check-dot {
+        display: grid;
+        width: 18px;
+        height: 18px;
+        place-items: center;
+        border-radius: 50%;
+        background: #ecfdf5;
+        color: #047857;
+        font-size: 12px;
+        font-weight: 900;
+      }
+
+      .review-note {
+        display: flex;
+        align-items: center;
+        gap: 9px;
+        border: 1px solid #fed7aa;
+        border-radius: 13px;
+        background: #fff7ed;
+        color: #9a3412;
+        padding: 10px 11px;
+        font-size: 12px;
+        font-weight: 800;
+      }
+
+      .cursor {
+        position: absolute;
+        right: -28px;
+        bottom: 85px;
+        width: 138px;
+        height: 138px;
+        filter: drop-shadow(0 18px 18px rgba(7, 26, 51, 0.22));
+      }
+
+      .mini-rail {
+        display: grid;
+        grid-template-columns: 1fr 1fr 1fr;
+        gap: 6px;
+        padding: 5px;
+        border-radius: 14px;
+        background: rgba(219, 234, 254, 0.54);
+      }
+
+      .mini-rail span {
+        display: flex;
+        min-height: 34px;
+        align-items: center;
+        justify-content: center;
+        border-radius: 11px;
+        color: var(--muted);
+        font-size: 12px;
+        font-weight: 900;
+      }
+
+      .mini-rail .on {
+        background: #ffffff;
+        color: var(--brand-700);
+        box-shadow: 0 1px 3px rgba(16, 47, 102, 0.08);
+      }
+
+      .resume-cluster {
+        position: relative;
+        width: 620px;
+        height: 650px;
+        margin-left: auto;
+      }
+
+      .resume-sheet {
+        position: absolute;
+        overflow: hidden;
+        border: 1px solid rgba(191, 219, 254, 0.74);
+        border-radius: 20px;
+        background: #ffffff;
+        box-shadow: 0 34px 70px rgba(16, 47, 102, 0.16);
+      }
+
+      .resume-sheet.back {
+        left: 14px;
+        top: 102px;
+        width: 325px;
+        height: 455px;
+        opacity: 0.48;
+        filter: blur(0.2px);
+      }
+
+      .resume-sheet.front {
+        right: 8px;
+        top: 72px;
+        width: 420px;
+        height: 535px;
+      }
+
+      .resume-content {
+        padding: 34px 38px;
+      }
+
+      .resume-name {
+        color: var(--ink);
+        font-size: 23px;
+        font-weight: 900;
+        letter-spacing: -0.02em;
+      }
+
+      .resume-section {
+        margin-top: 24px;
+      }
+
+      .resume-section strong {
+        display: block;
+        margin-bottom: 10px;
+        color: var(--ink);
+        font-size: 10px;
+        font-weight: 900;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+      }
+
+      .text-line {
+        height: 9px;
+        margin-bottom: 8px;
+        border-radius: 999px;
+        background: #e8eef8;
+      }
+
+      .text-line.short {
+        width: 62%;
+      }
+
+      .text-line.med {
+        width: 78%;
+      }
+
+      .text-line.highlight {
+        background: linear-gradient(90deg, rgba(31, 100, 224, 0.23), rgba(22, 199, 212, 0.24));
+      }
+
+      .score-ring {
+        position: absolute;
+        right: 0;
+        top: 20px;
+        display: grid;
+        width: 112px;
+        height: 112px;
+        place-items: center;
+        border-radius: 50%;
+        background:
+          radial-gradient(circle, #ffffff 58%, transparent 60%),
+          conic-gradient(var(--brand-600) 0 338deg, #dbeafe 338deg 360deg);
+        box-shadow: 0 16px 32px rgba(16, 47, 102, 0.14);
+        color: var(--ink);
+      }
+
+      .score-ring strong {
+        display: block;
+        font-size: 30px;
+        font-weight: 900;
+        letter-spacing: -0.03em;
+        line-height: 1;
+        text-align: center;
+      }
+
+      .score-ring span {
+        display: block;
+        margin-top: 4px;
+        color: var(--muted);
+        font-size: 11px;
+        font-weight: 900;
+        text-align: center;
+      }
+
+      .tailor-button {
+        position: absolute;
+        right: 104px;
+        bottom: 42px;
+        display: inline-flex;
+        min-height: 58px;
+        align-items: center;
+        gap: 10px;
+        border-radius: 999px;
+        background: var(--brand-600);
+        color: #ffffff;
+        padding: 0 28px;
+        font-size: 17px;
+        font-weight: 900;
+        box-shadow: 0 18px 38px rgba(31, 100, 224, 0.24);
+      }
+
+      .extension-mini {
+        position: absolute;
+        left: 46px;
+        bottom: 54px;
+        width: 270px;
+        border: 1px solid rgba(191, 219, 254, 0.84);
+        border-radius: 18px;
+        background: #ffffff;
+        box-shadow: 0 26px 58px rgba(16, 47, 102, 0.16);
+        padding: 14px;
+      }
+
+      .extension-mini-head {
+        display: flex;
+        align-items: center;
+        gap: 9px;
+        margin-bottom: 12px;
+        font-size: 13px;
+        font-weight: 900;
+      }
+
+      .extension-mini-head img {
+        width: 28px;
+        height: 28px;
+        object-fit: contain;
+      }
+
+      .doc-action {
+        display: grid;
+        gap: 7px;
+        border: 1px solid rgba(191, 219, 254, 0.72);
+        border-radius: 14px;
+        background: #f8fbff;
+        padding: 12px;
+      }
+
+      .doc-action strong {
+        color: var(--ink);
+        font-size: 13px;
+        font-weight: 900;
+      }
+
+      .doc-action span {
+        color: var(--muted);
+        font-size: 11px;
+        font-weight: 800;
+      }
+
+      .arrow {
+        position: absolute;
+        left: 280px;
+        top: 142px;
+        width: 110px;
+        height: 64px;
+        color: var(--brand-900);
+      }
+
+      .tracker-cluster {
+        position: relative;
+        width: 620px;
+        height: 650px;
+        margin-left: auto;
+      }
+
+      .match-card {
+        position: absolute;
+        right: 42px;
+        top: 84px;
+        width: 440px;
+        border: 1px solid rgba(191, 219, 254, 0.82);
+        border-radius: 22px;
+        background: #ffffff;
+        box-shadow: 0 34px 70px rgba(16, 47, 102, 0.16);
+        padding: 24px;
+      }
+
+      .match-head {
+        display: grid;
+        grid-template-columns: 56px 1fr auto;
+        gap: 14px;
+        align-items: center;
+      }
+
+      .company-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 3px;
+        width: 42px;
+        height: 42px;
+      }
+
+      .company-grid i {
+        border-radius: 3px;
+      }
+
+      .company-grid i:nth-child(1) {
+        background: var(--brand-600);
+      }
+
+      .company-grid i:nth-child(2) {
+        background: var(--mint);
+      }
+
+      .company-grid i:nth-child(3) {
+        background: #16c7d4;
+      }
+
+      .company-grid i:nth-child(4) {
+        background: #f8b84e;
+      }
+
+      .match-title strong {
+        display: block;
+        color: var(--ink);
+        font-size: 20px;
+        font-weight: 900;
+        letter-spacing: -0.02em;
+      }
+
+      .match-title span {
+        display: block;
+        margin-top: 4px;
+        color: var(--muted);
+        font-size: 12px;
+        font-weight: 800;
+      }
+
+      .big-score {
+        display: grid;
+        width: 82px;
+        height: 82px;
+        place-items: center;
+        border-radius: 50%;
+        background:
+          radial-gradient(circle, #ffffff 57%, transparent 59%),
+          conic-gradient(var(--brand-600) 0 331deg, #dbeafe 331deg 360deg);
+      }
+
+      .big-score strong {
+        color: var(--ink);
+        font-size: 25px;
+        font-weight: 900;
+        letter-spacing: -0.03em;
+      }
+
+      .fit-metrics {
+        display: grid;
+        grid-template-columns: 1fr 1fr 1fr;
+        gap: 10px;
+        margin-top: 28px;
+      }
+
+      .fit-metric {
+        display: grid;
+        gap: 6px;
+        place-items: center;
+        border-radius: 16px;
+        background: #f8fbff;
+        padding: 14px 8px;
+        color: var(--muted);
+        font-size: 11px;
+        font-weight: 800;
+      }
+
+      .fit-metric strong {
+        color: var(--brand-700);
+        font-size: 20px;
+        font-weight: 900;
+      }
+
+      .fit-list {
+        display: grid;
+        gap: 9px;
+        margin-top: 24px;
+      }
+
+      .fit-list strong {
+        margin-bottom: 2px;
+        color: var(--ink);
+        font-size: 14px;
+        font-weight: 900;
+      }
+
+      .fit-badge {
+        display: inline-flex;
+        width: max-content;
+        align-items: center;
+        gap: 7px;
+        min-height: 30px;
+        border-radius: 10px;
+        background: #ecfdf5;
+        color: #047857;
+        padding: 0 10px;
+        font-size: 12px;
+        font-weight: 900;
+      }
+
+      .tracker-panel {
+        position: absolute;
+        left: 8px;
+        bottom: 24px;
+        width: 388px;
+        border: 1px solid rgba(191, 219, 254, 0.84);
+        border-radius: 22px;
+        background: #ffffff;
+        box-shadow: 0 34px 70px rgba(16, 47, 102, 0.16);
+        padding: 16px;
+      }
+
+      .tracker-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 13px;
+      }
+
+      .tracker-header strong {
+        color: var(--ink);
+        font-size: 16px;
+        font-weight: 900;
+      }
+
+      .ghost-button {
+        display: inline-flex;
+        align-items: center;
+        gap: 7px;
+        min-height: 32px;
+        border-radius: 999px;
+        background: var(--brand-50);
+        color: var(--brand-700);
+        padding: 0 11px;
+        font-size: 12px;
+        font-weight: 900;
+      }
+
+      .tracker-tabs {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 5px;
+        margin-bottom: 12px;
+        border-radius: 13px;
+        background: rgba(219, 234, 254, 0.52);
+        padding: 5px;
+      }
+
+      .tracker-tabs span {
+        display: grid;
+        min-height: 30px;
+        place-items: center;
+        border-radius: 10px;
+        color: var(--muted);
+        font-size: 11px;
+        font-weight: 900;
+      }
+
+      .tracker-tabs .on {
+        background: #ffffff;
+        color: var(--brand-700);
+      }
+
+      .tracker-card {
+        display: grid;
+        grid-template-columns: 38px 1fr auto;
+        gap: 11px;
+        align-items: center;
+        margin-top: 9px;
+        padding: 11px;
+      }
+
+      .tracker-card .logo-tile {
+        width: 38px;
+        height: 38px;
+        border-radius: 12px;
+        font-size: 14px;
+      }
+
+      .tracker-card strong {
+        display: block;
+        color: var(--ink);
+        font-size: 13px;
+        font-weight: 900;
+      }
+
+      .tracker-card span {
+        display: block;
+        margin-top: 3px;
+        color: var(--muted);
+        font-size: 11px;
+        font-weight: 800;
+      }
+
+      .stage-pill {
+        display: inline-flex;
+        min-height: 24px;
+        align-items: center;
+        border-radius: 999px;
+        background: var(--brand-50);
+        color: var(--brand-700);
+        padding: 0 8px;
+        font-size: 11px;
+        font-weight: 900;
+      }
+
+      .safe-caption {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        margin-top: 24px;
+        color: var(--brand-700);
+        font-size: 15px;
+        font-weight: 900;
+      }
+
+      .safe-caption i {
+        display: grid;
+        width: 21px;
+        height: 21px;
+        place-items: center;
+        border-radius: 50%;
+        background: var(--brand-600);
+        color: #ffffff;
+        font-size: 13px;
+      }
+
+      .floating-badge {
+        position: absolute;
+        z-index: 8;
+        display: inline-flex;
+        align-items: center;
+        gap: 9px;
+        border: 1px solid rgba(191, 219, 254, 0.78);
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.9);
+        color: var(--brand-700);
+        padding: 9px 14px;
+        font-size: 13px;
+        font-weight: 900;
+        box-shadow: 0 16px 34px rgba(16, 47, 102, 0.11);
+      }
+
+      .floating-badge img {
+        width: 26px;
+        height: 26px;
+        object-fit: contain;
+      }
+
+      .badge-one {
+        right: 44px;
+        top: 18px;
+      }
+
+      .badge-two {
+        left: 58px;
+        top: 62px;
+      }
+
+      .badge-three {
+        right: 24px;
+        bottom: 24px;
+      }
+
+      .sparkles {
+        color: var(--brand-600);
+      }
+
+      .tracker-showcase {
+        position: relative;
+        width: 620px;
+        height: 650px;
+        margin-left: auto;
+      }
+
+      .tracker-dashboard {
+        position: absolute;
+        right: 0;
+        top: 54px;
+        width: 585px;
+        border: 1px solid rgba(191, 219, 254, 0.84);
+        border-radius: 24px;
+        background: #ffffff;
+        box-shadow: 0 34px 70px rgba(16, 47, 102, 0.17);
+        padding: 20px;
+      }
+
+      .tracker-dashboard-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 18px;
+      }
+
+      .tracker-dashboard-brand {
+        display: flex;
+        align-items: center;
+        gap: 11px;
+      }
+
+      .tracker-dashboard-brand img {
+        width: 36px;
+        height: 36px;
+        object-fit: contain;
+      }
+
+      .tracker-dashboard-brand strong {
+        display: block;
+        color: var(--ink);
+        font-size: 18px;
+        font-weight: 900;
+        letter-spacing: -0.02em;
+      }
+
+      .tracker-dashboard-brand span {
+        display: block;
+        margin-top: 3px;
+        color: var(--muted);
+        font-size: 12px;
+        font-weight: 800;
+      }
+
+      .tracker-search {
+        display: inline-flex;
+        min-height: 36px;
+        align-items: center;
+        gap: 8px;
+        border-radius: 999px;
+        background: #f8fbff;
+        color: var(--muted);
+        padding: 0 13px;
+        font-size: 12px;
+        font-weight: 800;
+        box-shadow: inset 0 0 0 1px var(--line);
+      }
+
+      .pipeline-board {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 10px;
+      }
+
+      .pipeline-col {
+        min-height: 358px;
+        border-radius: 18px;
+        background: #f8fbff;
+        padding: 10px;
+        box-shadow: inset 0 0 0 1px rgba(191, 219, 254, 0.58);
+      }
+
+      .pipeline-col-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 10px;
+        color: var(--muted);
+        font-size: 11px;
+        font-weight: 900;
+      }
+
+      .pipeline-col-head strong {
+        color: var(--ink);
+        font-size: 12px;
+        font-weight: 900;
+      }
+
+      .pipeline-card {
+        display: grid;
+        gap: 8px;
+        margin-top: 9px;
+        border: 1px solid rgba(191, 219, 254, 0.72);
+        border-radius: 15px;
+        background: #ffffff;
+        padding: 11px;
+        box-shadow: 0 8px 18px rgba(16, 47, 102, 0.07);
+      }
+
+      .pipeline-card.featured {
+        border-color: rgba(31, 100, 224, 0.42);
+        box-shadow:
+          0 12px 28px rgba(31, 100, 224, 0.12),
+          inset 0 0 0 1px rgba(31, 100, 224, 0.08);
+      }
+
+      .pipeline-company {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        min-width: 0;
+      }
+
+      .pipeline-company .logo-tile {
+        width: 30px;
+        height: 30px;
+        border-radius: 10px;
+        font-size: 12px;
+      }
+
+      .pipeline-company strong {
+        display: block;
+        overflow: hidden;
+        color: var(--ink);
+        font-size: 12px;
+        font-weight: 900;
+        letter-spacing: -0.01em;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .pipeline-company span {
+        display: block;
+        margin-top: 2px;
+        overflow: hidden;
+        color: var(--muted);
+        font-size: 10px;
+        font-weight: 800;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .pipeline-meta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 5px;
+      }
+
+      .pipeline-meta span {
+        display: inline-flex;
+        min-height: 22px;
+        align-items: center;
+        border-radius: 999px;
+        background: var(--brand-50);
+        color: var(--brand-700);
+        padding: 0 7px;
+        font-size: 10px;
+        font-weight: 900;
+      }
+
+      .tracker-detail {
+        position: absolute;
+        left: 0;
+        bottom: 28px;
+        width: 360px;
+        border: 1px solid rgba(191, 219, 254, 0.84);
+        border-radius: 22px;
+        background: #ffffff;
+        box-shadow: 0 34px 70px rgba(16, 47, 102, 0.17);
+        padding: 18px;
+      }
+
+      .tracker-detail-top {
+        display: grid;
+        grid-template-columns: 42px 1fr auto;
+        gap: 12px;
+        align-items: center;
+      }
+
+      .tracker-detail-top strong {
+        display: block;
+        color: var(--ink);
+        font-size: 15px;
+        font-weight: 900;
+      }
+
+      .tracker-detail-top span {
+        display: block;
+        margin-top: 3px;
+        color: var(--muted);
+        font-size: 11px;
+        font-weight: 800;
+      }
+
+      .detail-list {
+        display: grid;
+        gap: 9px;
+        margin-top: 16px;
+      }
+
+      .detail-row {
+        display: grid;
+        grid-template-columns: 24px 1fr;
+        gap: 9px;
+        align-items: center;
+        min-height: 38px;
+        border-radius: 13px;
+        background: #f8fbff;
+        padding: 8px 10px;
+        color: #33405a;
+        font-size: 12px;
+        font-weight: 800;
+      }
+
+      .detail-row i {
+        display: grid;
+        width: 24px;
+        height: 24px;
+        place-items: center;
+        border-radius: 8px;
+        background: var(--brand-50);
+        color: var(--brand-700);
+        font-style: normal;
+        font-weight: 900;
+      }
+
+      .tracker-stats {
+        position: absolute;
+        right: 18px;
+        bottom: 30px;
+        display: flex;
+        gap: 10px;
+      }
+
+      .tracker-stat {
+        display: grid;
+        width: 112px;
+        min-height: 78px;
+        place-items: center;
+        border: 1px solid rgba(191, 219, 254, 0.78);
+        border-radius: 18px;
+        background: rgba(255, 255, 255, 0.94);
+        box-shadow: 0 16px 34px rgba(16, 47, 102, 0.1);
+      }
+
+      .tracker-stat strong {
+        color: var(--brand-700);
+        font-size: 24px;
+        font-weight: 900;
+        letter-spacing: -0.03em;
+        line-height: 1;
+      }
+
+      .tracker-stat span {
+        color: var(--muted);
+        font-size: 11px;
+        font-weight: 900;
+      }
+    </style>
+  </head>
+  <body>
+    <section class="slide" data-slide="1">
+      <div class="copy">
+        <div class="brand-pill">
+          <img src="../public/brand/jobposted-mark.png" alt="" />
+          JobPosted for Chrome
+        </div>
+        <h1>Autofill applications. <span class="underlined">You stay in control.</span></h1>
+        <p class="lede">
+          Fill login-gated job forms inside your own browser session, then review before anything is submitted.
+        </p>
+        <div class="support-row" aria-label="Supported sites">
+          <span class="support-chip">Workday</span>
+          <span class="support-chip">Greenhouse</span>
+          <span class="support-chip">Lever</span>
+          <span class="support-chip">Ashby</span>
+          <span class="support-chip">iCIMS</span>
+          <span class="support-chip">Workable</span>
+        </div>
+        <div class="safe-caption"><i>✓</i> Copilot, not autopilot</div>
+      </div>
+      <div class="visual">
+        <div class="screen-cluster">
+          <div class="browser ats-page">
+            <span class="browser-dots"><i></i><i></i><i></i></span>
+            <div class="ats-content">
+              <div class="ats-kicker">Application detected</div>
+              <div class="ats-title">Product Manager, Analytics</div>
+              <div class="ats-sub">Remote - Full time - Senior</div>
+              <div class="field-stack">
+                <div class="field">
+                  <label>Full name</label>
+                  <div class="input-line filled"></div>
+                </div>
+                <div class="field">
+                  <label>Email</label>
+                  <div class="input-line filled"></div>
+                </div>
+                <div class="field">
+                  <label>Work authorization</label>
+                  <div class="input-line filled"></div>
+                </div>
+                <div class="field">
+                  <label>Resume</label>
+                  <div class="input-line"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <aside class="panel">
+            <header class="panel-header">
+              <div class="panel-brand">
+                <img src="../public/brand/jobposted-mark.png" alt="" />
+                <div>
+                  <strong>JobPosted</strong>
+                  <span class="status-line"><i></i>Autofilling...</span>
+                </div>
+              </div>
+              <span class="gear">
+                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M12 15.5A3.5 3.5 0 1 0 12 8a3.5 3.5 0 0 0 0 7.5Z" />
+                  <path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1-1.5 1.7 1.7 0 0 0-1.9.3l-.1.1A2 2 0 1 1 4.2 17l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1 1.7 1.7 0 0 0-.3-1.9l-.1-.1A2 2 0 1 1 7 4.2l.1.1a1.7 1.7 0 0 0 1.9.3 1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.9-.3l.1-.1A2 2 0 1 1 19.8 7l-.1.1a1.7 1.7 0 0 0-.3 1.9 1.7 1.7 0 0 0 1.5 1h.1a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z" />
+                </svg>
+              </span>
+            </header>
+            <div class="panel-body">
+              <div class="mini-rail"><span class="on">Autofill</span><span>Profile</span><span>Tracker</span></div>
+              <div class="job-card">
+                <span class="logo-tile">JP</span>
+                <div>
+                  <strong>Product Manager, Analytics</strong>
+                  <span>Northstar Labs - Los Angeles</span>
+                </div>
+                <span class="match-pill">82%</span>
+              </div>
+              <div class="primary-button">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4">
+                  <path d="m15 4 5 5-8.5 8.5H6.5V12.5L15 4Z" />
+                  <path d="m13 6 5 5" />
+                </svg>
+                Autofilling...
+              </div>
+              <div class="progress-row">
+                <strong><span>Application fields</span><span>9/11</span></strong>
+                <div class="progress-bar"><span style="width: 82%"></span></div>
+              </div>
+              <div class="check-list">
+                <div class="check-item"><span>Name and contact</span><span class="check-dot">✓</span></div>
+                <div class="check-item"><span>Work authorization</span><span class="check-dot">✓</span></div>
+                <div class="check-item"><span>Resume attached</span><span class="check-dot">✓</span></div>
+              </div>
+              <div class="review-note">Review final page before Submit</div>
+            </div>
+          </aside>
+          <svg class="cursor" viewBox="0 0 160 160" aria-hidden="true">
+            <path d="M29 16 125 104 82 113 64 153 29 16Z" fill="#071a33" stroke="#ffffff" stroke-width="10" stroke-linejoin="round" />
+          </svg>
+        </div>
+      </div>
+    </section>
+
+    <section class="slide" data-slide="2">
+      <div class="copy">
+        <div class="hero-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+            <path d="M14 3v4a2 2 0 0 0 2 2h4" />
+            <path d="M18 21H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h8l6 6v10a2 2 0 0 1-2 2Z" />
+            <path d="M8 14h8M8 17h5" />
+          </svg>
+        </div>
+        <h1>Tailor your resume for <span class="underlined">each role.</span></h1>
+        <p class="lede">
+          Create a role-specific Rezoomed resume from the extension, then attach the right file to the application.
+        </p>
+        <div class="support-row">
+          <span class="support-chip">Role keywords</span>
+          <span class="support-chip">Resume versioning</span>
+          <span class="support-chip">Cover letters</span>
+        </div>
+        <div class="safe-caption"><i>✓</i> Your original resume stays safe</div>
+      </div>
+      <div class="visual">
+        <div class="resume-cluster">
+          <span class="floating-badge badge-two">
+            <img src="../public/brand/jobposted-mark.png" alt="" />
+            Extension action
+          </span>
+          <svg class="arrow" viewBox="0 0 120 70" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round">
+            <path d="M8 48C33 8 76 7 99 25" />
+            <path d="M91 13 101 25 86 29" />
+          </svg>
+          <article class="resume-sheet back">
+            <div class="resume-content">
+              <div class="resume-name">Jamie Parker</div>
+              <div class="resume-section">
+                <strong>Summary</strong>
+                <div class="text-line med"></div>
+                <div class="text-line"></div>
+                <div class="text-line short"></div>
+              </div>
+              <div class="resume-section">
+                <strong>Experience</strong>
+                <div class="text-line"></div>
+                <div class="text-line med"></div>
+                <div class="text-line short"></div>
+              </div>
+            </div>
+          </article>
+          <article class="resume-sheet front">
+            <div class="resume-content">
+              <div class="resume-name">Jamie Parker</div>
+              <div class="resume-section">
+                <strong>Professional summary</strong>
+                <div class="text-line highlight"></div>
+                <div class="text-line highlight med"></div>
+                <div class="text-line short"></div>
+              </div>
+              <div class="resume-section">
+                <strong>Skills</strong>
+                <div class="text-line highlight med"></div>
+                <div class="text-line short"></div>
+              </div>
+              <div class="resume-section">
+                <strong>Experience</strong>
+                <div class="text-line"></div>
+                <div class="text-line highlight"></div>
+                <div class="text-line med"></div>
+                <div class="text-line short"></div>
+              </div>
+            </div>
+          </article>
+          <div class="score-ring"><div><strong>94</strong><span>Fit score</span></div></div>
+          <div class="extension-mini">
+            <div class="extension-mini-head">
+              <img src="../public/brand/jobposted-mark.png" alt="" />
+              JobPosted
+            </div>
+            <div class="doc-action">
+              <strong>Tailor my resume</strong>
+              <span>Product Analytics Resume.pdf</span>
+            </div>
+          </div>
+          <div class="tailor-button">
+            <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2.4">
+              <path d="M12 3 14.2 8.2 20 10.5 14.2 12.8 12 18 9.8 12.8 4 10.5 9.8 8.2 12 3Z" />
+            </svg>
+            Tailor resume
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="slide" data-slide="3">
+      <div class="copy">
+        <div class="hero-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+            <path d="M4 19V5" />
+            <path d="M4 19h16" />
+            <path d="m7 15 4-4 3 3 5-7" />
+            <path d="M16 7h3v3" />
+          </svg>
+        </div>
+        <h1>Find better fits, then <span class="underlined">track every step.</span></h1>
+        <p class="lede">
+          See why a role matches, save it from the page, and keep your application pipeline organized.
+        </p>
+        <div class="support-row">
+          <span class="support-chip">Fit signals</span>
+          <span class="support-chip">Saved tracker</span>
+          <span class="support-chip">Status updates</span>
+        </div>
+        <div class="safe-caption"><i>✓</i> Nothing is submitted without review</div>
+      </div>
+      <div class="visual">
+        <div class="tracker-cluster">
+          <span class="floating-badge badge-one">
+            <img src="../public/brand/jobposted-mark.png" alt="" />
+            JobPosted match
+          </span>
+          <article class="match-card">
+            <div class="match-head">
+              <span class="company-grid"><i></i><i></i><i></i><i></i></span>
+              <div class="match-title">
+                <strong>Senior Data Analyst</strong>
+                <span>Mosaic Systems - 1 hour ago</span>
+              </div>
+              <span class="big-score"><strong>92%</strong></span>
+            </div>
+            <div class="fit-metrics">
+              <div class="fit-metric"><strong>96%</strong>Experience</div>
+              <div class="fit-metric"><strong>90%</strong>Skills</div>
+              <div class="fit-metric"><strong>88%</strong>Industry</div>
+            </div>
+            <div class="fit-list">
+              <strong>Why this fits</strong>
+              <span class="fit-badge">✓ Relevant experience</span>
+              <span class="fit-badge">✓ Strong SQL background</span>
+              <span class="fit-badge">✓ Analytics leadership</span>
+            </div>
+          </article>
+
+          <aside class="tracker-panel">
+            <div class="tracker-header">
+              <strong>Application tracker</strong>
+              <span class="ghost-button">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+                  <path d="M5 12h14M12 5v14" />
+                </svg>
+                Save job
+              </span>
+            </div>
+            <div class="tracker-tabs"><span class="on">Saved</span><span>Applied</span><span>Interview</span><span>Offer</span></div>
+            <div class="tracker-card">
+              <span class="logo-tile">M</span>
+              <div><strong>Senior Data Analyst</strong><span>Mosaic Systems</span></div>
+              <span class="stage-pill">Saved</span>
+            </div>
+            <div class="tracker-card">
+              <span class="logo-tile">A</span>
+              <div><strong>Product Analyst</strong><span>Aster Health</span></div>
+              <span class="stage-pill">Applied</span>
+            </div>
+            <div class="tracker-card">
+              <span class="logo-tile">O</span>
+              <div><strong>Growth Data Lead</strong><span>Orbit Finance</span></div>
+              <span class="stage-pill">Interview</span>
+            </div>
+          </aside>
+          <span class="floating-badge badge-three">
+            <svg class="sparkles" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2.2">
+              <path d="M12 3 14.2 8.2 20 10.5 14.2 12.8 12 18 9.8 12.8 4 10.5 9.8 8.2 12 3Z" />
+            </svg>
+            Review queue ready
+          </span>
+        </div>
+      </div>
+    </section>
+
+    <section class="slide" data-slide="4">
+      <div class="copy">
+        <div class="hero-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+            <path d="M9 5H5a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-5" />
+            <path d="M13 3h8v8" />
+            <path d="m21 3-9 9" />
+            <path d="M8 14h6" />
+            <path d="M8 17h8" />
+          </svg>
+        </div>
+        <h1>Your job search, <span class="underlined">finally organized.</span></h1>
+        <p class="lede">
+          Save roles from any application page, pin the right resume, add notes, and move every lead through your pipeline.
+        </p>
+        <div class="support-row">
+          <span class="support-chip">One-click save</span>
+          <span class="support-chip">Resume pins</span>
+          <span class="support-chip">Notes & stages</span>
+        </div>
+        <div class="safe-caption"><i>✓</i> Every application has a next step</div>
+      </div>
+      <div class="visual">
+        <div class="tracker-showcase">
+          <span class="floating-badge badge-one">
+            <img src="../public/brand/jobposted-mark.png" alt="" />
+            Tracker synced
+          </span>
+
+          <section class="tracker-dashboard">
+            <div class="tracker-dashboard-head">
+              <div class="tracker-dashboard-brand">
+                <img src="../public/brand/jobposted-mark.png" alt="" />
+                <div>
+                  <strong>JobPosted Tracker</strong>
+                  <span>From saved role to final decision</span>
+                </div>
+              </div>
+              <span class="tracker-search">
+                <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.2">
+                  <circle cx="11" cy="11" r="7" />
+                  <path d="m20 20-3.8-3.8" />
+                </svg>
+                Search roles
+              </span>
+            </div>
+
+            <div class="pipeline-board">
+              <div class="pipeline-col">
+                <div class="pipeline-col-head"><strong>Saved</strong><span>8</span></div>
+                <article class="pipeline-card featured">
+                  <div class="pipeline-company">
+                    <span class="logo-tile">N</span>
+                    <div><strong>Product Analyst</strong><span>Northstar Labs</span></div>
+                  </div>
+                  <div class="pipeline-meta"><span>92% match</span><span>Resume pinned</span></div>
+                </article>
+                <article class="pipeline-card">
+                  <div class="pipeline-company">
+                    <span class="logo-tile">K</span>
+                    <div><strong>Growth PM</strong><span>Kite Works</span></div>
+                  </div>
+                  <div class="pipeline-meta"><span>Saved today</span></div>
+                </article>
+              </div>
+              <div class="pipeline-col">
+                <div class="pipeline-col-head"><strong>Applied</strong><span>12</span></div>
+                <article class="pipeline-card">
+                  <div class="pipeline-company">
+                    <span class="logo-tile">M</span>
+                    <div><strong>Data Analyst</strong><span>Mosaic Systems</span></div>
+                  </div>
+                  <div class="pipeline-meta"><span>Submitted</span></div>
+                </article>
+                <article class="pipeline-card">
+                  <div class="pipeline-company">
+                    <span class="logo-tile">A</span>
+                    <div><strong>Ops Associate</strong><span>Aster Health</span></div>
+                  </div>
+                  <div class="pipeline-meta"><span>Follow up</span></div>
+                </article>
+              </div>
+              <div class="pipeline-col">
+                <div class="pipeline-col-head"><strong>Interview</strong><span>3</span></div>
+                <article class="pipeline-card">
+                  <div class="pipeline-company">
+                    <span class="logo-tile">O</span>
+                    <div><strong>Growth Lead</strong><span>Orbit Finance</span></div>
+                  </div>
+                  <div class="pipeline-meta"><span>Call booked</span></div>
+                </article>
+              </div>
+              <div class="pipeline-col">
+                <div class="pipeline-col-head"><strong>Offer</strong><span>1</span></div>
+                <article class="pipeline-card">
+                  <div class="pipeline-company">
+                    <span class="logo-tile">S</span>
+                    <div><strong>Strategy PM</strong><span>Summit Labs</span></div>
+                  </div>
+                  <div class="pipeline-meta"><span>Offer</span></div>
+                </article>
+              </div>
+            </div>
+          </section>
+
+          <aside class="tracker-detail">
+            <div class="tracker-detail-top">
+              <span class="logo-tile">N</span>
+              <div>
+                <strong>Product Analyst</strong>
+                <span>Northstar Labs - Saved today</span>
+              </div>
+              <span class="match-pill">92%</span>
+            </div>
+            <div class="detail-list">
+              <div class="detail-row"><i>✓</i><span>Application saved from the page</span></div>
+              <div class="detail-row"><i>R</i><span>Product Analytics Resume.pdf pinned</span></div>
+              <div class="detail-row"><i>N</i><span>Note: follow up after recruiter reply</span></div>
+            </div>
+          </aside>
+
+          <div class="tracker-stats">
+            <div class="tracker-stat"><strong>24</strong><span>Active roles</span></div>
+            <div class="tracker-stat"><strong>4</strong><span>Stages</span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <script>
+      const params = new URLSearchParams(window.location.search);
+      const slide = params.get("slide") || "1";
+      for (const el of document.querySelectorAll(".slide")) {
+        el.dataset.active = el.dataset.slide === slide ? "true" : "false";
+      }
+    </script>
+  </body>
+</html>

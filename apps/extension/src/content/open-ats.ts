@@ -1,4 +1,5 @@
 import type { PlatformFillStrategy } from "./fill-strategy";
+import { fillGreenhouseStructuredFields, prepareGreenhouseStructuredRows } from "./greenhouse-experience";
 
 export const GREENHOUSE_SELECTORS = {
   hostedForm:
@@ -46,7 +47,11 @@ export function isLeverPage(url: string) {
 }
 
 export function createGreenhouseFillStrategy(): PlatformFillStrategy {
-  return { id: "greenhouse" };
+  return {
+    id: "greenhouse",
+    preparePage: prepareGreenhouseStructuredRows,
+    fillStructuredFields: fillGreenhouseStructuredFields,
+  };
 }
 
 export function createLeverFillStrategy(): PlatformFillStrategy {

@@ -14,6 +14,12 @@ import {
 } from "@jobposted/shared";
 import { EXTENSION_BRIDGE_PATH, JOBPOSTED_WEB_ORIGIN } from "../src/config/env";
 import {
+  isAutofillTimeoutError,
+  selectAutofillFrameResponse,
+  type AutofillContentResponse,
+  type AutofillFrameError,
+} from "../src/background/frame-autofill";
+import {
   createAutofillPlan,
   draftAnswer,
   ExtensionHttpError,
@@ -58,6 +64,7 @@ const PENDING_AUTH = new Map<string, PendingAuth>();
 const AUTH_TIMEOUT_MS = 5 * 60 * 1000;
 const CONTENT_SCRIPT_FILE = "content-scripts/content.js";
 const CONTENT_AUTOFILL_MESSAGE = "JOBPOSTED_AUTOFILL_CURRENT_PAGE";
+const CONTENT_AUTOFILL_CANCEL_MESSAGE = "JOBPOSTED_CANCEL_AUTOFILL_CURRENT_PAGE";
 const CONTENT_DISCOVER_MESSAGE = "JOBPOSTED_DISCOVER_CURRENT_PAGE";
 const CONTENT_TRACK_MESSAGE = "JOBPOSTED_TRACK_CURRENT_PAGE";
 const CONTENT_JOB_CONTEXT_MESSAGE = "JOBPOSTED_JOB_CONTEXT";
@@ -69,7 +76,7 @@ const PANEL_HOST_ID = "jobposted-autofill-panel-host";
 // while the in-page script kept mutating the DOM — surfacing as "it glitched and gave
 // up". Keep this just under the side panel's 45s outer timeout so it stays a safety net.
 const FRAME_AUTOFILL_TIMEOUT_MS = 40_000;
-type AutofillContentResponse = Extract<ExtensionMessageResponse, { type: "AUTOFILL_ACTIVE_TAB" }>;
+const FRAME_AUTOFILL_CANCEL_GRACE_MS = 2_000;
 type DiscoveryContentResponse = Extract<ExtensionMessageResponse, { type: "AUTOFILL_DISCOVER_ACTIVE_TAB" }>;
 type TrackerContentResponse = Extract<ExtensionMessageResponse, { type: "TRACKER_ADD_ACTIVE_TAB" }>;
 type JobContextContentResponse =
@@ -79,8 +86,8 @@ type JobContextContentResponse =
 class ContentAutofillError extends Error {}
 class ContentTrackerError extends Error {}
 type AutofillFrameResult =
-  | { ok: true; response: AutofillContentResponse }
-  | { ok: false; error: unknown };
+  | { ok: true; response: AutofillContentResponse; timedOut?: boolean }
+  | { ok: false; error: unknown; timedOut?: boolean };
 type DiscoveryFrameResult =
   | { ok: true; response: DiscoveryContentResponse }
   | { ok: false; error: unknown };
@@ -176,18 +183,6 @@ async function activeTab() {
     throw new Error("Open a regular job application tab, then try autofill again.");
   }
   return tab as chrome.tabs.Tab & { id: number };
-}
-
-function scoreAutofillResult(response: AutofillContentResponse) {
-  const result = response.result;
-  if (result.total === 0) return -100;
-  return result.filled * 10 + result.needsUser * 4 + result.failed * 2 + result.total - result.skipped * 2;
-}
-
-function bestAutofillResponse(responses: AutofillContentResponse[]) {
-  return responses.reduce((best, response) =>
-    scoreAutofillResult(response) > scoreAutofillResult(best) ? response : best,
-  );
 }
 
 function scoreDiscoveryResult(response: DiscoveryContentResponse) {
@@ -323,7 +318,7 @@ async function openPanelActiveTab(): Promise<ExtensionMessageResponse> {
 async function requestFrameAutofill(
   tabId: number,
   frameId: number,
-  args: { continueSteps?: boolean },
+  args: { continueSteps?: boolean; runId?: string },
 ): Promise<AutofillContentResponse> {
   const response = (await chrome.tabs.sendMessage(
     tabId,
@@ -334,6 +329,7 @@ async function requestFrameAutofill(
       // content script only blocks on truly unknown (platform === "generic") hosts.
       forceGenericFallback: false,
       suppressAutoTrack: true,
+      runId: args.runId,
     },
     { frameId },
   )) as ExtensionMessageResponse | undefined;
@@ -341,6 +337,60 @@ async function requestFrameAutofill(
   if (!response.ok) throw new ContentAutofillError(response.error);
   if (!isAutofillRunResponse(response)) throw new Error("autofill_unexpected_response");
   return response;
+}
+
+async function requestFrameAutofillCancel(
+  tabId: number,
+  frameId: number,
+  runId: string,
+): Promise<AutofillContentResponse | null> {
+  const response = (await chrome.tabs.sendMessage(
+    tabId,
+    {
+      type: CONTENT_AUTOFILL_CANCEL_MESSAGE,
+      runId,
+    },
+    { frameId },
+  )) as ExtensionMessageResponse | undefined;
+  if (!response || !response.ok || !isAutofillRunResponse(response)) return null;
+  return response;
+}
+
+function frameRunId(tabId: number, frameId: number) {
+  return `autofill:${tabId}:${frameId}:${Date.now()}:${Math.random().toString(36).slice(2)}`;
+}
+
+async function requestFrameAutofillWithTimeout(
+  tabId: number,
+  frameId: number,
+  args: { continueSteps?: boolean },
+): Promise<AutofillFrameResult> {
+  const runId = frameRunId(tabId, frameId);
+  const request = requestFrameAutofill(tabId, frameId, { ...args, runId });
+  let timeoutId: ReturnType<typeof setTimeout> | null = null;
+  const timeout = new Promise<"timeout">((resolve) => {
+    timeoutId = setTimeout(() => resolve("timeout"), FRAME_AUTOFILL_TIMEOUT_MS);
+  });
+  try {
+    const first = await Promise.race([request, timeout]);
+    if (timeoutId) clearTimeout(timeoutId);
+    if (first !== "timeout") return { ok: true, response: first };
+
+    const timeoutError = new Error(`autofill_frame_timeout:${frameId}`);
+    const cancel = requestFrameAutofillCancel(tabId, frameId, runId).catch(() => null);
+    const grace = new Promise<null>((resolve) => setTimeout(() => resolve(null), FRAME_AUTOFILL_CANCEL_GRACE_MS));
+    const partial = await Promise.race([
+      request.catch(() => null),
+      cancel,
+      grace,
+    ]);
+    return partial
+      ? { ok: true, response: partial, timedOut: true }
+      : { ok: false, error: timeoutError, timedOut: true };
+  } catch (error) {
+    if (timeoutId) clearTimeout(timeoutId);
+    return { ok: false, error };
+  }
 }
 
 async function requestFrameDiscovery(tabId: number, frameId: number): Promise<DiscoveryContentResponse> {
@@ -410,16 +460,11 @@ async function requestTabAutofill(
   const pending = new Map(
     frameIds.map((frameId, index) => [
       index,
-      withTimeout(
-        requestFrameAutofill(tabId, frameId, args),
-        FRAME_AUTOFILL_TIMEOUT_MS,
-        `autofill_frame_timeout:${frameId}`,
-      )
-        .then((response): AutofillFrameResult => ({ ok: true, response }))
-        .catch((error): AutofillFrameResult => ({ ok: false, error })),
+      requestFrameAutofillWithTimeout(tabId, frameId, args),
     ]),
   );
   const responses: AutofillContentResponse[] = [];
+  const errors: AutofillFrameError[] = [];
   let firstError: unknown = null;
 
   while (pending.size > 0) {
@@ -429,14 +474,19 @@ async function requestTabAutofill(
     pending.delete(index);
     if (result.ok) {
       responses.push(result.response);
+      if (result.timedOut) errors.push({ error: new Error(`autofill_frame_timeout:${frameIds[index] ?? "unknown"}`), timedOut: true });
     } else {
+      errors.push({ error: result.error, timedOut: result.timedOut || isAutofillTimeoutError(result.error) });
       firstError ??= result.error;
     }
   }
 
-  if (responses.length > 0) return bestAutofillResponse(responses);
+  const selected = selectAutofillFrameResponse({ responses, errors });
+  if (selected) return selected;
 
   if (firstError instanceof Error) throw firstError;
+  const timeoutError = errors.find((error) => error.timedOut)?.error;
+  if (timeoutError instanceof Error) throw timeoutError;
   throw new Error("autofill_no_response");
 }
 

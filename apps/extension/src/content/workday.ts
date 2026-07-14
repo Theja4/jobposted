@@ -75,6 +75,101 @@ export function workdayCompany(doc: Document) {
   return clean(doc.querySelector(WORKDAY_SELECTORS.company)?.textContent);
 }
 
+export function workdayApplyFlowPresent(doc: Document) {
+  return Boolean(
+    doc.querySelector(
+      [
+        WORKDAY_SELECTORS.activeProgressStep,
+        "[data-automation-id='progressBarCompletedStep']",
+        "[data-automation-id='progressBarInactiveStep']",
+        "[data-automation-id='pageFooterNextButton']",
+        "[data-automation-id='applyFlowMyExpPage']",
+        "[data-automation-id='legalNameSection_firstName']",
+        "[data-automation-id='workdayApplication'] [data-automation-id='email']",
+      ].join(","),
+    ),
+  );
+}
+
+function isVisibleForGate(element: HTMLElement | null): element is HTMLElement {
+  if (!element || element.closest("[hidden], [aria-hidden='true']")) return false;
+  const style = element.ownerDocument.defaultView?.getComputedStyle?.(element);
+  return !(style && (style.display === "none" || style.visibility === "hidden" || style.opacity === "0"));
+}
+
+function gateText(element: HTMLElement) {
+  return normalize(
+    [
+      element instanceof HTMLInputElement ? element.value : "",
+      element.textContent,
+      element.getAttribute("aria-label"),
+      element.getAttribute("title"),
+      element.getAttribute("data-automation-id"),
+    ].join(" "),
+  );
+}
+
+export interface WorkdayAccountGate {
+  emailInput: HTMLInputElement | null;
+  passwordInput: HTMLInputElement | null;
+  hasSignIn: boolean;
+  hasCreateAccount: boolean;
+}
+
+export function detectWorkdayAccountGate(doc: Document, url = doc.location?.href ?? ""): WorkdayAccountGate | null {
+  if (!isWorkdayPage(url, doc) || workdayApplyFlowPresent(doc)) return null;
+  const emailInput =
+    Array.from(
+      doc.querySelectorAll<HTMLInputElement>(
+        [
+          "input[type='email']",
+          "input[autocomplete='email']",
+          "input[name*='email' i]",
+          "input[id*='email' i]",
+          "[data-automation-id*='email' i] input",
+        ].join(","),
+      ),
+    ).find(isVisibleForGate) ?? null;
+  const passwordInput =
+    Array.from(
+      doc.querySelectorAll<HTMLInputElement>(
+        [
+          "input[type='password']",
+          "input[autocomplete='current-password']",
+          "input[autocomplete='new-password']",
+          "input[name*='password' i]",
+          "input[id*='password' i]",
+          "[data-automation-id*='password' i] input",
+        ].join(","),
+      ),
+    ).find(isVisibleForGate) ?? null;
+  const actions = Array.from(
+    doc.querySelectorAll<HTMLElement>("button, a, input[type='button'], input[type='submit'], [role='button']"),
+  ).filter(isVisibleForGate);
+  const actionText = actions.map(gateText).join(" ");
+  const pageText = normalize(doc.body?.textContent ?? "").slice(0, 5000);
+  const hasSignIn = /\b(sign in|signin|log in|login|use existing account|candidate home)\b/.test(actionText);
+  const hasCreateAccount = /\b(create account|register|sign up|signup)\b/.test(actionText);
+  const looksLikeAccountPage = /\b(account|candidate|application|apply)\b/.test(`${actionText} ${pageText}`);
+  if (!looksLikeAccountPage) return null;
+  if ((emailInput && (passwordInput || hasSignIn || hasCreateAccount)) || (passwordInput && (hasSignIn || hasCreateAccount))) {
+    return { emailInput, passwordInput, hasSignIn, hasCreateAccount };
+  }
+  return null;
+}
+
+export function prefillWorkdayGateEmail(doc: Document, email: string | null | undefined, url = doc.location?.href ?? "") {
+  const gate = detectWorkdayAccountGate(doc, url);
+  const value = clean(email);
+  if (!gate?.emailInput || !value || clean(gate.emailInput.value)) return false;
+  const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
+  setter?.call(gate.emailInput, value);
+  if (gate.emailInput.value !== value) gate.emailInput.value = value;
+  gate.emailInput.dispatchEvent(new Event("input", { bubbles: true }));
+  gate.emailInput.dispatchEvent(new Event("change", { bubbles: true }));
+  return gate.emailInput.value === value;
+}
+
 export function workdayRepeaterHint(element: HTMLElement): "education" | "experience" | null {
   const container = element.closest<HTMLElement>(WORKDAY_SELECTORS.fieldContainer);
   const automationText = normalize(

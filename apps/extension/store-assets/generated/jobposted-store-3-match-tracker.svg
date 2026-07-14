@@ -1,0 +1,169 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="800" viewBox="0 0 1280 800">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="0.55" stop-color="#f4faff"/>
+      <stop offset="1" stop-color="#d7eff8"/>
+    </linearGradient>
+    <radialGradient id="aqua" cx="52%" cy="78%" r="52%">
+      <stop offset="0" stop-color="#b9f4ea" stop-opacity="0.55"/>
+      <stop offset="1" stop-color="#b9f4ea" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="shadow" x="-25%" y="-25%" width="150%" height="150%">
+      <feDropShadow dx="0" dy="18" stdDeviation="22" flood-color="#2e5d94" flood-opacity="0.20"/>
+    </filter>
+    <filter id="softShadow" x="-25%" y="-25%" width="150%" height="150%">
+      <feDropShadow dx="0" dy="12" stdDeviation="15" flood-color="#2e5d94" flood-opacity="0.14"/>
+    </filter>
+    <style>
+      text { font-family: Arial, Helvetica, sans-serif; }
+    </style>
+  </defs>
+  <rect width="1280" height="800" fill="url(#bg)"/>
+  <rect width="1280" height="800" fill="url(#aqua)"/>
+
+  <rect x="70" y="129" width="66" height="66" rx="18" fill="#f8fbff" stroke="#bfd9ff" stroke-width="2" filter="url(#softShadow)"/>
+  <path d="M91 170h24M93 169l8-8 6 5 10-13M115 153v8h-8" fill="none" stroke="#2768e8" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <text x="70" y="286" font-size="68" font-weight="900" fill="#0b1224" text-anchor="start" opacity="1">Find better fits,</text>
+  <text x="70" y="356" font-size="68" font-weight="900" fill="#0b1224" text-anchor="start" opacity="1">then</text>
+  <rect x="72" y="417" width="521" height="14" rx="7" fill="#aee7ee"/>
+  <text x="70" y="426" font-size="68" font-weight="900" fill="#0b1224" text-anchor="start" opacity="1">track every step.</text>
+
+  <text x="70" y="490" font-size="28" font-weight="500" fill="#243249" text-anchor="start" opacity="1">See why a role matches, save it from the</text>
+  <text x="70" y="525" font-size="28" font-weight="500" fill="#243249" text-anchor="start" opacity="1">page, and keep your application</text>
+  <text x="70" y="560" font-size="28" font-weight="500" fill="#243249" text-anchor="start" opacity="1">pipeline organized.</text>
+
+  
+    <rect x="70" y="607" width="124" height="34" rx="17" fill="#ffffff" stroke="#b9d8ff" stroke-width="1" />
+    <circle cx="88" cy="624" r="4" fill="#2fd6bd"/>
+    <text x="100" y="629" font-size="14" font-weight="800" fill="#1354c8" text-anchor="start" opacity="1">Fit signals</text>
+  
+  
+    <rect x="197" y="607" width="132.2" height="34" rx="17" fill="#ffffff" stroke="#b9d8ff" stroke-width="1" />
+    <circle cx="215" cy="624" r="4" fill="#2fd6bd"/>
+    <text x="227" y="629" font-size="14" font-weight="800" fill="#1354c8" text-anchor="start" opacity="1">Saved tracker</text>
+  
+  
+    <rect x="346" y="607" width="139.60000000000002" height="34" rx="17" fill="#ffffff" stroke="#b9d8ff" stroke-width="1" />
+    <circle cx="364" cy="624" r="4" fill="#2fd6bd"/>
+    <text x="376" y="629" font-size="14" font-weight="800" fill="#1354c8" text-anchor="start" opacity="1">Status updates</text>
+  
+  <circle cx="80" cy="675" r="10" fill="#2768e8"/>
+  <text x="80" y="680" font-size="13" font-weight="900" fill="#ffffff" text-anchor="middle" opacity="1">✓</text>
+  <text x="99" y="681" font-size="16" font-weight="900" fill="#1354c8" text-anchor="start" opacity="1">Nothing is submitted without review</text>
+
+  <rect x="775" y="168" width="439" height="390" rx="23" fill="#ffffff" stroke="#b5d5ff" stroke-width="1" filter="url(#shadow)"/>
+  <rect x="1038" y="101" width="174" height="45" rx="22.5" fill="#ffffff" stroke="#b8d6ff" stroke-width="1" filter="url(#softShadow)"/>
+  
+    <g transform="translate(1055 112) scale(0.6470588235294118)">
+      <path d="M17 2l14 4v10c0 8.6-5.6 14.9-14 17C8.6 30.9 3 24.6 3 16V6l14-4z" fill="#1e6bff"/>
+      <path d="M15 8h10v4h-6v9.1c0 4.3-2.8 7-7.2 7-2.4 0-4.6-.8-6.1-2.2l2.8-3.2c.8.8 1.8 1.2 2.9 1.2 1.9 0 3.1-1.2 3.1-3.4V12H15V8z" fill="#ffffff"/>
+      <path d="M22.2 5.1h7.3l-5.6 4.2h-7.3l5.6-4.2z" fill="#b7e1ff"/>
+    </g>
+  
+  <text x="1087" y="129" font-size="14" font-weight="900" fill="#1354c8" text-anchor="start" opacity="1">JobPosted match</text>
+
+  
+      <rect x="800" y="211" width="43" height="43" rx="12" fill="#eef7ff" stroke="none" stroke-width="1" />
+      <rect x="809.245" y="220.245" width="10.32" height="10.32" rx="2.5" fill="#2563eb"/>
+      <rect x="823.4350000000001" y="220.245" width="10.32" height="10.32" rx="2.5" fill="#14b8a6"/>
+      <rect x="809.245" y="234.435" width="10.32" height="10.32" rx="2.5" fill="#06b6d4"/>
+      <rect x="823.4350000000001" y="234.435" width="10.32" height="10.32" rx="2.5" fill="#f59e0b"/>
+    
+  <text x="870" y="231" font-size="21" font-weight="900" fill="#0b1224" text-anchor="start" opacity="1">Senior Data Analyst</text>
+  <text x="870" y="252" font-size="12.5" font-weight="800" fill="#526178" text-anchor="start" opacity="1">Mosaic Systems - 1 hour ago</text>
+  
+    <circle cx="1150" cy="233" r="37" fill="#ffffff" stroke="#d9e7fb" stroke-width="7"/>
+    <path d="M1150 196a37 37 0 1 1 -19.2 68.6" fill="none" stroke="#2768e8" stroke-width="7" stroke-linecap="round"/>
+    <text x="1150" y="242" font-size="27" font-weight="900" fill="#0b1224" text-anchor="middle" opacity="1">92%</text>
+  
+  
+    <rect x="800" y="302" width="123" height="73" rx="14" fill="#f6faff" stroke="none" stroke-width="1" />
+    <text x="861.5" y="337" font-size="21" font-weight="900" fill="#1354c8" text-anchor="middle" opacity="1">96%</text>
+    <text x="861.5" y="358" font-size="11" font-weight="800" fill="#526178" text-anchor="middle" opacity="1">Experience</text>
+  
+  
+    <rect x="933" y="302" width="123" height="73" rx="14" fill="#f6faff" stroke="none" stroke-width="1" />
+    <text x="994.5" y="337" font-size="21" font-weight="900" fill="#1354c8" text-anchor="middle" opacity="1">90%</text>
+    <text x="994.5" y="358" font-size="11" font-weight="800" fill="#526178" text-anchor="middle" opacity="1">Skills</text>
+  
+  
+    <rect x="1066" y="302" width="123" height="73" rx="14" fill="#f6faff" stroke="none" stroke-width="1" />
+    <text x="1127.5" y="337" font-size="21" font-weight="900" fill="#1354c8" text-anchor="middle" opacity="1">88%</text>
+    <text x="1127.5" y="358" font-size="11" font-weight="800" fill="#526178" text-anchor="middle" opacity="1">Industry</text>
+  
+
+  <rect x="645" y="365" width="387" height="342" rx="22" fill="#ffffff" stroke="#b9d8ff" stroke-width="1" filter="url(#shadow)"/>
+  <text x="662" y="404" font-size="17" font-weight="900" fill="#0b1224" text-anchor="start" opacity="1">Application tracker</text>
+  <rect x="917" y="382" width="99" height="32" rx="16" fill="#eff6ff" stroke="none" stroke-width="1" />
+  <text x="936" y="404" font-size="21" font-weight="800" fill="#1354c8" text-anchor="start" opacity="1">+</text>
+  <text x="955" y="402" font-size="12.2" font-weight="900" fill="#1354c8" text-anchor="start" opacity="1">Save job</text>
+  <rect x="662" y="426" width="354" height="40" rx="13" fill="#eff6ff" stroke="none" stroke-width="1" />
+  
+    <rect x="666" y="431" width="84" height="31" rx="12" fill="#ffffff" stroke="none" stroke-width="1" />
+    <text x="708" y="452" font-size="11.2" font-weight="900" fill="#1354c8" text-anchor="middle" opacity="1">Saved</text>
+  
+  
+    
+    <text x="788" y="452" font-size="11.2" font-weight="900" fill="#526178" text-anchor="middle" opacity="1">Applied</text>
+  
+  
+    
+    <text x="879" y="452" font-size="11.2" font-weight="900" fill="#526178" text-anchor="middle" opacity="1">Interview</text>
+  
+  
+    
+    <text x="970" y="452" font-size="11.2" font-weight="900" fill="#526178" text-anchor="middle" opacity="1">Offer</text>
+  
+
+  
+    <rect x="662" y="478" width="354" height="64" rx="15" fill="#ffffff" stroke="#c1dcff" stroke-width="1" />
+    
+      <rect x="674" y="490" width="40" height="40" rx="12" fill="#eef7ff" stroke="none" stroke-width="1" />
+      <rect x="682.6" y="498.6" width="9.6" height="9.6" rx="2.5" fill="#2563eb"/>
+      <rect x="695.8000000000001" y="498.6" width="9.6" height="9.6" rx="2.5" fill="#14b8a6"/>
+      <rect x="682.6" y="511.80000000000007" width="9.6" height="9.6" rx="2.5" fill="#06b6d4"/>
+      <rect x="695.8000000000001" y="511.80000000000007" width="9.6" height="9.6" rx="2.5" fill="#f59e0b"/>
+    
+    <text x="723" y="507" font-size="13.2" font-weight="900" fill="#111827" text-anchor="start" opacity="1">Senior Data Analyst</text>
+    <text x="723" y="524" font-size="11" font-weight="800" fill="#56657a" text-anchor="start" opacity="1">Mosaic Systems</text>
+    
+    <rect x="954" y="497" width="54" height="26" rx="13" fill="#edf3fb" stroke="none" stroke-width="1" />
+    <text x="981" y="514.5" font-size="10.8" font-weight="900" fill="#526178" text-anchor="middle" opacity="1">Saved</text>
+  
+  
+  
+    <rect x="662" y="552" width="354" height="64" rx="15" fill="#ffffff" stroke="#c1dcff" stroke-width="1" />
+    
+      <rect x="674" y="564" width="40" height="40" rx="12" fill="#f0f8ff" stroke="none" stroke-width="1" />
+      <path d="M694 572v24M682 584h24M685 575l18 18M703 575l-18 18" stroke="#22b874" stroke-width="3.2" stroke-linecap="round"/>
+      <circle cx="694" cy="584" r="5" fill="#2563eb"/>
+    
+    <text x="723" y="581" font-size="13.2" font-weight="900" fill="#111827" text-anchor="start" opacity="1">Product Analyst</text>
+    <text x="723" y="598" font-size="11" font-weight="800" fill="#56657a" text-anchor="start" opacity="1">Aster Health</text>
+    
+    <rect x="954" y="571" width="62.800000000000004" height="26" rx="13" fill="#edf3fb" stroke="none" stroke-width="1" />
+    <text x="985.4" y="588.5" font-size="10.8" font-weight="900" fill="#526178" text-anchor="middle" opacity="1">Applied</text>
+  
+  
+  
+    <rect x="662" y="626" width="354" height="64" rx="15" fill="#ffffff" stroke="#c1dcff" stroke-width="1" />
+    
+      <rect x="674" y="638" width="40" height="40" rx="12" fill="#eefdf8" stroke="none" stroke-width="1" />
+      <ellipse cx="694" cy="658" rx="13.600000000000001" ry="7.199999999999999" transform="rotate(-28 694 658)" fill="none" stroke="#0fba98" stroke-width="3.2"/>
+      <circle cx="702.8" cy="650" r="4" fill="#1363ff"/>
+    
+    <text x="723" y="655" font-size="13.2" font-weight="900" fill="#111827" text-anchor="start" opacity="1">Growth Data Lead</text>
+    <text x="723" y="672" font-size="11" font-weight="800" fill="#56657a" text-anchor="start" opacity="1">Orbit Finance</text>
+    
+    <rect x="954" y="645" width="75.6" height="26" rx="13" fill="#edf3fb" stroke="none" stroke-width="1" />
+    <text x="991.8" y="662.5" font-size="10.8" font-weight="900" fill="#526178" text-anchor="middle" opacity="1">Interview</text>
+  
+  
+
+  <rect x="1041" y="664" width="191" height="44" rx="22" fill="#ffffff" stroke="#b8d6ff" stroke-width="1" filter="url(#softShadow)"/>
+  <path d="M1068 675l3.2 7.9 8 3-8 3.2-3.2 7.9-3.3-7.9-7.9-3.2 7.9-3 3.3-7.9z" fill="none" stroke="#2768e8" stroke-width="2.1" stroke-linejoin="round"/>
+  <text x="1089" y="691" font-size="14" font-weight="900" fill="#1354c8" text-anchor="start" opacity="1">Review queue ready</text>
+</svg>

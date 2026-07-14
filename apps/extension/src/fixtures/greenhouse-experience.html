@@ -1,0 +1,82 @@
+<!doctype html>
+<form id="application-form" class="application--form">
+  <div class="application--questions">
+    <label for="first_name">First Name<span>*</span></label>
+    <input id="first_name" aria-label="First Name" aria-required="true" />
+  </div>
+
+  <div class="employment--container">
+    <div class="employment-form" data-row="0">
+      <p>Employment</p>
+      <label for="company-name-0">Company name<span>*</span></label>
+      <input id="company-name-0" aria-label="Company name" aria-required="true" />
+      <label for="title-0">Title<span>*</span></label>
+      <input id="title-0" aria-label="Title" aria-required="true" />
+      <div class="select">
+        <label for="start-date-month-0">Start date month<span>*</span></label>
+        <input id="start-date-month-0" role="combobox" aria-label="Start date month" aria-required="true" />
+        <div role="listbox">
+          <div role="option">January</div>
+          <div role="option">February</div>
+          <div role="option">March</div>
+          <div role="option">April</div>
+          <div role="option">May</div>
+          <div role="option">June</div>
+        </div>
+      </div>
+      <label for="start-date-year-0">Start date year<span>*</span></label>
+      <input id="start-date-year-0" aria-label="Start date year" aria-required="true" />
+      <div class="select">
+        <label for="end-date-month-0">End date month<span>*</span></label>
+        <input id="end-date-month-0" role="combobox" aria-label="End date month" aria-required="true" />
+        <div role="listbox">
+          <div role="option">January</div>
+          <div role="option">February</div>
+          <div role="option">March</div>
+          <div role="option">April</div>
+          <div role="option">May</div>
+          <div role="option">June</div>
+        </div>
+      </div>
+      <label for="end-date-year-0">End date year<span>*</span></label>
+      <input id="end-date-year-0" aria-label="End date year" aria-required="true" />
+      <div class="checkbox" id="current-role-0">
+        <input type="checkbox" id="current-role-0_1" name="current-role-0" />
+        <label for="current-role-0_1">Current role</label>
+      </div>
+    </div>
+    <button class="add-another-button" type="button" data-add="employment">Add another</button>
+  </div>
+
+  <div class="education--container">
+    <div class="education--form" data-row="0">
+      <p>Education</p>
+      <div class="select">
+        <label for="school--0">School<span>*</span></label>
+        <input id="school--0" role="combobox" aria-label="School" aria-required="true" />
+        <div role="listbox">
+          <div role="option">Stanford University</div>
+          <div role="option">Massachusetts Institute of Technology</div>
+          <div role="option">Other</div>
+        </div>
+      </div>
+      <div class="select">
+        <label for="degree--0">Degree<span>*</span></label>
+        <input id="degree--0" role="combobox" aria-label="Degree" aria-required="true" />
+        <div role="listbox">
+          <div role="option">Bachelor's Degree</div>
+          <div role="option">Master's Degree</div>
+        </div>
+      </div>
+      <div class="select">
+        <label for="discipline--0">Discipline<span>*</span></label>
+        <input id="discipline--0" role="combobox" aria-label="Discipline" aria-required="true" />
+        <div role="listbox">
+          <div role="option">Computer Science</div>
+          <div role="option">Physics</div>
+        </div>
+      </div>
+    </div>
+    <button class="add-another-button" type="button" data-add="education">Add another</button>
+  </div>
+</form>

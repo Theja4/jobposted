@@ -1,0 +1,542 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>JobPosted Marquee Promo Tile</title>
+    <style>
+      @font-face {
+        font-family: "Plus Jakarta Sans";
+        font-style: normal;
+        font-weight: 400 800;
+        font-display: swap;
+        src: url("../public/fonts/plus-jakarta-sans-latin.woff2") format("woff2");
+      }
+
+      :root {
+        --brand-50: #eff6ff;
+        --brand-100: #dbeafe;
+        --brand-200: #bfdbfe;
+        --brand-500: #2f7df4;
+        --brand-600: #1f64e0;
+        --brand-700: #174fb8;
+        --ink: #0b1220;
+        --muted: #526173;
+        --line: #e6ecf5;
+        --mint: #18b981;
+        --aqua: #16c7d4;
+        --sun: #f8b84e;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        width: 1400px;
+        height: 560px;
+        margin: 0;
+        overflow: hidden;
+        background: #ffffff;
+        color: var(--ink);
+        font-family:
+          "Plus Jakarta Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+        -webkit-font-smoothing: antialiased;
+        text-rendering: geometricPrecision;
+      }
+
+      body {
+        position: relative;
+      }
+
+      body::before {
+        content: "";
+        position: absolute;
+        width: 720px;
+        height: 720px;
+        right: -160px;
+        top: -270px;
+        border-radius: 50%;
+        background: rgba(219, 234, 254, 0.82);
+      }
+
+      body::after {
+        content: "";
+        position: absolute;
+        width: 560px;
+        height: 560px;
+        right: 430px;
+        bottom: -350px;
+        border-radius: 50%;
+        background: rgba(22, 199, 212, 0.1);
+      }
+
+      .tile {
+        position: relative;
+        z-index: 1;
+        display: grid;
+        grid-template-columns: 610px 1fr;
+        gap: 58px;
+        width: 1400px;
+        height: 560px;
+        padding: 58px 76px 54px 84px;
+        background:
+          radial-gradient(circle at 88% 18%, rgba(96, 165, 250, 0.18), transparent 31%),
+          linear-gradient(135deg, #ffffff 0%, #f8fbff 56%, #eff6ff 100%);
+      }
+
+      .copy {
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        min-width: 0;
+      }
+
+      .brand-row {
+        display: flex;
+        align-items: center;
+        gap: 18px;
+        margin-bottom: 32px;
+      }
+
+      .brand-row img {
+        width: 68px;
+        height: 68px;
+        object-fit: contain;
+      }
+
+      .brand-row strong {
+        color: #050915;
+        font-size: 43px;
+        font-weight: 800;
+        letter-spacing: -0.045em;
+        line-height: 1;
+      }
+
+      h1 {
+        max-width: 590px;
+        margin: 0;
+        color: #08111f;
+        font-size: 60px;
+        font-weight: 800;
+        letter-spacing: -0.036em;
+        line-height: 1.04;
+        text-wrap: balance;
+      }
+
+      .underlined {
+        position: relative;
+        display: inline-block;
+        white-space: nowrap;
+      }
+
+      .underlined::after {
+        content: "";
+        position: absolute;
+        left: 0.02em;
+        right: -0.03em;
+        bottom: 0.03em;
+        z-index: -1;
+        height: 0.18em;
+        border-radius: 999px;
+        background: linear-gradient(90deg, rgba(47, 125, 244, 0.28), rgba(22, 199, 212, 0.3));
+      }
+
+      .lede {
+        max-width: 560px;
+        margin: 24px 0 0;
+        color: #233149;
+        font-size: 22px;
+        font-weight: 600;
+        line-height: 1.38;
+      }
+
+      .chips {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        margin-top: 30px;
+      }
+
+      .chip {
+        display: inline-flex;
+        min-height: 34px;
+        align-items: center;
+        gap: 8px;
+        border: 1px solid rgba(191, 219, 254, 0.82);
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.86);
+        color: var(--brand-700);
+        padding: 0 14px;
+        font-size: 14px;
+        font-weight: 900;
+        box-shadow: 0 8px 18px rgba(16, 47, 102, 0.06);
+      }
+
+      .chip::before {
+        content: "";
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: var(--mint);
+      }
+
+      .visual {
+        position: relative;
+        min-width: 0;
+      }
+
+      .panel {
+        position: absolute;
+        right: 4px;
+        top: 6px;
+        width: 390px;
+        border: 1px solid rgba(191, 219, 254, 0.9);
+        border-radius: 24px;
+        background: #ffffff;
+        box-shadow:
+          0 34px 70px rgba(16, 47, 102, 0.19),
+          inset 0 1px 0 rgba(255, 255, 255, 0.95);
+      }
+
+      .panel-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 17px 18px;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .panel-brand {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+
+      .panel-brand img {
+        width: 34px;
+        height: 34px;
+        object-fit: contain;
+      }
+
+      .panel-brand strong {
+        display: block;
+        color: var(--ink);
+        font-size: 16px;
+        font-weight: 900;
+      }
+
+      .status {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        color: var(--brand-700);
+        font-size: 11px;
+        font-weight: 900;
+      }
+
+      .status i {
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: var(--mint);
+      }
+
+      .panel-body {
+        display: grid;
+        gap: 14px;
+        padding: 17px;
+      }
+
+      .tabs {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 6px;
+        border-radius: 14px;
+        background: rgba(219, 234, 254, 0.56);
+        padding: 5px;
+      }
+
+      .tabs span {
+        display: grid;
+        min-height: 34px;
+        place-items: center;
+        border-radius: 11px;
+        color: var(--muted);
+        font-size: 12px;
+        font-weight: 900;
+      }
+
+      .tabs .on {
+        background: #ffffff;
+        color: var(--brand-700);
+        box-shadow: 0 1px 3px rgba(16, 47, 102, 0.08);
+      }
+
+      .job-card,
+      .tracker-card,
+      .resume-card {
+        border: 1px solid rgba(191, 219, 254, 0.74);
+        border-radius: 16px;
+        background: #ffffff;
+        box-shadow: 0 6px 10px rgba(16, 47, 102, 0.06);
+      }
+
+      .job-card {
+        display: grid;
+        grid-template-columns: 42px 1fr auto;
+        gap: 12px;
+        align-items: center;
+        padding: 13px;
+      }
+
+      .logo-tile {
+        display: grid;
+        width: 42px;
+        height: 42px;
+        place-items: center;
+        border-radius: 13px;
+        background: var(--brand-50);
+        color: var(--brand-700);
+        font-size: 16px;
+        font-weight: 900;
+      }
+
+      .job-card strong,
+      .tracker-card strong,
+      .resume-card strong {
+        display: block;
+        color: var(--ink);
+        font-size: 14px;
+        font-weight: 900;
+        letter-spacing: -0.01em;
+      }
+
+      .job-card span,
+      .tracker-card span,
+      .resume-card span {
+        display: block;
+        margin-top: 3px;
+        color: var(--muted);
+        font-size: 11px;
+        font-weight: 800;
+      }
+
+      .match {
+        display: inline-flex;
+        align-items: center;
+        height: 28px;
+        border-radius: 999px;
+        background: #ecfdf5;
+        color: #047857;
+        padding: 0 9px;
+        font-size: 12px;
+        font-weight: 900;
+      }
+
+      .primary {
+        display: flex;
+        min-height: 56px;
+        align-items: center;
+        justify-content: center;
+        gap: 9px;
+        border-radius: 15px;
+        background: var(--brand-600);
+        color: #ffffff;
+        font-size: 17px;
+        font-weight: 900;
+        box-shadow: 0 18px 38px rgba(31, 100, 224, 0.24);
+      }
+
+      .progress {
+        display: grid;
+        gap: 8px;
+      }
+
+      .progress strong {
+        display: flex;
+        justify-content: space-between;
+        color: #33405a;
+        font-size: 12px;
+        font-weight: 900;
+      }
+
+      .bar {
+        height: 8px;
+        overflow: hidden;
+        border-radius: 999px;
+        background: var(--brand-100);
+      }
+
+      .bar span {
+        display: block;
+        width: 84%;
+        height: 100%;
+        border-radius: inherit;
+        background: linear-gradient(90deg, var(--brand-700), var(--brand-500));
+      }
+
+      .tracker-stack {
+        position: absolute;
+        left: 6px;
+        top: 76px;
+        width: 330px;
+        border: 1px solid rgba(191, 219, 254, 0.86);
+        border-radius: 22px;
+        background: #ffffff;
+        box-shadow: 0 30px 64px rgba(16, 47, 102, 0.16);
+        padding: 16px;
+        transform: rotate(-2deg);
+      }
+
+      .tracker-stack-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 12px;
+      }
+
+      .tracker-stack-head strong {
+        color: var(--ink);
+        font-size: 16px;
+        font-weight: 900;
+      }
+
+      .tracker-card,
+      .resume-card {
+        display: grid;
+        grid-template-columns: 38px 1fr auto;
+        gap: 10px;
+        align-items: center;
+        margin-top: 9px;
+        padding: 11px;
+      }
+
+      .tracker-card .logo-tile,
+      .resume-card .logo-tile {
+        width: 38px;
+        height: 38px;
+        border-radius: 12px;
+        font-size: 14px;
+      }
+
+      .pill {
+        display: inline-flex;
+        min-height: 24px;
+        align-items: center;
+        border-radius: 999px;
+        background: var(--brand-50);
+        color: var(--brand-700);
+        padding: 0 8px;
+        font-size: 11px;
+        font-weight: 900;
+      }
+
+      .floating {
+        position: absolute;
+        right: 34px;
+        bottom: 30px;
+        display: inline-flex;
+        align-items: center;
+        gap: 9px;
+        border: 1px solid rgba(191, 219, 254, 0.78);
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.92);
+        color: var(--brand-700);
+        padding: 10px 15px;
+        font-size: 14px;
+        font-weight: 900;
+        box-shadow: 0 16px 34px rgba(16, 47, 102, 0.11);
+      }
+
+      .floating i {
+        display: grid;
+        width: 22px;
+        height: 22px;
+        place-items: center;
+        border-radius: 50%;
+        background: var(--brand-600);
+        color: #ffffff;
+        font-style: normal;
+        font-size: 13px;
+      }
+    </style>
+  </head>
+  <body>
+    <main class="tile" aria-label="JobPosted Chrome extension">
+      <section class="copy">
+        <div class="brand-row">
+          <img src="../public/brand/jobposted-mark.png" alt="" />
+          <strong>JobPosted</strong>
+        </div>
+        <h1>Autofill, tailor, and track every <span class="underlined">job application.</span></h1>
+        <p class="lede">
+          A Chrome extension for serious job seekers who want better applications without losing control.
+        </p>
+        <div class="chips">
+          <span class="chip">Autofill forms</span>
+          <span class="chip">Tailor resumes</span>
+          <span class="chip">Track progress</span>
+        </div>
+      </section>
+
+      <section class="visual">
+        <div class="tracker-stack">
+          <div class="tracker-stack-head">
+            <strong>Application tracker</strong>
+            <span class="pill">24 active</span>
+          </div>
+          <article class="tracker-card">
+            <span class="logo-tile">N</span>
+            <div><strong>Product Analyst</strong><span>Northstar Labs</span></div>
+            <span class="pill">Saved</span>
+          </article>
+          <article class="tracker-card">
+            <span class="logo-tile">M</span>
+            <div><strong>Data Analyst</strong><span>Mosaic Systems</span></div>
+            <span class="pill">Applied</span>
+          </article>
+          <article class="resume-card">
+            <span class="logo-tile">R</span>
+            <div><strong>Resume pinned</strong><span>Product Analytics.pdf</span></div>
+            <span class="pill">Ready</span>
+          </article>
+        </div>
+
+        <aside class="panel">
+          <header class="panel-header">
+            <div class="panel-brand">
+              <img src="../public/brand/jobposted-mark.png" alt="" />
+              <div>
+                <strong>JobPosted</strong>
+                <span class="status"><i></i>Autofill ready</span>
+              </div>
+            </div>
+          </header>
+          <div class="panel-body">
+            <div class="tabs"><span class="on">Autofill</span><span>Profile</span><span>Tracker</span></div>
+            <article class="job-card">
+              <span class="logo-tile">JP</span>
+              <div><strong>Product Manager</strong><span>Remote - Full time</span></div>
+              <span class="match">92%</span>
+            </article>
+            <div class="primary">
+              <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2.4">
+                <path d="m15 4 5 5-8.5 8.5H6.5V12.5L15 4Z" />
+                <path d="m13 6 5 5" />
+              </svg>
+              Autofill this page
+            </div>
+            <div class="progress">
+              <strong><span>Application fields</span><span>9/11</span></strong>
+              <div class="bar"><span></span></div>
+            </div>
+          </div>
+        </aside>
+
+        <span class="floating"><i>✓</i> Review before submit</span>
+      </section>
+    </main>
+  </body>
+</html>

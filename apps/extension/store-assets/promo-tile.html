@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>JobPosted Promo Tile</title>
+    <style>
+      @font-face {
+        font-family: "Plus Jakarta Sans";
+        font-style: normal;
+        font-weight: 400 800;
+        font-display: swap;
+        src: url("../public/fonts/plus-jakarta-sans-latin.woff2") format("woff2");
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        width: 440px;
+        height: 280px;
+        margin: 0;
+        overflow: hidden;
+        background: #ffffff;
+        color: #050915;
+        font-family:
+          "Plus Jakarta Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+        -webkit-font-smoothing: antialiased;
+        text-rendering: geometricPrecision;
+      }
+
+      body {
+        display: grid;
+        place-items: center;
+      }
+
+      .tile {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 18px;
+        width: 440px;
+        height: 280px;
+        padding: 24px;
+      }
+
+      .mark {
+        display: flex;
+        width: 66px;
+        height: 66px;
+        flex: 0 0 auto;
+        align-items: center;
+        justify-content: center;
+      }
+
+      .mark img {
+        width: 66px;
+        height: 66px;
+        object-fit: contain;
+      }
+
+      .wordmark {
+        color: #050915;
+        font-size: 43px;
+        font-weight: 800;
+        letter-spacing: -0.045em;
+        line-height: 1;
+      }
+    </style>
+  </head>
+  <body>
+    <main class="tile" aria-label="JobPosted">
+      <span class="mark"><img src="../public/brand/jobposted-mark.png" alt="" /></span>
+      <strong class="wordmark">JobPosted</strong>
+    </main>
+  </body>
+</html>
