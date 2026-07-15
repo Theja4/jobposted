@@ -17,6 +17,7 @@ import { REZOOMED_ACCOUNT_URL, SUPPORT_EMAIL } from "@/lib/site";
 
 type PricingProps = {
   pricing: BillingPricingView;
+  authNextPath?: string;
 };
 
 const INCLUSIONS = [
@@ -26,7 +27,7 @@ const INCLUSIONS = [
   "Job tracker",
 ] as const;
 
-export function Pricing({ pricing }: PricingProps) {
+export function Pricing({ pricing, authNextPath = "/pricing" }: PricingProps) {
   const [tenure, setTenure] = useState<BillingTenure>("monthly");
   const selected = useMemo(
     () => pricing.options.find((option) => option.tenure === tenure) ?? pricing.options[0]!,
@@ -192,6 +193,7 @@ export function Pricing({ pricing }: PricingProps) {
               tenure={selected.tenure}
               region={pricing.region}
               currencyCode={pricing.currencyCode}
+              authNextPath={authNextPath}
             />
 
             <p className="mt-4 flex items-center justify-center gap-2 text-xs font-medium text-muted">
@@ -219,11 +221,13 @@ function PlanCheckoutButton({
   tenure,
   region,
   currencyCode,
+  authNextPath,
 }: {
   planId: BillingPlanId;
   tenure: BillingTenure;
   region: BillingRegion;
   currencyCode: string;
+  authNextPath: string;
 }) {
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
@@ -247,7 +251,7 @@ function PlanCheckoutButton({
       } | null;
 
       if (response.status === 401) {
-        const params = new URLSearchParams({ mode: "signup", next: "/pricing" });
+        const params = new URLSearchParams({ mode: "signup", next: authNextPath });
         window.location.assign(`/get-started?${params.toString()}`);
         return;
       }

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import type { Route } from "next";
 import type { LucideIcon } from "lucide-react";
 import { ArrowRight, BriefcaseBusiness } from "lucide-react";
 
@@ -32,7 +33,7 @@ export function ProFeatureGate({ icon: Icon, title, description, detail }: ProFe
 
         <div className="mt-7 flex flex-col gap-2 sm:flex-row">
           <Link
-            href="/pricing"
+            href={"/dashboard/pricing" as Route}
             className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-brand-600 px-4 text-sm font-extrabold text-white shadow-[0_14px_28px_-20px_rgba(31,100,224,0.65)] transition-colors hover:bg-brand-700"
           >
             Upgrade to unlock <ArrowRight className="size-4" />

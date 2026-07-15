@@ -457,7 +457,7 @@ function AutofillButton({ hasActivePlan }: { hasActivePlan: boolean }) {
 
   if (!hasActivePlan) {
     return (
-      <Link href="/pricing" className={className}>
+      <Link href={"/dashboard/pricing" as Route} className={className}>
         <ChromeLogo className="size-4" />
         Autofill
         {proBadge}

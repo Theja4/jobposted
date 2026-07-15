@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import type { Route } from "next";
 import Link from "next/link";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { SignOutButton } from "@/components/dashboard/SignOutButton";
@@ -31,7 +32,7 @@ export default async function AccountPage() {
         <p className="mt-1 text-sm font-semibold text-muted">
           Your login and security. Looking for your resume data?{" "}
           <Link
-            href={{ pathname: isPro ? "/dashboard/onboarding" : "/pricing" }}
+            href={(isPro ? "/dashboard/onboarding" : "/dashboard/pricing") as Route}
             className="font-bold text-brand-700 hover:text-brand-800"
           >
             {isPro ? "Update it in Setup" : "Upgrade for Setup"}
@@ -77,7 +78,7 @@ export default async function AccountPage() {
             resume tailoring, and application history.
           </p>
           <Link
-            href="/pricing"
+            href={"/dashboard/pricing" as Route}
             className="mt-4 inline-flex items-center gap-1.5 rounded-full bg-brand-600 px-4 py-2 text-sm font-bold text-white shadow-[0_12px_22px_-16px_rgba(31,100,224,0.58)] transition-colors hover:bg-brand-700"
           >
             View pricing <ExternalLink className="size-3.5" />
