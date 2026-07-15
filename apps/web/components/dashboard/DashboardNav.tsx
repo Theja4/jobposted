@@ -15,9 +15,14 @@ import { ChromeLogo } from "@/components/icons/ChromeLogo";
 import { cn } from "@/lib/cn";
 import { CHROME_EXTENSION_URL } from "@/lib/site";
 
+function AutofillNavIcon({ className }: { className?: string; "aria-hidden"?: boolean | "true" | "false" }) {
+  return <ChromeLogo className={className} />;
+}
+
 const NAV_LINKS = [
   { href: "/dashboard", label: "Dashboard", exact: true, icon: LayoutDashboard },
   { href: "/dashboard/jobs", label: "Jobs", exact: false, icon: BriefcaseBusiness },
+  { href: CHROME_EXTENSION_URL, label: "Autofill", exact: false, icon: AutofillNavIcon, external: true },
   { href: "/dashboard/onboarding", label: "Setup", exact: false, icon: Settings2, pro: true },
   { href: "/dashboard/tracker", label: "Tracker", exact: false, icon: Workflow },
   { href: "/dashboard/account", label: "Account", exact: false, icon: UserCircle2 },
@@ -43,23 +48,46 @@ export function DashboardNav({ hasActivePlan }: DashboardNavProps) {
 
         <div className="min-w-0 flex-1 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           <div className="flex w-max min-w-full items-center justify-start gap-0.5 md:justify-center">
-            {NAV_LINKS.map(({ href, label, exact, icon: Icon }) => {
-              const active = exact ? pathname === href : pathname.startsWith(href);
+            {NAV_LINKS.map((link) => {
+              const { href, label, exact, icon: Icon } = link;
+              const external = "external" in link && link.external;
+              const active = !external && (exact ? pathname === href : pathname.startsWith(href));
+              const className = cn(
+                "relative inline-flex h-12 min-w-[4.25rem] shrink-0 flex-col items-center justify-center gap-0.5 rounded-xl px-2 text-[11px] font-bold transition-[background-color,color,box-shadow] duration-150",
+                active
+                  ? "bg-brand-50 text-brand-700 shadow-[0_12px_24px_-18px_rgba(31,100,224,0.42),0_3px_10px_-9px_rgba(31,100,224,0.18)]"
+                  : "text-muted hover:bg-zinc-50 hover:text-ink",
+              );
+              const content = (
+                <>
+                  <Icon className="size-[1.125rem]" aria-hidden="true" />
+                  {label}
+                </>
+              );
+
+              if (external) {
+                const isExternalUrl = /^https?:\/\//i.test(href);
+                return (
+                  <a
+                    key={label}
+                    href={href}
+                    target={isExternalUrl ? "_blank" : undefined}
+                    rel={isExternalUrl ? "noreferrer" : undefined}
+                    className={className}
+                  >
+                    {content}
+                  </a>
+                );
+              }
 
               return (
                 <Link
                   key={href}
                   href={{ pathname: href }}
                   aria-current={active ? "page" : undefined}
-                  className={cn(
-                    "relative inline-flex h-12 min-w-[4.25rem] shrink-0 flex-col items-center justify-center gap-0.5 rounded-xl px-2 text-[11px] font-bold transition-[background-color,color,box-shadow] duration-150",
-                    active
-                      ? "bg-brand-50 text-brand-700 shadow-[0_12px_24px_-18px_rgba(31,100,224,0.42),0_3px_10px_-9px_rgba(31,100,224,0.18)]"
-                      : "text-muted hover:bg-zinc-50 hover:text-ink",
-                  )}
+                  className={className}
                 >
-                  <Icon className="size-[1.125rem]" aria-hidden="true" />
-                  {label}
+                  {content}
                 </Link>
               );
             })}

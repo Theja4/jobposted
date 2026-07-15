@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import type {
   BillingPlanId,
   BillingPricingView,
@@ -8,11 +9,11 @@ import type {
 } from "@/lib/billing/plans";
 import { BILLING_PLANS } from "@/lib/billing/plans";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
-import { ArrowRight, Check, Loader2, LockKeyhole, ShieldCheck } from "lucide-react";
+import { ArrowRight, ArrowUpRight, Check, Loader2, LockKeyhole, ShieldCheck } from "lucide-react";
 import { useMemo, useState } from "react";
 import { track } from "@/lib/analytics";
 import { cn } from "@/lib/cn";
-import { SUPPORT_EMAIL } from "@/lib/site";
+import { REZOOMED_ACCOUNT_URL, SUPPORT_EMAIL } from "@/lib/site";
 
 type PricingProps = {
   pricing: BillingPricingView;
@@ -35,33 +36,62 @@ export function Pricing({ pricing }: PricingProps) {
   const reduceMotion = useReducedMotion();
 
   return (
-    <section id="pricing" className="relative px-5 pb-8 pt-20 sm:pb-12 sm:pt-24 lg:pt-28">
+    <section id="pricing" className="relative px-5 pb-8 pt-10 sm:pb-12 sm:pt-12 lg:pt-14">
       <div className="mx-auto w-full max-w-6xl">
-        <div className="grid items-end gap-8 border-b border-zinc-200 pb-10 lg:grid-cols-[1fr_25rem] lg:gap-16 lg:pb-14">
+        <div className="grid items-end gap-5 border-b border-zinc-200 pb-7 sm:pb-8 lg:grid-cols-[1fr_25rem] lg:gap-12">
           <div>
             <p className="text-sm font-semibold text-brand-700">JobPosted membership</p>
-            <h1 className="mt-4 max-w-3xl text-5xl font-extrabold leading-[0.98] tracking-[-0.04em] text-balance text-ink sm:text-6xl lg:text-[5.25rem]">
+            <h1 className="mt-3 max-w-3xl text-4xl font-extrabold leading-[0.98] tracking-[-0.04em] text-balance text-ink sm:text-5xl lg:text-[4.25rem]">
               Apply better.<br />Not everywhere.
             </h1>
           </div>
-          <p className="max-w-[38rem] text-lg leading-8 text-muted lg:pb-1">
+          <p className="max-w-[38rem] text-base leading-7 text-muted lg:pb-1">
             One plan for a focused job search. We prepare the application; you review it before
             anything is submitted.
           </p>
         </div>
 
         <div className="grid gap-0 lg:grid-cols-[minmax(0,1fr)_25rem]">
-          <div className="border-b border-zinc-200 py-10 lg:border-b-0 lg:border-r lg:py-14 lg:pr-16">
-            <div className="flex items-baseline justify-between gap-6">
+          <div className="border-b border-zinc-200 py-8 lg:border-b-0 lg:border-r lg:py-9 lg:pr-10">
+            <a
+              href={REZOOMED_ACCOUNT_URL}
+              className="group relative isolate flex min-h-44 overflow-hidden rounded-3xl bg-[linear-gradient(135deg,#071a33_0%,#123765_52%,#1f64e0_100%)] p-6 text-white shadow-[0_22px_60px_rgba(31,100,224,0.2)] transition-transform duration-200 hover:-translate-y-0.5 sm:min-h-48 sm:p-7"
+            >
+              <div className="relative z-10 max-w-[72%] sm:max-w-[68%]">
+                <span className="inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-3 py-1 text-xs font-bold tracking-wide text-white/90 uppercase backdrop-blur-sm">
+                  Rezoomed Pro benefit
+                </span>
+                <h2 className="mt-4 text-2xl font-extrabold leading-tight tracking-[-0.035em] sm:text-3xl">
+                  JobPosted is included with Rezoomed Pro.
+                </h2>
+                <span className="mt-4 inline-flex items-center gap-1.5 text-sm font-bold text-white">
+                  Open your Rezoomed account
+                  <ArrowUpRight className="size-4 transition-transform group-hover:-translate-y-0.5 group-hover:translate-x-0.5" />
+                </span>
+              </div>
+
+              <div className="absolute -right-5 -bottom-8 size-40 rotate-[-5deg] rounded-[2.25rem] bg-white/12 p-3 shadow-2xl ring-1 ring-white/20 transition-transform duration-300 group-hover:-translate-y-1 group-hover:rotate-0 sm:-right-2 sm:-bottom-8 sm:size-48">
+                <Image
+                  src="/rezoomed/logo.png"
+                  alt="Rezoomed"
+                  width={256}
+                  height={256}
+                  className="size-full rounded-[1.7rem] object-cover"
+                />
+              </div>
+              <span className="pointer-events-none absolute -top-24 left-1/3 size-64 rounded-full bg-brand-400/20 blur-3xl" />
+            </a>
+
+            <div className="mt-8 flex items-baseline justify-between gap-6">
               <h2 className="text-2xl font-bold tracking-[-0.025em] text-ink">What’s included</h2>
               <span className="hidden text-sm font-medium text-muted sm:block">Every membership</span>
             </div>
 
-            <ul className="mt-7 border-t border-zinc-200">
+            <ul className="mt-5 border-t border-zinc-200">
               {INCLUSIONS.map((item, index) => (
                 <li
                   key={item}
-                  className="flex items-center gap-4 border-b border-zinc-200 py-5 text-base font-semibold text-ink sm:text-lg"
+                  className="flex items-center gap-4 border-b border-zinc-200 py-4 text-base font-semibold text-ink sm:text-lg"
                 >
                   <span className="grid size-7 shrink-0 place-items-center rounded-full bg-brand-50 text-brand-700">
                     <Check className="size-4" strokeWidth={2.5} />
@@ -74,7 +104,7 @@ export function Pricing({ pricing }: PricingProps) {
               ))}
             </ul>
 
-            <div className="mt-9 flex max-w-2xl items-start gap-4">
+            <div className="mt-6 flex max-w-2xl items-start gap-4">
               <ShieldCheck className="mt-0.5 size-6 shrink-0 text-brand-700" />
               <div>
                 <h3 className="font-bold text-ink">Copilot, not autopilot.</h3>
@@ -85,7 +115,7 @@ export function Pricing({ pricing }: PricingProps) {
             </div>
           </div>
 
-          <aside className="py-10 lg:py-14 lg:pl-10" aria-label="Choose billing schedule">
+          <aside className="order-first py-8 lg:order-none lg:py-9 lg:pl-10" aria-label="Choose billing schedule">
             <div className="flex items-center justify-between gap-4">
               <div>
                 <p className="text-sm font-semibold text-muted">{plan.label}</p>
@@ -96,7 +126,7 @@ export function Pricing({ pricing }: PricingProps) {
               </span>
             </div>
 
-            <div className="mt-6 border-y border-zinc-200">
+            <div className="mt-5 border-y border-zinc-200">
               {pricing.options.map((option) => {
                 const active = tenure === option.tenure;
                 return (
@@ -138,7 +168,7 @@ export function Pricing({ pricing }: PricingProps) {
               })}
             </div>
 
-            <div className="mt-7 min-h-[5.25rem]">
+            <div className="mt-6 min-h-16">
               <AnimatePresence mode="wait" initial={false}>
                 <motion.div
                   key={`${selected.tenure}-${selected.priceLabel}`}

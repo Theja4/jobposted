@@ -1,4 +1,4 @@
-import { Download } from "lucide-react";
+import { ChromeLogo } from "@/components/icons/ChromeLogo";
 import { Reveal } from "@/components/ui/Reveal";
 import { CHROME_EXTENSION_URL } from "@/lib/site";
 
@@ -36,7 +36,7 @@ export function FinalCta() {
                   {...chromeExtensionLinkProps}
                   className="group inline-flex h-13 items-center justify-center gap-2 rounded-full bg-white px-8 text-base font-bold text-brand-800 shadow-[0_14px_30px_rgba(7,26,51,0.25)] transition-[transform,background-color,box-shadow] duration-150 ease-out hover:-translate-y-0.5 hover:bg-sky-50 active:translate-y-0"
                 >
-                  <Download className="size-4" />
+                  <ChromeLogo className="size-5" />
                   Download Chrome extension
                 </a>
               </div>

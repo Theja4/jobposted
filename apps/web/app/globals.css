@@ -18,6 +18,12 @@
   --color-muted: #526173;
   --color-navy: #071a33;
   --color-panel: #f7fbff;
+  --color-metric-tracked: oklch(96.2% 0.012 255);
+  --color-metric-tracked-hover: oklch(94.8% 0.018 255);
+  --color-metric-active: oklch(96.2% 0.014 155);
+  --color-metric-active-hover: oklch(94.8% 0.02 155);
+  --color-metric-review: oklch(96.2% 0.018 82);
+  --color-metric-review-hover: oklch(94.8% 0.026 82);
   --color-aqua: #16c7d4;
   --color-mint: #26c485;
   --color-coral: #ff6b5f;

@@ -5,6 +5,7 @@ import {
   ArrowRight,
   CheckCircle2,
   ClipboardList,
+  Crown,
   ExternalLink,
   FileCheck2,
   Search,
@@ -45,7 +46,7 @@ type Metric = {
   hint: string;
   Icon: LucideIcon;
   href: Route;
-  tone?: "brand" | "green" | "amber";
+  tone: "tracked" | "active" | "review";
 };
 
 function text(value: unknown) {
@@ -158,24 +159,35 @@ function UserProfileBadge({ user }: { user?: DashboardUser | null }) {
 }
 
 function MetricCard({ metric }: { metric: Metric }) {
-  const tone =
-    metric.tone === "green"
-      ? "bg-emerald-50 text-emerald-700"
-      : metric.tone === "amber"
-        ? "bg-amber-50 text-amber-800"
-        : "bg-brand-50 text-brand-700";
+  const tone = {
+    tracked: {
+      surface: "bg-metric-tracked hover:bg-metric-tracked-hover",
+      icon: "bg-brand-100 text-brand-700",
+    },
+    active: {
+      surface: "bg-metric-active hover:bg-metric-active-hover",
+      icon: "bg-emerald-100 text-emerald-700",
+    },
+    review: {
+      surface: "bg-metric-review hover:bg-metric-review-hover",
+      icon: "bg-amber-100 text-amber-800",
+    },
+  }[metric.tone];
 
   return (
     <Link
       href={metric.href}
-      className="group rounded-2xl bg-white p-4 shadow-[0_18px_42px_-34px_rgba(7,26,51,0.38),0_4px_14px_-14px_rgba(15,23,42,0.18)] transition-[transform,box-shadow] duration-150 hover:-translate-y-0.5 hover:shadow-[0_22px_48px_-34px_rgba(31,100,224,0.3),0_4px_14px_-14px_rgba(15,23,42,0.18)]"
+      className={cn(
+        "group rounded-2xl p-4 shadow-[0_18px_42px_-34px_rgba(7,26,51,0.38),0_4px_14px_-14px_rgba(15,23,42,0.18)] transition-[transform,background-color,box-shadow] duration-150 hover:-translate-y-0.5 hover:shadow-[0_22px_48px_-34px_rgba(31,100,224,0.3),0_4px_14px_-14px_rgba(15,23,42,0.18)]",
+        tone.surface,
+      )}
     >
       <div className="flex items-start justify-between gap-3">
         <div>
           <p className="text-sm font-extrabold text-muted">{metric.label}</p>
           <p className="mt-4 text-4xl font-extrabold tracking-[-0.035em] text-ink">{metric.value}</p>
         </div>
-        <span className={cn("grid size-10 place-items-center rounded-xl", tone)}>
+        <span className={cn("grid size-10 place-items-center rounded-xl", tone.icon)}>
           <metric.Icon className="size-5" aria-hidden="true" />
         </span>
       </div>
@@ -431,6 +443,42 @@ function FreshJobs({ jobs, total }: { jobs: JobListing[]; total: number }) {
   );
 }
 
+function AutofillButton({ hasActivePlan }: { hasActivePlan: boolean }) {
+  const isExternal = /^https?:\/\//i.test(CHROME_EXTENSION_URL);
+  const proBadge = (
+    <span className="inline-flex items-center gap-1 rounded-full bg-white/15 px-1.5 py-0.5 text-[10px] font-black uppercase tracking-[0.06em] text-white">
+      <Crown className="size-3" aria-hidden="true" />
+      Pro
+    </span>
+  );
+
+  const className =
+    "inline-flex h-11 shrink-0 items-center justify-center gap-2 rounded-xl bg-ink px-4 text-sm font-extrabold text-white shadow-[0_14px_26px_-18px_rgba(11,18,32,0.55),0_3px_10px_-8px_rgba(15,23,42,0.18)] transition-[background-color,box-shadow,transform] duration-150 hover:-translate-y-0.5 hover:bg-ink/90 hover:shadow-[0_18px_32px_-20px_rgba(11,18,32,0.6)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink";
+
+  if (!hasActivePlan) {
+    return (
+      <Link href="/pricing" className={className}>
+        <ChromeLogo className="size-4" />
+        Autofill
+        {proBadge}
+      </Link>
+    );
+  }
+
+  return (
+    <a
+      href={CHROME_EXTENSION_URL}
+      target={isExternal ? "_blank" : undefined}
+      rel={isExternal ? "noreferrer" : undefined}
+      className={className}
+    >
+      <ChromeLogo className="size-4" />
+      Autofill
+      {proBadge}
+    </a>
+  );
+}
+
 function ExtensionCard() {
   return (
     <section className="rounded-[1.5rem] bg-ink p-5 text-white shadow-[0_22px_52px_-34px_rgba(11,18,32,0.58)]">
@@ -462,6 +510,7 @@ function metricsFor(tracker: TrackerPage): Metric[] {
       hint: "Everything saved or applied",
       Icon: ClipboardList,
       href: "/dashboard/tracker",
+      tone: "tracked",
     },
     {
       label: "Active pipeline",
@@ -469,7 +518,7 @@ function metricsFor(tracker: TrackerPage): Metric[] {
       hint: "Applied, replies, interviews, offers",
       Icon: Workflow,
       href: "/dashboard/tracker",
-      tone: "green",
+      tone: "active",
     },
     {
       label: "Saved to review",
@@ -477,7 +526,7 @@ function metricsFor(tracker: TrackerPage): Metric[] {
       hint: "Roles waiting for a decision",
       Icon: FileCheck2,
       href: "/dashboard/tracker",
-      tone: "amber",
+      tone: "review",
     },
   ];
 }
@@ -509,7 +558,10 @@ export default async function DashboardPage() {
               Find relevant roles, save the ones worth pursuing, and keep every application moving through your tracker.
             </p>
           </div>
-          <UserProfileBadge user={user} />
+          <div className="flex items-center gap-3">
+            <AutofillButton hasActivePlan={hasActivePlan} />
+            <UserProfileBadge user={user} />
+          </div>
         </div>
 
         <div className="mt-7 grid gap-4 md:grid-cols-3">

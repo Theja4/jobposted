@@ -28,7 +28,7 @@ export function Nav() {
             >
               {link.label}
               {"isNew" in link && link.isNew ? (
-                <span className="rounded-full bg-[linear-gradient(135deg,#5ee4ff,#1f64e0)] px-1.5 py-0.5 text-[9px] font-black tracking-wide text-white uppercase">
+                <span className="rounded-full bg-[#ffd84d] px-1.5 py-0.5 text-[9px] font-black tracking-wide text-black uppercase">
                   New
                 </span>
               ) : null}
