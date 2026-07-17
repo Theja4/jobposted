@@ -13,7 +13,7 @@ import { ArrowRight, ArrowUpRight, Check, Loader2, LockKeyhole, ShieldCheck } fr
 import { useMemo, useState } from "react";
 import { track } from "@/lib/analytics";
 import { cn } from "@/lib/cn";
-import { REZOOMED_ACCOUNT_URL, SUPPORT_EMAIL } from "@/lib/site";
+import { SUPPORT_EMAIL } from "@/lib/site";
 
 type PricingProps = {
   pricing: BillingPricingView;
@@ -55,7 +55,7 @@ export function Pricing({ pricing, authNextPath = "/pricing" }: PricingProps) {
         <div className="grid gap-0 lg:grid-cols-[minmax(0,1fr)_25rem]">
           <div className="border-b border-zinc-200 py-8 lg:border-b-0 lg:border-r lg:py-9 lg:pr-10">
             <a
-              href={REZOOMED_ACCOUNT_URL}
+              href="/upgrade"
               className="group relative isolate flex min-h-44 overflow-hidden rounded-3xl bg-[linear-gradient(135deg,#071a33_0%,#123765_52%,#1f64e0_100%)] p-6 text-white shadow-[0_22px_60px_rgba(31,100,224,0.2)] transition-transform duration-200 hover:-translate-y-0.5 sm:min-h-48 sm:p-7"
             >
               <div className="relative z-10 max-w-[72%] sm:max-w-[68%]">
@@ -66,7 +66,7 @@ export function Pricing({ pricing, authNextPath = "/pricing" }: PricingProps) {
                   JobPosted is included with Rezoomed Pro.
                 </h2>
                 <span className="mt-4 inline-flex items-center gap-1.5 text-sm font-bold text-white">
-                  Open your Rezoomed account
+                  Click here to learn more
                   <ArrowUpRight className="size-4 transition-transform group-hover:-translate-y-0.5 group-hover:translate-x-0.5" />
                 </span>
               </div>
